@@ -11,6 +11,10 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
 
+  flyway:
+    # 브랜치 병합 순서 때문에 로컬 DB에 더 늦은 버전이 먼저 적용된 경우에도 기동되도록 허용 (로컬 전용)
+    out-of-order: true
+
   jpa:
     show-sql: false
     properties:

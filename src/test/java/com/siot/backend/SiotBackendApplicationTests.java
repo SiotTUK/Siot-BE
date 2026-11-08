@@ -1,7 +1,9 @@
 package com.siot.backend;
 
 import com.siot.backend.global.config.SchedulingProperties;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor;
 import org.springframework.scheduling.support.CronExpression;
@@ -21,6 +23,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -100,6 +104,42 @@ class SiotBackendApplicationTests {
         mockMvc.perform(get("/api/members/me"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    void publicContentIsReadableWithoutLogin() throws Exception {
+        // 공개 GET 경로는 인증 없이 통과한다 (컨트롤러가 아직 없으므로 401 이 아닌 404)
+        mockMvc.perform(get("/api/events"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    void adminApiRequiresLogin() throws Exception {
+        mockMvc.perform(get("/api/admin/events"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void postWithoutCsrfTokenIsRejectedWithClearCode() throws Exception {
+        mockMvc.perform(post("/api/reports"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CSRF_TOKEN_INVALID"));
+    }
+
+    @Test
+    void csrfEndpointIssuesTokenUsableInHeader() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/auth/csrf"))
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().exists("XSRF-TOKEN"))
+                .andReturn();
+        String token = result.getResponse().getCookie("XSRF-TOKEN").getValue();
+
+        // 토큰을 쿠키 + 헤더로 보내면 CSRF 를 통과한다 (컨트롤러가 아직 없으므로 404)
+        mockMvc.perform(post("/api/reports")
+                        .cookie(new Cookie("XSRF-TOKEN", token))
+                        .header("X-XSRF-TOKEN", token))
+                .andExpect(status().isNotFound());
     }
 
     @Test

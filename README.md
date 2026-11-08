@@ -21,6 +21,7 @@ curl localhost:8080/actuator/health
 
 자세한 내용:
 
+- **[개발 규칙 (API 경로·권한, CSRF, 응답 형식, 마이그레이션) — 작업 전 필독](docs/conventions.md)**
 - [로컬 개발 환경](docs/setup.md)
 - [배포 가이드](docs/deployment.md)
 - [전체 Docker Compose 통합 (프론트엔드 담당자용)](docs/compose-integration.md)
@@ -38,13 +39,13 @@ com.siot.backend
 ├── notification  알림 (notification, notification_preference)
 ├── rag           문서·임베딩·챗봇 (document*, guide_document_reference, chat_*)
 ├── report        오류 신고 (content_report)
-└── global        config / exception
+└── global        config / exception / common (ApiResponse, PageResponse)
 ```
 
 각 기능 패키지는 필요에 따라 `controller / service / repository / domain / dto` 하위 패키지를 둡니다.
 
 ## 데이터베이스 규칙
 
-- 스키마 변경은 **Flyway 마이그레이션만** 사용합니다 (`src/main/resources/db/migration/V{n}__{설명}.sql`).
+- 스키마 변경은 **Flyway 마이그레이션만** 사용합니다. 파일 이름은 `V{yyyy}_{MM}_{dd}_{HHmm}__{설명}.sql` ([개발 규칙](docs/conventions.md#5-db-마이그레이션-flyway)).
 - JPA는 `ddl-auto: validate` 로 Entity와 스키마 불일치 시 기동에 실패합니다.
 - 이미 적용된 마이그레이션 파일은 수정하지 말고 새 버전을 추가합니다.
