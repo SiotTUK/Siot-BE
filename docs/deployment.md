@@ -7,9 +7,8 @@
 
 | 트리거 | 동작 |
 |---|---|
-| `main`, `simdaum` 브랜치 대상 PR | Gradle test + bootJar 빌드 (이미지 push 없음) |
+| `main` 브랜치 대상 PR | Gradle test + bootJar 빌드 (이미지 push 없음) |
 | `main` 브랜치 push | test → 이미지 빌드 → GHCR push (`latest`, `sha-<커밋>`) |
-| `simdaum` 브랜치 push | test → 이미지 빌드 → GHCR push (`sha-<커밋>`) |
 | `backend-v1.2.3` 태그 push | test → 이미지 push (`1.2.3`, `sha-<커밋>`) |
 | 수동 실행 (workflow_dispatch) | 위와 동일 |
 

@@ -2,10 +2,10 @@ name: Backend CI
 
 on:
   push:
-    branches: [ main, simdaum ]
+    branches: [ main ]
     tags: [ 'backend-v*' ]
   pull_request:
-    branches: [ main, simdaum ]
+    branches: [ main ]
   workflow_dispatch:
 
 concurrency:
