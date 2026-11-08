@@ -5,6 +5,12 @@ import com.siot.backend.global.exception.ErrorResponseWriter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.ProviderManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -58,6 +64,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.spa())
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
+                // 로그인·로그아웃은 /api/auth/** 컨트롤러에서 직접 처리한다 (SessionAuthenticator)
+                .logout(AbstractHttpConfigurer::disable)
+                .securityContext(context -> context.securityContextRepository(securityContextRepository()))
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                         .sessionFixation(fixation -> fixation.changeSessionId()))
@@ -85,5 +94,20 @@ public class SecurityConfig {
     public PasswordEncoder passwordEncoder() {
         // NFR-02: 단방향 해시 (기본 bcrypt)
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+    }
+
+    /** 로그인 상태를 HTTP 세션(Spring Session → Redis)에 저장 */
+    @Bean
+    public SecurityContextRepository securityContextRepository() {
+        return new HttpSessionSecurityContextRepository();
+    }
+
+    /** ID·비밀번호 검증. ID가 없을 때와 비밀번호가 틀릴 때를 구분하지 않는다 (M-08). */
+    @Bean
+    public AuthenticationManager authenticationManager(UserDetailsService userDetailsService,
+                                                       PasswordEncoder passwordEncoder) {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
+        provider.setPasswordEncoder(passwordEncoder);
+        return new ProviderManager(provider);
     }
 }

@@ -90,4 +90,13 @@ public class AppUser {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    /** M-01: ID·비밀번호만으로 가입. 표시 이름은 ID로 시작한다. */
+    public static AppUser create(String loginId, String passwordHash) {
+        AppUser user = new AppUser();
+        user.loginId = loginId;
+        user.passwordHash = passwordHash;
+        user.displayName = loginId;
+        return user;
+    }
 }

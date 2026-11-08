@@ -4,10 +4,6 @@ spring:
     name: siot-backend
   profiles:
     default: local
-  autoconfigure:
-    # 인증 구현 전까지 기본 인메모리 사용자(임시 비밀번호 로그 출력) 생성을 막는다.
-    # auth 패키지에서 UserDetailsService를 구현하면 이 항목은 제거한다.
-    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
 
   datasource:
     url: ${DB_URL}

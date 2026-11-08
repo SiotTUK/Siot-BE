@@ -22,6 +22,7 @@ curl localhost:8080/actuator/health
 자세한 내용:
 
 - **[개발 규칙 (API 경로·권한, CSRF, 응답 형식, 마이그레이션) — 작업 전 필독](docs/conventions.md)**
+- [인증·회원 API](docs/api-auth.md)
 - [로컬 개발 환경](docs/setup.md)
 - [배포 가이드](docs/deployment.md)
 - [전체 Docker Compose 통합 (프론트엔드 담당자용)](docs/compose-integration.md)

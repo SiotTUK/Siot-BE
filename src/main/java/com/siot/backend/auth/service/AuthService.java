@@ -1,0 +1,90 @@
+package com.siot.backend.auth.service;
+
+import com.siot.backend.auth.domain.CredentialPolicy;
+import com.siot.backend.auth.dto.LoginRequest;
+import com.siot.backend.auth.dto.SignupRequest;
+import com.siot.backend.auth.security.MemberPrincipal;
+import com.siot.backend.auth.security.SessionAuthenticator;
+import com.siot.backend.global.exception.BusinessException;
+import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.member.domain.AppUser;
+import com.siot.backend.member.dto.MemberResponse;
+import com.siot.backend.member.repository.AppUserRepository;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+
+    private final AppUserRepository appUserRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final SessionAuthenticator sessionAuthenticator;
+    private final LoginAttemptService loginAttemptService;
+
+    /** M-02: ID 사용 가능 여부 (형식이 틀리면 LOGIN_ID_FORMAT) */
+    @Transactional(readOnly = true)
+    public boolean isLoginIdAvailable(String loginId) {
+        CredentialPolicy.validateLoginId(loginId);
+        return !appUserRepository.existsByLoginId(loginId);
+    }
+
+    /** M-01 ~ M-03: 회원가입 후 바로 로그인 상태로 만든다. */
+    @Transactional
+    public MemberResponse signup(SignupRequest request,
+                                 HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        CredentialPolicy.validateLoginId(request.loginId());
+        CredentialPolicy.validatePassword(request.password(), request.loginId());
+        if (!request.password().equals(request.passwordConfirm())) {
+            throw new BusinessException(ErrorCode.PASSWORD_CONFIRM_MISMATCH);
+        }
+        if (appUserRepository.existsByLoginId(request.loginId())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_LOGIN_ID);
+        }
+
+        AppUser user;
+        try {
+            // M-02: 동시 가입은 DB UNIQUE 제약으로 한 번 더 막는다
+            user = appUserRepository.saveAndFlush(
+                    AppUser.create(request.loginId(), passwordEncoder.encode(request.password())));
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(ErrorCode.DUPLICATE_LOGIN_ID);
+        }
+
+        sessionAuthenticator.login(MemberPrincipal.from(user), httpRequest, httpResponse);
+        return MemberResponse.from(user);
+    }
+
+    /** M-08: 로그인. 실패 사유는 구분하지 않고, 5회 연속 실패 시 5분간 차단한다. */
+    @Transactional(readOnly = true)
+    public MemberResponse login(LoginRequest request,
+                                HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        if (loginAttemptService.isLocked(request.loginId())) {
+            throw new BusinessException(ErrorCode.LOGIN_LOCKED);
+        }
+
+        MemberPrincipal principal;
+        try {
+            principal = sessionAuthenticator.login(request.loginId(), request.password(), httpRequest, httpResponse);
+        } catch (AuthenticationException e) {
+            loginAttemptService.recordFailure(request.loginId());
+            throw new BusinessException(ErrorCode.LOGIN_FAILED);
+        }
+        loginAttemptService.recordSuccess(request.loginId());
+
+        return appUserRepository.findById(principal.getId())
+                .map(MemberResponse::from)
+                .orElseThrow(() -> new BusinessException(ErrorCode.LOGIN_FAILED));
+    }
+
+    /** M-09: 로그아웃 */
+    public void logout(HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        sessionAuthenticator.logout(httpRequest, httpResponse);
+    }
+}
