@@ -11,6 +11,7 @@ POST 요청은 모두 `X-XSRF-TOKEN` 헤더가 필요합니다. 앱 시작 시 `
 | POST | `/api/auth/login` | - | M-08 | 로그인 |
 | POST | `/api/auth/logout` | - | M-09 | 로그아웃 (204) |
 | GET | `/api/members/me` | 필요 | M-10 | 내 정보. 401이면 로그인 만료 → 로그인 화면으로 |
+| POST | `/api/members/me/withdrawal` | 필요 | M-06, M-07 | 회원 탈퇴 (204) |
 
 ## 회원가입
 
@@ -58,6 +59,23 @@ Content-Type: application/json
 
 `POST /api/auth/logout` → 204, 서버 세션 삭제. 기기에 저장한 회원 정보 삭제(M-09 2번)는 프론트엔드에서 처리합니다.
 
+## 회원 탈퇴
+
+```http
+POST /api/members/me/withdrawal
+Content-Type: application/json
+
+{ "password": "abcd1234" }
+```
+
+- 본문(비밀번호)이 필요해서 DELETE 대신 POST를 사용합니다.
+- 비밀번호가 틀리면 400 `PASSWORD_INCORRECT` (401이 아니므로 로그인 만료로 처리하지 않습니다).
+- 성공하면 204. 즉시 물리 삭제되며 복구할 수 없습니다.
+  - 삭제: 회원 정보, 생활 정보, 알림 이메일, 체크리스트 완료 기록, 알림·알림 설정·행사 알림 신청, 대화 기록
+  - 유지: 오류 신고 (작성자 정보만 삭제)
+  - 다른 기기를 포함한 **모든 세션**이 끊기고, 응답에서 세션 쿠키가 삭제됩니다.
+- 삭제 안내 화면, 화면 안 추가 확인 단계, 기기 저장값 삭제(화면 언어는 유지), "탈퇴되었습니다" 표시(M-06, M-07)는 프론트엔드에서 처리합니다.
+
 ## 오류 코드
 
 프론트엔드는 `code` 로 사용자 언어 문구를 표시합니다 (M-03 4번). `message` 는 한국어 기본 문구입니다.
@@ -74,6 +92,7 @@ Content-Type: application/json
 | `PASSWORD_CONFIRM_MISMATCH` | 400 | 비밀번호 확인 불일치 |
 | `LOGIN_FAILED` | 401 | ID 또는 비밀번호 불일치 |
 | `LOGIN_LOCKED` | 429 | 5회 연속 실패로 5분 잠금 |
+| `PASSWORD_INCORRECT` | 400 | 탈퇴 시 비밀번호 재확인 실패 |
 | `UNAUTHORIZED` | 401 | 로그인 필요 / 만료 |
 
 비밀번호 규칙은 위 표 순서대로 검사해 **처음 어긴 규칙 하나**를 돌려줍니다. 입력 중 규칙별 체크 표시(M-03 3번)는 프론트엔드에서 같은 규칙으로 처리합니다.

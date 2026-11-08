@@ -27,7 +27,9 @@ public enum ErrorCode {
     PASSWORD_SAME_AS_LOGIN_ID(HttpStatus.BAD_REQUEST, "ID와 같은 비밀번호는 사용할 수 없습니다."),
     PASSWORD_CONFIRM_MISMATCH(HttpStatus.BAD_REQUEST, "비밀번호가 일치하지 않습니다."),
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "ID 또는 비밀번호가 맞지 않습니다."),
-    LOGIN_LOCKED(HttpStatus.TOO_MANY_REQUESTS, "로그인에 5회 연속 실패하여 5분 동안 로그인할 수 없습니다.");
+    LOGIN_LOCKED(HttpStatus.TOO_MANY_REQUESTS, "로그인에 5회 연속 실패하여 5분 동안 로그인할 수 없습니다."),
+    // 401 은 프론트엔드가 "로그인 만료" 로 처리하므로 비밀번호 재확인 실패는 400 으로 응답한다
+    PASSWORD_INCORRECT(HttpStatus.BAD_REQUEST, "비밀번호가 맞지 않습니다.");
 
     private final HttpStatus status;
     private final String message;
