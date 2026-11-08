@@ -1,0 +1,87 @@
+# 공통 설정 - 민감정보는 모두 환경변수로 주입한다.
+spring:
+  application:
+    name: siot-backend
+  profiles:
+    default: local
+  autoconfigure:
+    # 인증 구현 전까지 기본 인메모리 사용자(임시 비밀번호 로그 출력) 생성을 막는다.
+    # auth 패키지에서 UserDetailsService를 구현하면 이 항목은 제거한다.
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate          # 스키마는 Flyway만 변경한다
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Seoul
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  session:
+    # M-10: 14일 동안 요청이 없으면 세션 만료
+    timeout: ${SESSION_TIMEOUT:14d}
+    data:
+      redis:
+        namespace: siot:session
+        flush-mode: on-save
+        # M-11: 비밀번호 재설정 시 해당 회원의 모든 세션 삭제 (사용자별 세션 조회 필요)
+        repository-type: indexed
+
+  task:
+    scheduling:
+      thread-name-prefix: siot-scheduler-
+      pool:
+        size: ${SCHEDULER_POOL_SIZE:2}   # 행사 수집과 알림 발송이 서로 막지 않도록
+      shutdown:
+        await-termination: true
+        await-termination-period: 30s
+
+# 예약 작업 (SchedulingProperties)
+siot:
+  scheduling:
+    enabled: ${SCHEDULING_ENABLED:true}
+    zone: Asia/Seoul
+    event-collect-cron: ${EVENT_COLLECT_CRON:0 0 3 * * *}                         # EVE-01: 매일 새벽 3시
+    notification-dispatch-interval: ${NOTIFICATION_DISPATCH_INTERVAL:1m}          # NTF-05
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  servlet:
+    session:
+      cookie:
+        name: SIOT_SESSION
+        http-only: true
+        same-site: lax
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics   # metrics 는 ADMIN 만 접근 (SecurityConfig)
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    redis:
+      enabled: true

@@ -1,0 +1,21 @@
+# 운영 프로필 - 모든 접속 정보는 배포 환경의 환경변수로 주입한다 (기본값 없음).
+spring:
+  jpa:
+    show-sql: false
+
+server:
+  forward-headers-strategy: framework   # Nginx 등 리버스 프록시 뒤에서 동작
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+management:
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.siot.backend: INFO

@@ -1,0 +1,35 @@
+package com.siot.backend.notification.domain;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import java.time.LocalDateTime;
+
+@Getter
+@Entity
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Table(name = "notification_preference")
+@IdClass(NotificationPreferenceId.class)
+public class NotificationPreference {
+
+    @Id
+    @Column(length = 30)
+    private String kind;
+
+    @Id
+    @Column(name = "user_id")
+    private Long userId;
+
+    @Column(nullable = false)
+    private boolean enabled = true;
+
+    @Column(name = "lead_days", nullable = false)
+    private int leadDays = 0;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+}
