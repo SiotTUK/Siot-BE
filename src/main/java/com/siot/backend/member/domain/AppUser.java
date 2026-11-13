@@ -91,6 +91,27 @@ public class AppUser {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    /** NTF-09: 인증을 마친 알림 이메일 등록 (알림·비밀번호 재설정에만 사용) */
+    public void registerVerifiedEmail(String email, LocalDateTime verifiedAt) {
+        this.email = email;
+        this.emailVerifiedAt = verifiedAt;
+    }
+
+    /** NTF-09: 알림 이메일 등록 해제 */
+    public void removeEmail() {
+        this.email = null;
+        this.emailVerifiedAt = null;
+    }
+
+    /** M-11: 비밀번호 재설정 */
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public boolean hasVerifiedEmail() {
+        return email != null && emailVerifiedAt != null;
+    }
+
     /** M-01: ID·비밀번호만으로 가입. 표시 이름은 ID로 시작한다. */
     public static AppUser create(String loginId, String passwordHash) {
         AppUser user = new AppUser();

@@ -41,7 +41,27 @@ spring:
         # M-11: 비밀번호 재설정 시 해당 회원의 모든 세션 삭제 (사용자별 세션 조회 필요)
         repository-type: indexed
 
+  # 메일: 운영은 Gmail SMTP (smtp.gmail.com:587, STARTTLS, 앱 비밀번호)
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      "[mail.smtp.auth]": ${MAIL_SMTP_AUTH:true}
+      "[mail.smtp.starttls.enable]": ${MAIL_SMTP_STARTTLS:true}
+      "[mail.smtp.connectiontimeout]": 5000
+      "[mail.smtp.timeout]": 10000
+      "[mail.smtp.writetimeout]": 10000
+
+  # 메일 문구 다국어 (messages/mail*.properties)
+  messages:
+    basename: messages/mail
+    fallback-to-system-locale: false
+
   task:
+    execution:
+      thread-name-prefix: siot-async-   # 메일 비동기 발송
     scheduling:
       thread-name-prefix: siot-scheduler-
       pool:
@@ -50,8 +70,15 @@ spring:
         await-termination: true
         await-termination-period: 30s
 
-# 예약 작업 (SchedulingProperties)
 siot:
+  mail:
+    # Gmail SMTP 는 로그인한 계정(또는 등록된 별칭) 주소로만 발신할 수 있다
+    from: ${MAIL_FROM}
+  frontend:
+    # 메일 안의 링크(비밀번호 재설정 등)에 사용하는 프론트엔드 주소
+    base-url: ${FRONTEND_BASE_URL}
+
+  # 예약 작업 (SchedulingProperties)
   scheduling:
     enabled: ${SCHEDULING_ENABLED:true}
     zone: Asia/Seoul
@@ -81,3 +108,6 @@ management:
   health:
     redis:
       enabled: true
+    mail:
+      # 외부 SMTP(Gmail) 상태 때문에 백엔드가 unhealthy 로 판정되지 않도록 제외한다 (발송 실패는 로그로 확인)
+      enabled: false

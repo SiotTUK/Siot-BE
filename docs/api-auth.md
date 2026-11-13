@@ -12,6 +12,12 @@ POST 요청은 모두 `X-XSRF-TOKEN` 헤더가 필요합니다. 앱 시작 시 `
 | POST | `/api/auth/logout` | - | M-09 | 로그아웃 (204) |
 | GET | `/api/members/me` | 필요 | M-10 | 내 정보. 401이면 로그인 만료 → 로그인 화면으로 |
 | POST | `/api/members/me/withdrawal` | 필요 | M-06, M-07 | 회원 탈퇴 (204) |
+| POST | `/api/members/me/email/verification` | 필요 | NTF-09 | 알림 이메일 인증 코드 발송 (202) |
+| POST | `/api/members/me/email/verification/confirm` | 필요 | NTF-09 | 인증 코드 확인 → 이메일 등록 |
+| DELETE | `/api/members/me/email` | 필요 | NTF-09 | 알림 이메일 등록 해제 |
+| POST | `/api/auth/password-reset` | - | M-11 | 비밀번호 재설정 링크 요청 (202) |
+| GET | `/api/auth/password-reset/validation?token=` | - | M-11 | 재설정 링크 유효성 확인 (204) |
+| POST | `/api/auth/password-reset/confirm` | - | M-11 | 새 비밀번호 설정 (204) |
 
 ## 회원가입
 
@@ -76,6 +82,63 @@ Content-Type: application/json
   - 다른 기기를 포함한 **모든 세션**이 끊기고, 응답에서 세션 쿠키가 삭제됩니다.
 - 삭제 안내 화면, 화면 안 추가 확인 단계, 기기 저장값 삭제(화면 언어는 유지), "탈퇴되었습니다" 표시(M-06, M-07)는 프론트엔드에서 처리합니다.
 
+## 알림 이메일 등록 (NTF-09)
+
+선택 등록이며, 인증을 마친 이메일만 알림 메일과 비밀번호 재설정에 사용합니다.
+
+1. 인증 코드 요청
+
+```http
+POST /api/members/me/email/verification
+{ "email": "user@example.com" }
+```
+
+**202** `{ "data": { "email": "user@example.com", "expiresInSeconds": 600, "resendAvailableInSeconds": 60 } }`
+
+- 입력한 주소로 6자리 코드가 사용자 언어(ko/en/zh/vi)로 발송됩니다. 이메일은 소문자로 저장합니다.
+- 코드는 **10분** 유효합니다. 다시 요청하면 이전 코드는 무효가 됩니다.
+- 요청 제한: **1분에 1회**(`EMAIL_VERIFICATION_TOO_FREQUENT`), **하루 10회**(`EMAIL_VERIFICATION_DAILY_LIMIT`). Gmail 발송량 보호 목적입니다.
+
+2. 코드 확인
+
+```http
+POST /api/members/me/email/verification/confirm
+{ "code": "123456" }
+```
+
+- 성공: 200, `data.emailRegistered`·`data.emailVerified` 가 true 인 내 정보
+- 틀림: 400 `EMAIL_VERIFICATION_CODE_INVALID`. **5회** 틀리거나 10분이 지나면 400 `EMAIL_VERIFICATION_EXPIRED` → 코드를 다시 요청합니다.
+
+3. 등록 해제: `DELETE /api/members/me/email` → 200, 내 정보
+
+## 비밀번호 재설정 (M-11)
+
+1. 로그인 화면의 "비밀번호 찾기"에서 ID 입력
+
+```http
+POST /api/auth/password-reset
+{ "loginId": "user01" }
+```
+
+- **항상 202** 입니다. 계정이 없거나 인증된 이메일이 없어도 같은 응답이므로, 화면에는 "등록된 이메일이 있으면 메일을 보냈습니다"를 표시합니다.
+- 요청 제한(ID 기준): **1분에 1회**(`PASSWORD_RESET_TOO_FREQUENT`), **하루 5회**(`PASSWORD_RESET_DAILY_LIMIT`), 모두 429.
+- 메일의 링크: `{FRONTEND_BASE_URL}/password-reset?token=...` → **프론트엔드는 이 경로에 재설정 화면을 만들어야 합니다.**
+
+2. 재설정 화면 진입 시 링크 확인 (선택)
+
+`GET /api/auth/password-reset/validation?token=...` → 유효 204 / 만료·사용됨 400 `PASSWORD_RESET_TOKEN_INVALID`
+
+3. 새 비밀번호 설정
+
+```http
+POST /api/auth/password-reset/confirm
+{ "token": "...", "password": "newpass5678", "passwordConfirm": "newpass5678" }
+```
+
+- 성공: 204. 링크는 **1회용, 30분 후 만료**. 새 링크를 요청하면 이전 링크는 무효가 됩니다.
+- 비밀번호 규칙은 회원가입과 같습니다. 규칙 위반으로 실패하면 링크는 소모되지 않아 다시 입력할 수 있습니다.
+- 성공하면 그 회원의 **모든 세션이 끊기고**, 로그인 잠금(5회 실패)도 풀립니다. 화면은 로그인 화면으로 이동합니다.
+
 ## 오류 코드
 
 프론트엔드는 `code` 로 사용자 언어 문구를 표시합니다 (M-03 4번). `message` 는 한국어 기본 문구입니다.
@@ -93,6 +156,13 @@ Content-Type: application/json
 | `LOGIN_FAILED` | 401 | ID 또는 비밀번호 불일치 |
 | `LOGIN_LOCKED` | 429 | 5회 연속 실패로 5분 잠금 |
 | `PASSWORD_INCORRECT` | 400 | 탈퇴 시 비밀번호 재확인 실패 |
+| `EMAIL_VERIFICATION_TOO_FREQUENT` | 429 | 인증 코드 1분 내 재요청 |
+| `EMAIL_VERIFICATION_DAILY_LIMIT` | 429 | 인증 코드 하루 10회 초과 |
+| `EMAIL_VERIFICATION_CODE_INVALID` | 400 | 인증 코드 불일치 |
+| `EMAIL_VERIFICATION_EXPIRED` | 400 | 인증 코드 만료 / 5회 실패 / 요청 없음 |
+| `PASSWORD_RESET_TOO_FREQUENT` | 429 | 재설정 1분 내 재요청 |
+| `PASSWORD_RESET_DAILY_LIMIT` | 429 | 재설정 하루 5회 초과 |
+| `PASSWORD_RESET_TOKEN_INVALID` | 400 | 재설정 링크 만료·사용됨·잘못됨 |
 | `UNAUTHORIZED` | 401 | 로그인 필요 / 만료 |
 
 비밀번호 규칙은 위 표 순서대로 검사해 **처음 어긴 규칙 하나**를 돌려줍니다. 입력 중 규칙별 체크 표시(M-03 3번)는 프론트엔드에서 같은 규칙으로 처리합니다.

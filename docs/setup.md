@@ -24,6 +24,11 @@ cp .env.example .env
 | `SCHEDULING_ENABLED` | 예약 작업 사용 여부 | true |
 | `EVENT_COLLECT_CRON` | 행사 수집 주기 (EVE-01, Asia/Seoul) | `0 0 3 * * *` |
 | `NOTIFICATION_DISPATCH_INTERVAL` | 예약 알림 발송 확인 주기 (NTF-05) | 1m |
+| `MAIL_HOST` / `MAIL_PORT` | SMTP 서버 | 로컬 localhost:1025, compose mailpit:1025 |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | SMTP 계정 (운영: Gmail 앱 비밀번호) | - |
+| `MAIL_SMTP_AUTH` / `MAIL_SMTP_STARTTLS` | SMTP 인증·TLS | 로컬 false, 운영 true |
+| `MAIL_FROM` | 발신자 | `웰컴시흥 <no-reply@siot.local>` |
+| `FRONTEND_BASE_URL` | 메일 링크에 쓰는 프론트엔드 주소 | `http://localhost:5173` |
 
 ## 2-A. 전체를 Docker로 실행
 
@@ -38,10 +43,22 @@ curl localhost:8080/actuator/health
 
 ```bash
 docker compose up -d postgres redis
+# 메일 기능을 확인하려면 개발용 메일 서버도 띄운다
+docker compose --profile dev up -d mailpit
 ./gradlew bootRun          # local 프로필, 프로젝트 루트의 .env 를 자동으로 읽음
 ```
 
 `application-local.yml` 이 `optional:file:.env[.properties]` 를 import 하므로 IntelliJ에서도 별도 환경변수 설정 없이 실행됩니다.
+
+## 메일 확인 (Mailpit)
+
+로컬과 compose 의 메일은 실제로 발송되지 않고 개발용 메일 서버 Mailpit 에 쌓입니다.
+
+```bash
+docker compose --profile dev up -d   # 전체 + mailpit
+```
+
+받은 메일 확인: http://localhost:8025 (이메일 인증 코드, 비밀번호 재설정 링크)
 
 ## 테스트
 

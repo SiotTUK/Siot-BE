@@ -118,3 +118,11 @@ if (token) pm.request.headers.upsert({ key: 'X-XSRF-TOKEN', value: token });
 - `./gradlew test` 는 Testcontainers로 PostgreSQL(pgvector)과 Redis를 띄우므로 Docker가 실행 중이어야 합니다.
 - 통합 테스트는 `@SpringBootTest` + `@Import(TestcontainersConfiguration.class)` 를 사용합니다.
 - PR은 CI(`Backend CI`)가 통과해야 병합합니다.
+
+## 7. 메일 발송
+
+- 메일은 `global/mail` 의 `EmailSender` 로 보냅니다. (운영: Gmail SMTP, 로컬: Mailpit)
+- `send()` 는 **비동기**이며 실패해도 예외를 던지지 않고 로그만 남깁니다. 발송 결과를 저장해야 하면(예: 알림 이메일 NTF-05의 `notification.email_status`) 호출하는 쪽에서 별도로 처리합니다.
+- 메일 문구는 `resources/messages/mail*.properties` 에 4개 언어(ko 기본, en, zh, vi)로 추가하고 `MailTemplates` 에 메서드를 만듭니다. MessageFormat 문법이라 문구에 작은따옴표(`'`)를 쓰지 않습니다.
+- Gmail 무료 계정은 하루 약 500통 제한이 있으므로, 사용자가 반복 요청할 수 있는 메일은 `RequestRateLimiter` 로 횟수를 제한합니다.
+- 수신자 이메일 주소는 개인정보이므로 로그에 남기지 않습니다.

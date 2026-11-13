@@ -45,6 +45,11 @@ public class LoginAttemptService {
         redisTemplate.delete(FAILURE_KEY + normalize(loginId));
     }
 
+    /** 비밀번호를 재설정하면 실패 기록과 잠금을 모두 풀어 바로 로그인할 수 있게 한다 */
+    public void clear(String loginId) {
+        redisTemplate.delete(java.util.List.of(FAILURE_KEY + normalize(loginId), LOCK_KEY + normalize(loginId)));
+    }
+
     private String normalize(String loginId) {
         return loginId == null ? "" : loginId.trim().toLowerCase(Locale.ROOT);
     }

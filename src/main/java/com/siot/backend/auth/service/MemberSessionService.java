@@ -1,5 +1,6 @@
 package com.siot.backend.auth.service;
 
+import com.siot.backend.member.event.MemberPasswordResetEvent;
 import com.siot.backend.member.event.MemberWithdrawnEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,5 +32,12 @@ public class MemberSessionService {
     public void onMemberWithdrawn(MemberWithdrawnEvent event) {
         int count = invalidateAll(event.loginId());
         log.info("Member {} withdrawn, {} session(s) invalidated", event.memberId(), count);
+    }
+
+    /** M-11: 비밀번호 재설정이 커밋된 뒤 모든 세션 삭제 */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onPasswordReset(MemberPasswordResetEvent event) {
+        int count = invalidateAll(event.loginId());
+        log.info("Member {} password reset, {} session(s) invalidated", event.memberId(), count);
     }
 }

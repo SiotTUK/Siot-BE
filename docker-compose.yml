@@ -5,6 +5,7 @@
 #   cp .env.example .env   # 값 수정
 #   docker compose up -d --build
 #   (DB/Redis만 띄우고 IDE에서 실행) docker compose up -d postgres redis
+#   (개발용 메일 서버 포함) docker compose --profile dev up -d   → 받은 메일: http://localhost:8025
 name: siot
 
 services:
@@ -59,6 +60,15 @@ services:
       SCHEDULING_ENABLED: ${SCHEDULING_ENABLED:-true}
       EVENT_COLLECT_CRON: ${EVENT_COLLECT_CRON:-0 0 3 * * *}
       NOTIFICATION_DISPATCH_INTERVAL: ${NOTIFICATION_DISPATCH_INTERVAL:-1m}
+      # 메일: 기본값은 개발용 Mailpit. 운영은 .env 에 Gmail SMTP 값을 넣는다 (docs/deployment.md)
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-false}
+      MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-false}
+      MAIL_FROM: ${MAIL_FROM:-웰컴시흥 <no-reply@siot.local>}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -66,6 +76,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  # 개발용 메일 서버 (운영에서는 띄우지 않는다): docker compose --profile dev up -d
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    profiles: ["dev"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"   # 웹 UI
+      - "127.0.0.1:1025:1025"   # SMTP
 
 volumes:
   postgres-data:

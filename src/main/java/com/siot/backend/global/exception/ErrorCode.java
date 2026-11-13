@@ -29,7 +29,18 @@ public enum ErrorCode {
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "ID 또는 비밀번호가 맞지 않습니다."),
     LOGIN_LOCKED(HttpStatus.TOO_MANY_REQUESTS, "로그인에 5회 연속 실패하여 5분 동안 로그인할 수 없습니다."),
     // 401 은 프론트엔드가 "로그인 만료" 로 처리하므로 비밀번호 재확인 실패는 400 으로 응답한다
-    PASSWORD_INCORRECT(HttpStatus.BAD_REQUEST, "비밀번호가 맞지 않습니다.");
+    PASSWORD_INCORRECT(HttpStatus.BAD_REQUEST, "비밀번호가 맞지 않습니다."),
+
+    // ---- 알림 이메일 등록 (NTF-09) ----
+    EMAIL_VERIFICATION_TOO_FREQUENT(HttpStatus.TOO_MANY_REQUESTS, "인증 코드는 1분에 한 번만 요청할 수 있습니다."),
+    EMAIL_VERIFICATION_DAILY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "오늘 인증 코드 요청 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요."),
+    EMAIL_VERIFICATION_CODE_INVALID(HttpStatus.BAD_REQUEST, "인증 코드가 맞지 않습니다."),
+    EMAIL_VERIFICATION_EXPIRED(HttpStatus.BAD_REQUEST, "인증 코드가 만료되었습니다. 코드를 다시 요청해 주세요."),
+
+    // ---- 비밀번호 재설정 (M-11) ----
+    PASSWORD_RESET_TOO_FREQUENT(HttpStatus.TOO_MANY_REQUESTS, "비밀번호 재설정은 1분에 한 번만 요청할 수 있습니다."),
+    PASSWORD_RESET_DAILY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "오늘 비밀번호 재설정 요청 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요."),
+    PASSWORD_RESET_TOKEN_INVALID(HttpStatus.BAD_REQUEST, "재설정 링크가 만료되었거나 이미 사용되었습니다. 다시 요청해 주세요.");
 
     private final HttpStatus status;
     private final String message;
