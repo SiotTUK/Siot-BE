@@ -82,7 +82,7 @@ siot:
     max-question-length: 1000
     # 이어지는 질문(CB-07)에 쓰는 최근 대화 턴 수
     history-turns: 3
-  # Gemini (LangChain4j). 키가 없으면 챗봇은 "지금은 답변할 수 없어요" 로 응답한다
+  # Gemini (LangChain4j). 챗봇·번역·문서 적재가 같이 쓴다. 키가 없으면 챗봇은 "지금은 답변할 수 없어요" 로 응답하고 번역·적재는 실패한다
   gemini:
     api-key: ${GEMINI_API_KEY:}
     chat-model: ${GEMINI_CHAT_MODEL:gemini-2.5-flash}

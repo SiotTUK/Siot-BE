@@ -62,7 +62,7 @@ services:
       NOTIFICATION_DISPATCH_INTERVAL: ${NOTIFICATION_DISPATCH_INTERVAL:-1m}
       # ADM-01: 관리자로 지정할 이메일 (쉼표 구분)
       SIOT_ADMIN_EMAILS: ${SIOT_ADMIN_EMAILS:-}
-      # 챗봇 (Gemini). 비어 있으면 챗봇은 안내 문구로만 응답한다
+      # Gemini (챗봇·번역·문서 적재). 비어 있으면 챗봇은 안내 문구로만 응답하고 번역·적재는 실패한다
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-2.5-flash}
       CHATBOT_MIN_RELEVANCE: ${CHATBOT_MIN_RELEVANCE:-0.6}
