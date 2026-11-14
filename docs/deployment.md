@@ -125,6 +125,17 @@ curl -f localhost:8080/actuator/health/readiness
 롤백: `.env` 의 `BACKEND_IMAGE` 를 이전 `sha-` 태그로 바꾸고 `sudo docker compose up -d --no-build`.
 태그 목록: `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend`
 
+### 이미지 정리 정책
+
+Artifact Registry `siot` 저장소에 정리 정책이 걸려 있다. `siot-backend` 는 **최근 10개 버전만 남기고** 나머지는 지운다 (정책 `keep-recent-10` + `delete-older`, 하루 1번 정도 실행). 롤백은 최근 10개 배포 안에서만 가능하다.
+
+- CI 는 `provenance: false` 로 빌드 1번에 이미지 버전 1개만 만든다. (켜면 index·attestation 버전이 함께 생겨 10개가 3~4개 빌드로 줄어든다)
+- Dockerfile 은 Spring Boot 레이어 jar 로 풀어서 넣는다. 라이브러리 레이어(약 67MB)는 의존성이 바뀌지 않으면 빌드끼리 공유되어, 빌드마다 늘어나는 용량은 약 1MB 다.
+
+```bash
+gcloud artifacts repositories describe siot --location asia-northeast3 --project siot-514601   # Repository Size
+```
+
 ## 8. 백업
 
 DB·Redis 데이터(Docker 볼륨)는 VM 부팅 디스크 안에 있으므로 **디스크 스냅샷 일정**으로 백업한다.

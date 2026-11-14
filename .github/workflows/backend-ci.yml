@@ -96,6 +96,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # 빌드 1번 = 이미지 버전 1개. (provenance 를 켜면 index·attestation 버전이 함께 생겨
+          # Artifact Registry 정리 정책의 "최근 10개" 가 실제로는 3~4개 빌드만 남긴다)
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
