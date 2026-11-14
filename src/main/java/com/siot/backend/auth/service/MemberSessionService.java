@@ -1,6 +1,7 @@
 package com.siot.backend.auth.service;
 
 import com.siot.backend.member.event.MemberPasswordResetEvent;
+import com.siot.backend.member.event.MemberRoleChangedEvent;
 import com.siot.backend.member.event.MemberWithdrawnEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +13,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * 회원 한 명의 모든 세션(다른 기기 포함)을 삭제한다.
- * M-07 탈퇴, M-11 비밀번호 재설정에서 사용한다.
+ * M-07 탈퇴, M-11 비밀번호 재설정, ADM-01 권한 변경에서 사용한다.
  */
 @Slf4j
 @Service
@@ -40,5 +41,12 @@ public class MemberSessionService {
     public void onPasswordReset(MemberPasswordResetEvent event) {
         int count = invalidateAll(event.email());
         log.info("Member {} password reset, {} session(s) invalidated", event.memberId(), count);
+    }
+
+    /** ADM-01: 권한 변경이 커밋된 뒤 모든 세션 삭제 (세션에 저장된 권한을 새로 받도록 다시 로그인) */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onRoleChanged(MemberRoleChangedEvent event) {
+        int count = invalidateAll(event.email());
+        log.info("Member {} role changed, {} session(s) invalidated", event.memberId(), count);
     }
 }

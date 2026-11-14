@@ -7,7 +7,9 @@ import com.siot.backend.auth.security.MemberPrincipal;
 import com.siot.backend.auth.security.SessionAuthenticator;
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.member.config.AdminProperties;
 import com.siot.backend.member.domain.AppUser;
+import com.siot.backend.member.domain.Role;
 import com.siot.backend.member.dto.MemberResponse;
 import com.siot.backend.member.repository.AppUserRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,6 +34,7 @@ public class AuthService {
     private final LoginAttemptService loginAttemptService;
     private final SignupVerificationService signupVerificationService;
     private final Clock clock;
+    private final AdminProperties adminProperties;
 
     /** M-02: 이메일 사용 가능 여부 (형식이 틀리면 EMAIL_FORMAT) */
     @Transactional(readOnly = true)
@@ -63,6 +66,10 @@ public class AuthService {
             // M-02: 동시 가입은 DB UNIQUE 제약으로 한 번 더 막는다
             AppUser newUser = AppUser.create(email, passwordEncoder.encode(request.password()));
             newUser.markEmailVerified(OffsetDateTime.now(clock));
+            // ADM-01: SIOT_ADMIN_EMAILS 에 있는 이메일은 가입과 동시에 관리자
+            if (adminProperties.isAdminEmail(email)) {
+                newUser.changeRole(Role.ADMIN);
+            }
             user = appUserRepository.saveAndFlush(newUser);
         } catch (DataIntegrityViolationException e) {
             throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);

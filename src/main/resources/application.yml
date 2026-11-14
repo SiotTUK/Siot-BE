@@ -71,6 +71,9 @@ spring:
         await-termination-period: 30s
 
 siot:
+  # ADM-01: 처음부터 관리자로 지정할 이메일 (쉼표 구분)
+  admin:
+    emails: ${SIOT_ADMIN_EMAILS:}
   # 챗봇 (CB-12~17). 근거 기준값은 실제 문서 적재 후 평가 세트(CB-01)로 조정한다
   chatbot:
     min-relevance: ${CHATBOT_MIN_RELEVANCE:0.6}

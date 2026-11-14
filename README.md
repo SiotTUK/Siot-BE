@@ -24,6 +24,7 @@ curl localhost:8080/actuator/health
 - **[개발 규칙 (API 경로·권한, CSRF, 응답 형식, 마이그레이션) — 작업 전 필독](docs/conventions.md)**
 - [인증·회원 API](docs/api-auth.md)
 - [챗봇 API](docs/api-chat.md)
+- [관리자 API](docs/api-admin.md)
 - [DB ERD (체크리스트 규칙표 반영)](docs/erd.md)
 - [로컬 개발 환경](docs/setup.md)
 - [배포 가이드](docs/deployment.md)

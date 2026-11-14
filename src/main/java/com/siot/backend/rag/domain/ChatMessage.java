@@ -86,6 +86,14 @@ public class ChatMessage {
         return ROLE_ASSISTANT.equals(role);
     }
 
+    /** ADM-08: 관리자 처리 여부·메모 기록 */
+    public void review(boolean reviewed, String adminMemo, Long adminId, OffsetDateTime now) {
+        this.reviewed = reviewed;
+        this.adminMemo = adminMemo;
+        this.reviewedBy = adminId;
+        this.reviewedAt = now;
+    }
+
     /** CB-04: 답변 평가 (다시 평가하면 덮어쓴다) */
     public void recordFeedback(boolean helpful, String comment) {
         this.helpful = helpful;

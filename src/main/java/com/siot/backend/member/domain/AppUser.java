@@ -122,6 +122,11 @@ public class AppUser {
         this.passwordHash = passwordHash;
     }
 
+    /** ADM-01 */
+    public void changeRole(Role role) {
+        this.role = role;
+    }
+
     public void changeLanguage(String language) {
         this.language = language;
     }
