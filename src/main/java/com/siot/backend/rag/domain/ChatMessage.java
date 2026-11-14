@@ -48,6 +48,10 @@ public class ChatMessage {
     @Column(name = "referral_topics", nullable = false, columnDefinition = "text[]")
     private List<String> referralTopics = new ArrayList<>();
 
+    /** CB-15: 답변만. 답한 언어 (질문 언어, 판별 못 하면 대화 언어). 기존 답변은 null → 대화 언어 */
+    @Column(length = 10)
+    private String language;
+
     // ADM-08: 부정 평가 답변 / 미응답 질문 관리자 처리
     @Column(name = "is_reviewed", nullable = false)
     private boolean reviewed = false;
@@ -78,7 +82,7 @@ public class ChatMessage {
     }
 
     public static ChatMessage answer(ChatConversation conversation, String content, AnswerStatus status,
-                                     boolean emergency, List<ReferralTopic> referralTopics) {
+                                     boolean emergency, List<ReferralTopic> referralTopics, String language) {
         ChatMessage message = new ChatMessage();
         message.conversation = conversation;
         message.role = ROLE_ASSISTANT;
@@ -86,6 +90,7 @@ public class ChatMessage {
         message.answerStatus = status.name();
         message.emergency = emergency;
         message.referralTopics = new ArrayList<>(referralTopics.stream().map(Enum::name).toList());
+        message.language = language;
         return message;
     }
 

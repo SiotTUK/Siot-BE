@@ -138,8 +138,10 @@ public class ChatService {
             List<ChatMessageSource> messageSources = sources.getOrDefault(m.getId(), List.of());
             List<Long> chunkIds = messageSources.stream()
                     .filter(s -> s.getChunk() != null).map(s -> s.getChunk().getId()).toList();
+            // CB-15: 답변은 답한 언어로 다시 보여 준다 (연락처 라벨·담당 기관 안내·관련 페이지 제목)
+            String messageLanguage = m.getLanguage() != null ? m.getLanguage() : language;
             return toResponse(m, messageSources.stream().map(ChatService::toResponse).toList(),
-                    relatedPageFinder.find(chunkIds, language), language);
+                    relatedPageFinder.find(chunkIds, messageLanguage), messageLanguage);
         }).toList();
     }
 
@@ -195,7 +197,9 @@ public class ChatService {
             conversation.touch(OffsetDateTime.now(clock));
             return new Saved(conversation, message, history);
         });
-        String language = saved.conversation().getLanguage();
+        // CB-15: 질문 언어로 답한다. 판별하지 못하면 화면(대화) 언어
+        //   (원문으로 판별: 가린 자리의 "[전화번호]" 같은 한국어 표시에 끌려가지 않도록)
+        String language = QuestionLanguageDetector.detect(trimmed).orElse(saved.conversation().getLanguage());
 
         // 2~4. 검색 → 근거 판단 → 답변 생성 (트랜잭션 밖)
         Outcome outcome = answer(question, language, saved.history());
@@ -208,7 +212,8 @@ public class ChatService {
         ChatMessage answer = tx.execute(status -> {
             ChatConversation conversation = conversationRepository.getReferenceById(saved.conversation().getId());
             ChatMessage message = messageRepository.save(
-                    ChatMessage.answer(conversation, outcome.text(), outcome.status(), emergency, referralTopics));
+                    ChatMessage.answer(conversation, outcome.text(), outcome.status(), emergency, referralTopics,
+                            language));
             List<ChatMessageSource> sources = new ArrayList<>();
             for (int i = 0; i < outcome.sources().size(); i++) {
                 RetrievedChunk chunk = outcome.sources().get(i);

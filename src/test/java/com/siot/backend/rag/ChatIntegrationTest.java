@@ -276,6 +276,33 @@ class ChatIntegrationTest {
                 .andExpect(jsonPath("$.data[1].emergencyContacts[0].number").value("119"));
     }
 
+    // ---------------------------------------------------------------- CB-15
+
+    @Test
+    void answersInQuestionLanguageEvenIfConversationLanguageDiffers() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+
+        // 한국어 대화에서 베트남어로 질문 → 근거 없음 안내도 베트남어
+        ask(session, conversationId, "Thuế ô tô nộp khi nào?")
+                .andExpect(jsonPath("$.data.answer.answerStatus").value("NO_EVIDENCE"))
+                .andExpect(jsonPath("$.data.answer.content")
+                        .value(org.hamcrest.Matchers.startsWith("Tôi không tìm thấy")));
+
+        // 영어 응급 질문 → 연락처 라벨도 영어, 대화 기록에서도 영어
+        ask(session, conversationId, "There is a fire in my building")
+                .andExpect(jsonPath("$.data.answer.emergencyContacts[0].label").value("Fire & Ambulance"));
+        mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(session))
+                .andExpect(jsonPath("$.data[1].content").value(org.hamcrest.Matchers.startsWith("Tôi không tìm thấy")))
+                .andExpect(jsonPath("$.data[3].emergencyContacts[0].label").value("Fire & Ambulance"));
+
+        // 판별하지 못하면 대화 언어 (한국어)
+        ask(session, conversationId, "CL-01")
+                .andExpect(jsonPath("$.data.answer.content")
+                        .value(org.hamcrest.Matchers.startsWith("자료에서 찾지 못했어요")));
+    }
+
     // ---------------------------------------------------------------- CB-11
 
     @Test
