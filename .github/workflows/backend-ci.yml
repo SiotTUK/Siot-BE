@@ -12,10 +12,17 @@ concurrency:
   group: backend-ci-${{ github.ref }}
   cancel-in-progress: true
 
+# GCP 인증은 Workload Identity Federation (키 파일·Secret 없음).
+# 아래 값은 식별자일 뿐 비밀 값이 아니다. GCP 쪽 설정: docs/deployment.md
 env:
-  REGISTRY: ghcr.io
-  # GHCR 이미지 이름은 소문자여야 한다
-  IMAGE_NAME: siottuk/siot-backend
+  GCP_PROJECT_ID: siot-514601
+  GCP_WIF_PROVIDER: projects/511164544275/locations/global/workloadIdentityPools/github/providers/siot-be
+  GCP_SERVICE_ACCOUNT: github-deployer@siot-514601.iam.gserviceaccount.com
+  REGISTRY: asia-northeast3-docker.pkg.dev
+  IMAGE: asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend
+  VM_NAME: instance-20261113-012436
+  VM_ZONE: asia-northeast3-c
+  DEPLOY_DIR: /opt/siot
 
 jobs:
   test:
@@ -49,31 +56,34 @@ jobs:
           retention-days: 7
 
   image:
-    name: Docker image → GHCR
+    name: Docker image → Artifact Registry
     needs: test
     # PR에서는 이미지를 push 하지 않는다
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      id-token: write   # Workload Identity Federation
     steps:
       - uses: actions/checkout@v5
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: google-github-actions/auth@v2
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Docker login (Artifact Registry)
+        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
+
+      - uses: docker/setup-buildx-action@v3
 
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -88,3 +98,49 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to GCP VM
+    needs: image
+    # main 에 반영된 커밋만 배포한다 (태그는 이미지만 만든다)
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Copy docker-compose.yml
+        run: |
+          gcloud compute scp docker-compose.yml "${VM_NAME}:/tmp/docker-compose.yml" --project "$GCP_PROJECT_ID" --zone "$VM_ZONE" --quiet --strict-host-key-checking=no
+
+      - name: Deploy and wait for readiness
+        run: |
+          TAG="sha-${GITHUB_SHA::7}"
+          gcloud compute ssh "$VM_NAME" --project "$GCP_PROJECT_ID" --zone "$VM_ZONE" --quiet --strict-host-key-checking=no --command "
+              set -e
+              cd $DEPLOY_DIR
+              sudo mv /tmp/docker-compose.yml docker-compose.yml
+              # 배포한 커밋의 이미지로 고정한다 (롤백: 이전 sha- 태그로 바꾸고 up -d)
+              sudo sed -i 's#^BACKEND_IMAGE=.*#BACKEND_IMAGE=$IMAGE:$TAG#' .env
+              sudo docker compose pull -q backend
+              sudo docker compose up -d --no-build
+              for i in \$(seq 1 36); do
+                if curl -fsS localhost:8080/actuator/health/readiness >/dev/null 2>&1; then
+                  echo 'Deployed $TAG'; sudo docker image prune -f >/dev/null; exit 0
+                fi
+                sleep 5
+              done
+              echo 'Backend did not become ready'; sudo docker compose logs --tail 100 backend; exit 1
+            "

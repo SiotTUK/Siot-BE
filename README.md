@@ -9,7 +9,7 @@ Siot 서비스의 Spring Boot 백엔드입니다. (프론트엔드는 별도 브
 | DB | PostgreSQL 16 + pgvector, Flyway |
 | Session | Spring Session Data Redis |
 | Monitoring | Spring Boot Actuator (`/actuator/health`) |
-| CI/CD | GitHub Actions → GHCR (`ghcr.io/siottuk/siot-backend`) |
+| CI/CD | GitHub Actions → Artifact Registry → GCP VM 자동 배포 ([배포 가이드](docs/deployment.md)) |
 
 ## 빠른 시작
 

@@ -1,7 +1,15 @@
 # 배포 가이드 (GCP)
 
 > 배포 대상: **GCP Compute Engine VM 1대 + Docker Compose** (아키텍처의 "단일 서버").
-> VM이 아직 만들어지지 않아 **실제 배포는 수행하지 않았습니다.** 아래는 준비된 구조와 절차입니다.
+> `main` 에 push 하면 GitHub Actions 가 테스트 → 이미지 push(Artifact Registry) → VM 배포까지 자동으로 한다.
+
+| 항목 | 값 |
+|---|---|
+| GCP 프로젝트 | `siot-514601` (번호 `511164544275`) |
+| VM | `instance-20261113-012436` · `asia-northeast3-c` · e2-small(2GB) + 스왑 2GB · Ubuntu 22.04 |
+| 외부 IP | `34.22.97.3` (고정 IP `siot-backend-ip`) |
+| 배포 폴더 | VM `/opt/siot` (`docker-compose.yml`, `.env` — root 소유, 권한 600) |
+| 이미지 | `asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend` |
 
 ## 1. 구성
 
@@ -9,25 +17,31 @@
 |---|---|---|
 | 서버 | Compute Engine VM | Docker, Docker Compose 설치 |
 | DB / Redis | VM 안의 컨테이너 (`docker-compose.yml`) | 데이터는 Docker 볼륨에 저장 |
-| 이미지 저장소 | GHCR `ghcr.io/siottuk/siot-backend` | CI가 push, VM이 pull |
+| 이미지 저장소 | Artifact Registry `asia-northeast3-docker.pkg.dev/siot-514601/siot` | CI가 push, VM이 pull (VM 서비스 계정에 읽기 권한) |
 | 메일 | Gmail SMTP (`smtp.gmail.com:587`) | 팀 공용 Gmail 계정 + 앱 비밀번호 |
 | 파일 저장소 | Cloud Storage (GCS) | PDF·안내문 원본. 기존 아키텍처의 Amazon S3를 대체 |
 | AI | Gemini API | |
 
-## 2. CI 파이프라인 (`.github/workflows/backend-ci.yml`)
+## 2. CI/CD 파이프라인 (`.github/workflows/backend-ci.yml`)
 
 | 트리거 | 동작 |
 |---|---|
 | `main` 브랜치 대상 PR | Gradle test + bootJar 빌드 (이미지 push 없음) |
-| `main` 브랜치 push | test → 이미지 빌드 → GHCR push (`latest`, `sha-<커밋>`) |
-| `backend-v1.2.3` 태그 push | test → 이미지 push (`1.2.3`, `sha-<커밋>`) |
-| 수동 실행 (workflow_dispatch) | 위와 동일 |
+| `main` 브랜치 push | test → 이미지 push (`latest`, `sha-<커밋>`) → **VM 배포** |
+| `backend-v1.2.3` 태그 push | test → 이미지 push (`1.2.3`, `sha-<커밋>`) (배포 안 함) |
+| 수동 실행 (workflow_dispatch, main) | `main` push 와 동일 |
 
-GHCR push는 워크플로의 `GITHUB_TOKEN`(`packages: write`)을 사용하므로 별도 Secret이 필요 없습니다.
-조직 설정에서 다음을 확인합니다.
+### GCP 인증: Workload Identity Federation
 
-- Settings → Actions → General → Workflow permissions 에서 패키지 쓰기 허용
-- 첫 push 이후 GHCR 패키지는 private 로 생성됨 → VM에서 pull 하려면 `read:packages` 권한의 PAT 필요
+GitHub Actions 가 발급하는 OIDC 토큰으로 GCP 서비스 계정 `github-deployer` 를 사용한다.
+**서비스 계정 키 파일과 GitHub Secret 이 없다.** 워크플로의 `env` 값(프로젝트 번호, Provider 이름, 서비스 계정 이메일)은 식별자일 뿐 비밀 값이 아니다.
+
+| GCP 리소스 | 설정 |
+|---|---|
+| Workload Identity Pool / Provider | `github` / `siot-be` — `SiotTUK/Siot-BE` 저장소의 `main` 브랜치와 `backend-v*` 태그만 허용 |
+| 서비스 계정 `github-deployer` | Artifact Registry `siot` 저장소 쓰기, VM 1대에 관리자 SSH(OS Login), VM 기본 서비스 계정 사용, Compute 읽기 |
+
+배포 job 은 `gcloud compute ssh`(OS Login)로 VM 에 접속해 `.env` 의 `BACKEND_IMAGE` 를 `sha-<커밋>` 으로 바꾸고 `docker compose up -d` 한 뒤 readiness 가 200 이 될 때까지(최대 3분) 기다린다. 실패하면 backend 로그를 출력하고 job 이 실패한다.
 
 ## 3. Gmail SMTP 준비
 
@@ -51,8 +65,8 @@ DB_USERNAME=<운영 DB 계정>
 DB_PASSWORD=<강력한 비밀번호>
 REDIS_PASSWORD=<강력한 비밀번호>
 SESSION_TIMEOUT=14d
-BACKEND_PORT=8080
-BACKEND_IMAGE=ghcr.io/siottuk/siot-backend:<배포할 태그>
+BACKEND_PORT=127.0.0.1:8080
+BACKEND_IMAGE=asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend:<배포할 태그>   # CI 가 배포 때마다 바꿈
 
 # 메일 (Gmail SMTP)
 MAIL_HOST=smtp.gmail.com
@@ -79,31 +93,28 @@ FRONTEND_BASE_URL=https://<서비스 도메인>
   이렇게 하면 서비스 계정 키 파일을 서버에 두지 않아도 됩니다. (애플리케이션 기본 사용자 인증 정보 사용)
 - 로컬 개발은 `gcloud auth application-default login` 또는 별도 개발 버킷을 사용합니다.
 
-## 6. VM 준비 (최초 1회)
+## 6. VM 준비 (완료됨, 다시 만들 때 참고)
+
+1. Docker Engine + Compose plugin 설치 (Docker 공식 apt 저장소), 스왑 2GB (`/swapfile`)
+2. `/opt/siot` 에 `docker-compose.yml`, `.env`(권한 600) 배치. DB·Redis 비밀번호는 VM 에서 `openssl rand -hex 24` 로 생성
+3. `sudo gcloud auth configure-docker asia-northeast3-docker.pkg.dev` (root 의 docker 가 Artifact Registry 사용)
+4. VM 메타데이터 `enable-oslogin=TRUE`
+
+- 방화벽: 외부에는 Nginx(80/443)만 연다. 8080·5432·6379는 열지 않는다. `.env` 의 `BACKEND_PORT=127.0.0.1:8080` 으로 백엔드도 VM 내부에만 바인딩한다.
+- VM 디스크 백업(스냅샷 일정)을 설정해 DB 볼륨을 보호한다.
+- 접속: `gcloud compute ssh instance-20261113-012436 --zone asia-northeast3-c` (OS Login, 프로젝트 권한 필요)
+
+## 7. 수동 배포 / 롤백
+
+평소에는 CI 가 배포한다. VM 에서 직접 할 때:
 
 ```bash
-# Docker 설치 후
-echo <PAT(read:packages)> | docker login ghcr.io -u <github-id> --password-stdin
-mkdir -p ~/siot && cd ~/siot
-# docker-compose.yml, .env 배치 (.env 권한 600)
-```
-
-- 방화벽: 외부에는 Nginx(80/443)만 엽니다. 8080·5432·6379는 열지 않습니다. (compose 에서 DB/Redis는 127.0.0.1에만 바인딩)
-- VM 디스크 백업(스냅샷 일정)을 설정해 DB 볼륨을 보호합니다.
-
-## 7. 배포 / 롤백
-
-```bash
-cd ~/siot
-docker compose pull backend
-docker compose up -d --no-build
-docker compose ps
+cd /opt/siot
+sudo docker compose pull backend
+sudo docker compose up -d --no-build
+sudo docker compose ps
 curl -f localhost:8080/actuator/health/readiness
 ```
 
-롤백: `.env` 의 `BACKEND_IMAGE` 를 이전 `sha-` 태그로 바꾸고 `docker compose up -d --no-build`.
-
-## 8. 자동 배포 (VM 생성 후 추가 예정)
-
-CI의 `image` job 뒤에 SSH 배포 job 을 추가합니다. 필요한 Secret 예시:
-`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`. VM에서 실행할 명령은 7번과 같습니다.
+롤백: `.env` 의 `BACKEND_IMAGE` 를 이전 `sha-` 태그로 바꾸고 `sudo docker compose up -d --no-build`.
+태그 목록: `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend`

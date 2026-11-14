@@ -46,7 +46,7 @@ services:
   backend:
     build:
       context: .
-    image: ${BACKEND_IMAGE:-ghcr.io/siottuk/siot-backend:latest}
+    image: ${BACKEND_IMAGE:-asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend:latest}
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}

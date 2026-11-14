@@ -7,7 +7,7 @@
 
 | 항목 | 값 |
 |---|---|
-| 이미지 | `ghcr.io/siottuk/siot-backend:<tag>` |
+| 이미지 | `asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend:<tag>` |
 | 내부 포트 | `8080` |
 | Compose 서비스명 | `backend` (같은 네트워크에서 `http://backend:8080`) |
 | API prefix | `/api/**` |
@@ -28,7 +28,7 @@ services:
         condition: service_healthy
 
   backend:
-    image: ghcr.io/siottuk/siot-backend:latest
+    image: asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend:latest
     # 통합 환경에서는 외부 포트를 열지 않고 Nginx 를 통해서만 접근하는 것을 권장
     expose:
       - "8080"
