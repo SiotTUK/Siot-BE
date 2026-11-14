@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Getter
 @Entity
@@ -44,7 +44,7 @@ public class Notification {
     private Integer sourceRevision;
 
     @Column(name = "scheduled_at", nullable = false)
-    private LocalDateTime scheduledAt;
+    private OffsetDateTime scheduledAt;
 
     @Column(nullable = false, length = 30)
     private String status = "PENDING";
@@ -53,7 +53,7 @@ public class Notification {
     private int attempts = 0;
 
     @Column(name = "locked_at")
-    private LocalDateTime lockedAt;
+    private OffsetDateTime lockedAt;
 
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
@@ -68,7 +68,7 @@ public class Notification {
     private String body;
 
     @Column(name = "delivered_at")
-    private LocalDateTime deliveredAt;
+    private OffsetDateTime deliveredAt;
 
     // NTF-05: 이메일 채널 발송 결과 (null 이면 이메일 발송 대상 아님)
     @Enumerated(EnumType.STRING)
@@ -82,12 +82,12 @@ public class Notification {
     private String emailLastError;
 
     @Column(name = "email_sent_at")
-    private LocalDateTime emailSentAt;
+    private OffsetDateTime emailSentAt;
 
     @Column(name = "read_at")
-    private LocalDateTime readAt;
+    private OffsetDateTime readAt;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }

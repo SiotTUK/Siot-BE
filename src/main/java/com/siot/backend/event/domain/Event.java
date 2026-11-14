@@ -8,7 +8,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.LocalTime;
 
 @Getter
@@ -44,7 +44,7 @@ public class Event {
     private LocalTime endsAt;
 
     @Column(name = "application_deadline")
-    private LocalDateTime applicationDeadline;
+    private OffsetDateTime applicationDeadline;
 
     @Column(name = "time_is_unknown", nullable = false)
     private boolean timeUnknown = false;
@@ -97,9 +97,9 @@ public class Event {
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 }

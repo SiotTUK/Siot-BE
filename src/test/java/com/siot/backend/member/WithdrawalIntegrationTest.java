@@ -90,7 +90,6 @@ class WithdrawalIntegrationTest {
         assertThat(count("notification", userId)).isZero();
         assertThat(count("notification_preference", userId)).isZero();
         assertThat(count("chat_conversation", userId)).isZero();
-        assertThat(count("refresh_token", userId)).isZero();
 
         // 오류 신고는 남기고 작성자만 지운다
         assertThat(jdbcTemplate.queryForObject(
@@ -126,9 +125,6 @@ class WithdrawalIntegrationTest {
                 "INSERT INTO chat_conversation (user_id) VALUES (?) RETURNING conversation_id", Long.class, userId);
         jdbcTemplate.update(
                 "INSERT INTO chat_message (conversation_id, role, content) VALUES (?, 'USER', 'q')", conversationId);
-        jdbcTemplate.update("""
-                INSERT INTO refresh_token (user_id, token_hash, expires_at)
-                VALUES (?, 'h', now() + interval '1 day')""", userId);
         return jdbcTemplate.queryForObject("""
                 INSERT INTO content_report (reporter_user_id, guide_id, reason)
                 VALUES (?, ?, 'TRANSLATION') RETURNING report_id""", Long.class, userId, guideId);

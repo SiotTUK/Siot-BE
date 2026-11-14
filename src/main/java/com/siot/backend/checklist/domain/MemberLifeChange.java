@@ -8,7 +8,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 등록한 생활 변화 (lifeChanges[] = { id, date }).
@@ -36,11 +36,11 @@ public class MemberLifeChange {
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 
     public static MemberLifeChange of(Long userId, String lifeChangeCode, LocalDate baseDate) {
         MemberLifeChange change = new MemberLifeChange();

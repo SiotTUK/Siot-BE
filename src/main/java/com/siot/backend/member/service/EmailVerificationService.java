@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * NTF-09: 가입한 뒤의 이메일 인증. 새 회원은 가입 때 인증을 마치므로(SignupVerificationService),
@@ -69,7 +69,7 @@ public class EmailVerificationService {
             case EXPIRED -> throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_EXPIRED);
             case VERIFIED -> { }
         }
-        user.markEmailVerified(LocalDateTime.now(clock));
+        user.markEmailVerified(OffsetDateTime.now(clock));
         return MemberResponse.from(user);
     }
 

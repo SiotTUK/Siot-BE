@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Getter
 @Entity
@@ -50,12 +50,12 @@ public class DocumentVersion {
     private String processingError;
 
     @Column(name = "processed_at")
-    private LocalDateTime processedAt;
+    private OffsetDateTime processedAt;
 
     @Column(name = "is_current", nullable = false)
     private boolean current = false;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }

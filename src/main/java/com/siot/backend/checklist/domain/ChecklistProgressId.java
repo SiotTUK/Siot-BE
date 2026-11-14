@@ -13,4 +13,5 @@ import java.io.Serializable;
 public class ChecklistProgressId implements Serializable {
     private Long userId;
     private Long guideId;
+    private String periodKey;
 }

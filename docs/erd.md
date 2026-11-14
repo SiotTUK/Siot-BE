@@ -4,6 +4,7 @@
 
 - `V2026_11_14_0425__email_login_and_member_only.sql` — 아이디 = 이메일, 비회원 데이터 삭제 (이메일 인증·비밀번호 재설정·이메일 알림은 유지)
 - `V2026_11_14_0430__checklist_rules_onboarding.sql` — 온보딩 답 5개, 거주 정보, 완료/해당 없음, 생활 변화, 항목 상세(CHK-06), 규칙표 항목 등록
+- `V2026_11_14_0632__erd_review_integrity_indexes.sql` — 회차별 완료 기록, 외래키 삭제 동작, 중복 방지, 인덱스, refresh_token·display_name 삭제, CHECK, TIMESTAMPTZ
 
 ## 원칙
 
@@ -34,17 +35,16 @@ erDiagram
     app_user {
         bigint user_id PK
         varchar email UK "로그인 ID, 소문자"
-        timestamp email_verified_at "NULL=미인증"
+        timestamptz email_verified_at "NULL=미인증"
         varchar password_hash
-        varchar display_name
         varchar role
         varchar language "ko/en/zh/vi"
         varchar user_type "F02 NEW/LIVING, NULL=온보딩 전"
         date entry_date "F03 (선택)"
         varchar purpose "F04 STUDY/WORK/FAMILY/OTHER, NULL=OTHER"
         date stay_expiry "F06 (선택)"
-        timestamp created_at
-        timestamp updated_at
+        timestamptz created_at
+        timestamptz updated_at
     }
     member_residence {
         bigint user_id PK,FK
@@ -60,7 +60,7 @@ erDiagram
         int sort_order
         text source_url "출처 링크"
         varchar contact "문의 전화"
-        timestamp updated_at "CHK-06 updatedAt"
+        timestamptz updated_at "CHK-06 updatedAt"
     }
     guide_translation {
         varchar language PK
@@ -85,19 +85,20 @@ erDiagram
     checklist_progress {
         bigint user_id PK,FK
         bigint guide_id PK,FK
+        varchar period_key PK "''=1회, YYYY-MM=세금 회차, YYYY-MM-DD=생활 변화 기준일"
         varchar status "DONE / NOT_APPLICABLE"
-        timestamp updated_at
+        timestamptz updated_at
     }
     member_life_change {
         bigint user_id PK,FK
         varchar life_change_code PK "LC-01~LC-08"
         date base_date "기준일"
-        timestamp created_at
-        timestamp updated_at
+        timestamptz created_at
+        timestamptz updated_at
     }
 ```
 
-변경 없는 테이블: `calendar_schedule`, `event*`, `document*`, `guide_document_reference`, `chat_message*`, `notification_preference`, `refresh_token`.
+그 밖의 테이블(`calendar_schedule`, `event*`, `document*`, `guide_document_reference`, `chat_*`, `notification*`, `content_report`)은 Notion ERD 페이지에 컬럼까지 정리되어 있다. 모든 시각 컬럼은 `TIMESTAMPTZ` 이고 Java 에서는 `OffsetDateTime` 으로 매핑한다.
 
 ## 규칙표 ↔ 테이블
 
@@ -109,7 +110,7 @@ erDiagram
 | residence[] (F05) | `member_residence` (행 없음 = 안 고름) |
 | stayExpiry (F06) | `app_user.stay_expiry` — 없으면 CL-05 대신 입력 안내만 |
 | language | `app_user.language` |
-| done[] / notApplicable[] | `checklist_progress.status` — 답을 바꿔도 지우지 않음 |
+| done[] / notApplicable[] | `checklist_progress.status` — 회차(`period_key`)별 저장, 답을 바꿔도 지우지 않음 |
 | lifeChanges[] { id, date } | `member_life_change` — 같은 변화 재등록 시 `base_date` 만 변경 |
 | 항목 상세 (CHK-06) id, title, badge, place, docs[], fee, law, penalty, source, updatedAt | `guide.code`, `guide_translation.*`, `guide.source_url`, `guide.updated_at` |
 | CL-04 조건별 문구 + 공통 경고 | `guide_variant_translation` (variant_key = 체류 목적 / WARNING) |
@@ -155,3 +156,20 @@ en / zh / vi 문구와 장소·준비물·과태료 등 상세는 관리자 화�
 | 이전 온보딩 정의서 대체 | `report_type`, `employment_status`, `region_code` 삭제 |
 
 기존 회원 중 이메일이 없거나 겹치는 계정은 `{기존 login_id}@legacy.siot.invalid` 로 바뀌고 미인증 상태가 된다. 기존에 인증한 알림 이메일은 그대로 로그인 ID가 된다. 이전 온보딩 값(지역·이사일 등)은 새 규칙에 대응하는 값이 없어 버린다.
+
+## ERD 검토 반영 (0632)
+
+| 문제 | 변경 |
+|---|---|
+| 생활 변화를 다시 등록하면 예전 완료 기록이 남음 | `checklist_progress.period_key` = 생활 변화 기준일(YYYY-MM-DD) → 새 기준일의 할 일은 다시 TODO |
+| 매년 돌아오는 세금(CL-10·11)이 한 번 완료하면 계속 완료 | `period_key` = 납부 회차(YYYY-MM, 납부 시작 월) |
+| 행사·항목·문서를 지울 수 없음 (ON DELETE 없음) | 번역·구독·근거 연결·문서 하위는 CASCADE, 알림·신고·일정·답변 근거는 SET NULL |
+| 같은 알림이 두 번 생길 수 있음 | UNIQUE `notification(user_id, source_key)` |
+| 문서 버전·조각 번호 중복, 현재 버전 여러 개 | UNIQUE `(document_id, version_no)`, `(document_version_id, chunk_no)`, 부분 UNIQUE `document_version(document_id) WHERE is_current` |
+| 알림 대상 4개 중 하나만 써야 하는데 강제 안 됨 | CHECK `num_nonnulls(...) <= 1` |
+| 외래키·목록 조회 인덱스 없음 | 알림·대화·메시지 목록, 행사 시작일, 신고 상태, FK 반대쪽 인덱스 추가 |
+| 쓰지 않는 테이블·컬럼 | `refresh_token` 삭제, `app_user.display_name` 삭제 |
+| 허용 값 제한 없음 | `role`, `guide.kind`, 언어 컬럼, `notification.email_status` CHECK |
+| 시간대 없는 시각 | 모든 `TIMESTAMP` → `TIMESTAMPTZ` (Java `OffsetDateTime`) |
+
+세금 납부 기간(CL-10 6/16~6/30·12/16~12/31, CL-11 7/16~7/31·9/16~9/30)은 체크리스트 규칙(코드)이 기준이다. `calendar_schedule` 은 주민세처럼 체크리스트 항목이 아닌 공통 일정에 쓴다.

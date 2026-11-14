@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 체크리스트 항목·생활 변화 할 일의 콘텐츠. 문구는 {@link GuideTranslation} 에 언어별로 저장한다.
@@ -60,14 +60,14 @@ public class Guide {
     private Long updatedBy;
 
     @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
+    private OffsetDateTime deletedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 
     /** CHK-06 updatedAt */
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 }

@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Getter
 @Entity
@@ -23,8 +23,9 @@ public class ChatMessageSource {
     @JoinColumn(name = "message_id", nullable = false)
     private ChatMessage message;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "chunk_id", nullable = false)
+    /** 문서가 삭제되면 NULL (답변 근거 기록은 남긴다) */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chunk_id")
     private DocumentChunk chunk;
 
     @Column(name = "relevance_score")
@@ -35,5 +36,5 @@ public class ChatMessageSource {
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }

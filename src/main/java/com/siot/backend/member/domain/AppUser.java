@@ -8,7 +8,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -36,13 +36,10 @@ public class AppUser {
 
     /** 이메일 인증 완료 시각 (null 이면 미인증 → 비밀번호 재설정·이메일 알림 대상 아님) */
     @Column(name = "email_verified_at")
-    private LocalDateTime emailVerifiedAt;
+    private OffsetDateTime emailVerifiedAt;
 
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
-
-    @Column(name = "display_name", nullable = false, length = 100)
-    private String displayName;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -81,18 +78,17 @@ public class AppUser {
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 
     /** M-01: 인증 코드를 확인한 이메일·비밀번호로 가입. 가입 직후 온보딩(사용자 유형)으로 이동한다. */
     public static AppUser create(String email, String passwordHash) {
         AppUser user = new AppUser();
         user.email = email;
         user.passwordHash = passwordHash;
-        user.displayName = email;
         return user;
     }
 
@@ -113,7 +109,7 @@ public class AppUser {
     }
 
     /** 가입 이메일 인증 완료 */
-    public void markEmailVerified(LocalDateTime verifiedAt) {
+    public void markEmailVerified(OffsetDateTime verifiedAt) {
         this.emailVerifiedAt = verifiedAt;
     }
 

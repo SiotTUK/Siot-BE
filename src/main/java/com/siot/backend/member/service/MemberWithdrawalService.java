@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
  * app_user 행을 물리 삭제하면 DB FK 규칙(V2__init_schema.sql 외)에 따라 한 트랜잭션 안에서 함께 정리된다.
  * <ul>
  *   <li>CASCADE (삭제): 거주 정보, 체크리스트 완료·해당 없음 기록, 생활 변화, 행사 알림 신청,
- *       알림 설정, 알림, 대화 기록, refresh_token</li>
+ *       알림 설정, 알림, 대화 기록</li>
  *   <li>SET NULL (작성자만 제거): 오류 신고, 관리자 작성·수정 이력, 챗봇 검토자</li>
  *   <li>app_user 컬럼: 이메일·인증 여부, 온보딩 답(입국일·체류 목적·만료일 등)</li>
  * </ul>

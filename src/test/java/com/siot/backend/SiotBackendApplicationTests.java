@@ -65,7 +65,7 @@ class SiotBackendApplicationTests {
     void flywayAppliedAllMigrations() {
         Integer applied = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = true", Integer.class);
-        assertThat(applied).isEqualTo(6);
+        assertThat(applied).isEqualTo(7);
     }
 
     @Test
@@ -174,10 +174,10 @@ class SiotBackendApplicationTests {
     @Test
     @Transactional
     void deletingMemberRemovesOwnedDataAndKeepsHistory() {
-        // M-07: 탈퇴 시 회원 정보·온보딩 답·완료 기록·생활 변화·refresh token 등 물리 삭제
+        // M-07: 탈퇴 시 회원 정보·온보딩 답·완료 기록·생활 변화 등 물리 삭제
         Long userId = jdbcTemplate.queryForObject("""
-                INSERT INTO app_user (email, password_hash, display_name, user_type, purpose)
-                VALUES ('deltest01@example.com', 'x', 'tester', 'NEW', 'WORK') RETURNING user_id""", Long.class);
+                INSERT INTO app_user (email, password_hash, user_type, purpose)
+                VALUES ('deltest01@example.com', 'x', 'NEW', 'WORK') RETURNING user_id""", Long.class);
         Long guideId = jdbcTemplate.queryForObject("""
                 INSERT INTO guide (code, kind, created_by) VALUES ('G-DEL', 'CHECKLIST', ?)
                 RETURNING guide_id""", Long.class, userId);
@@ -187,9 +187,6 @@ class SiotBackendApplicationTests {
         jdbcTemplate.update("""
                 INSERT INTO member_life_change (user_id, life_change_code, base_date)
                 VALUES (?, 'LC-01', DATE '2026-11-01')""", userId);
-        jdbcTemplate.update("""
-                INSERT INTO refresh_token (user_id, token_hash, expires_at)
-                VALUES (?, 'h', now() + interval '1 day')""", userId);
         Long conversationId = jdbcTemplate.queryForObject(
                 "INSERT INTO chat_conversation (user_id) VALUES (?) RETURNING conversation_id", Long.class, userId);
         jdbcTemplate.update(
@@ -200,7 +197,6 @@ class SiotBackendApplicationTests {
         assertThat(count("checklist_progress WHERE user_id = " + userId)).isZero();
         assertThat(count("member_residence WHERE user_id = " + userId)).isZero();
         assertThat(count("member_life_change WHERE user_id = " + userId)).isZero();
-        assertThat(count("refresh_token WHERE user_id = " + userId)).isZero();
         assertThat(count("chat_message WHERE conversation_id = " + conversationId)).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT created_by FROM guide WHERE guide_id = ?", Long.class, guideId)).isNull();
@@ -210,8 +206,8 @@ class SiotBackendApplicationTests {
     void onboardingAnswersAreConstrainedToRuleValues() {
         // 트랜잭션 없이 실행: PostgreSQL 은 제약 위반 후 같은 트랜잭션의 다음 문장을 모두 거부한다
         Long userId = jdbcTemplate.queryForObject("""
-                INSERT INTO app_user (email, password_hash, display_name)
-                VALUES ('cktest01@example.com', 'x', 'tester') RETURNING user_id""", Long.class);
+                INSERT INTO app_user (email, password_hash)
+                VALUES ('cktest01@example.com', 'x') RETURNING user_id""", Long.class);
         try {
             assertThatThrownBy(() -> jdbcTemplate.update(
                     "UPDATE app_user SET purpose = 'TRAVEL' WHERE user_id = ?", userId))
@@ -226,6 +222,70 @@ class SiotBackendApplicationTests {
         } finally {
             jdbcTemplate.update("DELETE FROM app_user WHERE user_id = ?", userId);
         }
+    }
+
+    @Test
+    void checklistProgressIsStoredPerPeriod() {
+        // 세금(CL-10)은 회차별, 생활 변화 할 일은 기준일별로 완료 기록이 따로 남는다
+        Long userId = jdbcTemplate.queryForObject("""
+                INSERT INTO app_user (email, password_hash)
+                VALUES ('period01@example.com', 'x') RETURNING user_id""", Long.class);
+        try {
+            Long tax = jdbcTemplate.queryForObject("SELECT guide_id FROM guide WHERE code = 'CL-10'", Long.class);
+            Long move = jdbcTemplate.queryForObject("SELECT guide_id FROM guide WHERE code = 'LC-01-1'", Long.class);
+            String insert = "INSERT INTO checklist_progress (user_id, guide_id, period_key, status) VALUES (?, ?, ?, 'DONE')";
+            jdbcTemplate.update(insert, userId, tax, "2026-06");
+            jdbcTemplate.update(insert, userId, tax, "2026-12");
+            jdbcTemplate.update(insert, userId, move, "2026-01-10");
+            jdbcTemplate.update(insert, userId, move, "2026-06-01");
+            assertThat(count("checklist_progress WHERE user_id = " + userId)).isEqualTo(4);
+
+            assertThatThrownBy(() -> jdbcTemplate.update(insert, userId, tax, "2026/06"))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        } finally {
+            jdbcTemplate.update("DELETE FROM app_user WHERE user_id = ?", userId);
+        }
+    }
+
+    @Test
+    void notificationTargetAndSourceKeyConstraints() {
+        Long userId = jdbcTemplate.queryForObject("""
+                INSERT INTO app_user (email, password_hash)
+                VALUES ('notif01@example.com', 'x') RETURNING user_id""", Long.class);
+        try {
+            Long guideId = jdbcTemplate.queryForObject("SELECT guide_id FROM guide WHERE code = 'CL-01'", Long.class);
+            Long eventId = jdbcTemplate.queryForObject(
+                    "INSERT INTO event (external_source, external_id) VALUES ('test', ?) RETURNING event_id",
+                    Long.class, "n-" + userId);
+            String insert = """
+                    INSERT INTO notification (user_id, kind, guide_id, event_id, source_key, scheduled_at, title, body)
+                    VALUES (?, 'DEADLINE', ?, ?, ?, now(), 't', 'b')""";
+            jdbcTemplate.update(insert, userId, guideId, null, "CL-01:2027-01-18:D-7");
+
+            // 같은 알림(source_key)은 한 번만
+            assertThatThrownBy(() -> jdbcTemplate.update(insert, userId, guideId, null, "CL-01:2027-01-18:D-7"))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+            // 대상은 하나만
+            assertThatThrownBy(() -> jdbcTemplate.update(insert, userId, guideId, eventId, "x"))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+
+            // 행사를 지워도 알림 기록은 남고 참조만 비워진다
+            jdbcTemplate.update(insert, userId, null, eventId, "EVENT:" + eventId);
+            jdbcTemplate.update("DELETE FROM event WHERE event_id = ?", eventId);
+            assertThat(count("notification WHERE source_key = 'EVENT:" + eventId + "' AND event_id IS NULL")).isEqualTo(1);
+        } finally {
+            jdbcTemplate.update("DELETE FROM app_user WHERE user_id = ?", userId);
+        }
+    }
+
+    @Test
+    void timestampsAreStoredWithTimeZone() {
+        Integer plain = jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_schema = current_schema() AND data_type = 'timestamp without time zone'
+                  AND table_name <> 'flyway_schema_history'""", Integer.class);
+        assertThat(plain).isZero();
+        assertThat(count("information_schema.tables WHERE table_name = 'refresh_token'")).isZero();
     }
 
     private int count(String fromWhere) {

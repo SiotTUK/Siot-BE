@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -62,7 +62,7 @@ public class AuthService {
         try {
             // M-02: 동시 가입은 DB UNIQUE 제약으로 한 번 더 막는다
             AppUser newUser = AppUser.create(email, passwordEncoder.encode(request.password()));
-            newUser.markEmailVerified(LocalDateTime.now(clock));
+            newUser.markEmailVerified(OffsetDateTime.now(clock));
             user = appUserRepository.saveAndFlush(newUser);
         } catch (DataIntegrityViolationException e) {
             throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
