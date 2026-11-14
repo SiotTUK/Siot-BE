@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter
 @Entity
@@ -42,6 +44,10 @@ public class ChatMessage {
     @Column(name = "is_emergency", nullable = false)
     private boolean emergency = false;
 
+    /** CB-11: 답변만. 질문이 판단을 요구해 담당 기관을 안내함 ({@link ReferralTopic} 이름, 비어 있으면 없음) */
+    @Column(name = "referral_topics", nullable = false, columnDefinition = "text[]")
+    private List<String> referralTopics = new ArrayList<>();
+
     // ADM-08: 부정 평가 답변 / 미응답 질문 관리자 처리
     @Column(name = "is_reviewed", nullable = false)
     private boolean reviewed = false;
@@ -72,14 +78,19 @@ public class ChatMessage {
     }
 
     public static ChatMessage answer(ChatConversation conversation, String content, AnswerStatus status,
-                                     boolean emergency) {
+                                     boolean emergency, List<ReferralTopic> referralTopics) {
         ChatMessage message = new ChatMessage();
         message.conversation = conversation;
         message.role = ROLE_ASSISTANT;
         message.content = content;
         message.answerStatus = status.name();
         message.emergency = emergency;
+        message.referralTopics = new ArrayList<>(referralTopics.stream().map(Enum::name).toList());
         return message;
+    }
+
+    public List<ReferralTopic> getReferralTopicList() {
+        return referralTopics.stream().map(ReferralTopic::valueOf).toList();
     }
 
     public boolean isAnswer() {

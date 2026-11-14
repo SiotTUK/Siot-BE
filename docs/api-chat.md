@@ -32,6 +32,7 @@ POST /api/chat/conversations/12/messages
                                "sourceUrl": "https://...", "relevanceScore": 0.82 } ],
                 "relatedPages": [ { "type": "CHECKLIST", "code": "CL-01", "title": "외국인등록" } ],
                 "emergencyContacts": [],
+                "referral": null,
                 "helpful": null,
                 "createdAt": "2026-11-14T16:10:04+09:00" },
   "masked": false } }
@@ -62,6 +63,25 @@ POST /api/chat/conversations/12/messages
 ```json
 "emergencyContacts": [ { "number": "119", "label": "화재·구급" }, { "number": "112", "label": "경찰" } ]
 ```
+
+### 담당 기관 안내 (CB-11)
+
+비자 발급 가능 여부, 법률·의료 판단을 묻는 질문(4개 언어 단어 감지)이면 답변의 `referral` 에 "개인 상황은 판단할 수 없다"는 고정 문구(`notice`)와 담당 기관이 들어 있습니다. 아니면 `null` 입니다. Gemini 지시문과 별개로 서버가 감지해 붙이므로, 답변 내용과 상관없이 항상 표시해 주세요. 대화 기록에서도 다시 보입니다(`chat_message.referral_topics`).
+
+| topic | 기관 | 감지 예 |
+|---|---|---|
+| `VISA` | ☎1345 외국인종합안내센터 | 비자·체류·연장 등 + "가능할까요 / 될까요 / Can I" ("비자 연장 서류는?" 같은 절차 질문은 제외) |
+| `LEGAL` | ☎132 대한법률구조공단 | 불법인가요, 고소, 소송, 변호사, 처벌 |
+| `MEDICAL` | ☎119 구급상황관리센터 | 증상, 진단, 아파요, 약 먹어도, 부작용 |
+
+```json
+"referral": {
+  "notice": "개인 상황에 대한 판단(비자 발급 가능 여부, 법률·의료 판단)은 해 드릴 수 없어요. 정확한 답은 아래 기관에 확인해 주세요.",
+  "contacts": [ { "topic": "VISA", "number": "1345", "label": "외국인종합안내센터 (비자·체류)" } ]
+}
+```
+
+질문 하나에 여러 종류가 있으면 `contacts` 에 VISA → LEGAL → MEDICAL 순서로 모두 들어 있습니다. 응급(`emergencyContacts`)과 함께 나올 수 있으며, 그때는 응급 연락처를 위에 보여 주세요.
 
 ### 관련 페이지 (CB-10)
 
@@ -128,4 +148,4 @@ Gemini 호출 중에는 DB 트랜잭션을 잡지 않습니다.
 
 ## 아직 없는 것 (다음 단계)
 
-담당 기관 안내 강화(CB-11), 질문 언어 판별 강화(CB-15), 관리자 부정 평가·미응답 질문 목록(ADM-08). 질문 횟수는 제한하지 않습니다 (팀 결정).
+질문 언어 판별 강화(CB-15), 관리자 부정 평가·미응답 질문 목록(ADM-08). 질문 횟수는 제한하지 않습니다 (팀 결정).

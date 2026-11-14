@@ -16,9 +16,11 @@ import com.siot.backend.rag.domain.ChatConversation;
 import com.siot.backend.rag.domain.ChatMessage;
 import com.siot.backend.rag.domain.ChatMessageSource;
 import com.siot.backend.rag.domain.DocumentChunk;
+import com.siot.backend.rag.domain.ReferralTopic;
 import com.siot.backend.rag.dto.AskResponse;
 import com.siot.backend.rag.dto.ConversationResponse;
 import com.siot.backend.rag.dto.EmergencyContact;
+import com.siot.backend.rag.dto.Referral;
 import com.siot.backend.rag.dto.RelatedPage;
 import com.siot.backend.rag.dto.SuggestionsResponse;
 import com.siot.backend.rag.dto.MessageResponse;
@@ -199,12 +201,14 @@ public class ChatService {
         Outcome outcome = answer(question, language, saved.history());
         // CB-09: 응급 관련 질문이면 답변과 함께 119/112 를 보여 준다
         boolean emergency = EmergencyDetector.isEmergency(question);
+        // CB-11: 비자 발급 가능 여부·법률·의료 판단 질문이면 고정 안내와 담당 기관을 함께 보여 준다
+        List<ReferralTopic> referralTopics = ReferralDetector.detect(question);
 
         // 5. 답변·근거 저장
         ChatMessage answer = tx.execute(status -> {
             ChatConversation conversation = conversationRepository.getReferenceById(saved.conversation().getId());
             ChatMessage message = messageRepository.save(
-                    ChatMessage.answer(conversation, outcome.text(), outcome.status(), emergency));
+                    ChatMessage.answer(conversation, outcome.text(), outcome.status(), emergency, referralTopics));
             List<ChatMessageSource> sources = new ArrayList<>();
             for (int i = 0; i < outcome.sources().size(); i++) {
                 RetrievedChunk chunk = outcome.sources().get(i);
@@ -331,6 +335,7 @@ public class ChatService {
         return new MessageResponse(message.getId(), message.getRole(), message.getContent(),
                 message.getAnswerStatus(), sources, relatedPages,
                 message.isEmergency() ? EmergencyContact.forLanguage(language) : List.of(),
+                Referral.of(message.getReferralTopicList(), language),
                 message.getHelpful(), message.getCreatedAt());
     }
 

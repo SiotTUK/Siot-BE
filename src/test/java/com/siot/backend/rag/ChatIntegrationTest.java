@@ -276,6 +276,32 @@ class ChatIntegrationTest {
                 .andExpect(jsonPath("$.data[1].emergencyContacts[0].number").value("119"));
     }
 
+    // ---------------------------------------------------------------- CB-11
+
+    @Test
+    void judgmentQuestionShowsReferral() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+
+        ask(session, conversationId, "제 상황이면 비자 연장 가능할까요? 처벌받나요?")
+                .andExpect(jsonPath("$.data.answer.referral.notice").isNotEmpty())
+                .andExpect(jsonPath("$.data.answer.referral.contacts.length()").value(2))
+                .andExpect(jsonPath("$.data.answer.referral.contacts[0].topic").value("VISA"))
+                .andExpect(jsonPath("$.data.answer.referral.contacts[0].number").value("1345"))
+                .andExpect(jsonPath("$.data.answer.referral.contacts[1].topic").value("LEGAL"))
+                .andExpect(jsonPath("$.data.answer.referral.contacts[1].number").value("132"))
+                .andExpect(jsonPath("$.data.question.referral").doesNotExist());
+
+        // 대화 기록에서도 다시 보인다
+        mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(session))
+                .andExpect(jsonPath("$.data[1].referral.contacts[0].number").value("1345"));
+
+        // 일반 질문에는 붙지 않는다
+        ask(session, conversationId, "외국인등록은 어떻게 하나요?")
+                .andExpect(jsonPath("$.data.answer.referral").doesNotExist());
+    }
+
     // ---------------------------------------------------------------- CB-04
 
     @Test
