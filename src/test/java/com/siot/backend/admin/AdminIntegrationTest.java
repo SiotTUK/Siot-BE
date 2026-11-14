@@ -226,6 +226,76 @@ class AdminIntegrationTest {
         return JsonPath.read(body, "$.data.content[*].messageId");
     }
 
+    // ================================================================ NTF-07 안내 내용 변경
+
+    @Test
+    void savingGuideTextRecordsNoticeChangedOnlyForRealChanges() throws Exception {
+        Cookie admin = login(ADMIN_EMAIL);
+        String code = "T-" + ThreadLocalRandom.current().nextInt(100_000, 999_999);
+        jdbcTemplate.update("INSERT INTO guide (code, kind) VALUES (?, 'CHECKLIST')", code);
+        long guideId = jdbcTemplate.queryForObject("SELECT guide_id FROM guide WHERE code = ?", Long.class, code);
+        jdbcTemplate.update("INSERT INTO guide_translation (guide_id, language, title) VALUES (?, 'ko', '처음 제목')",
+                guideId);
+
+        mockMvc.perform(get("/api/admin/guides/{code}/translations/ko", code).cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value("처음 제목"))
+                .andExpect(jsonPath("$.data.noticeChangedAt").doesNotExist());
+
+        // 단순 수정: updated_at 만 바뀌고 notice_changed_at 은 그대로 NULL
+        saveGuide(admin, code, "ko", "오타 고친 제목", false)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value("오타 고친 제목"))
+                .andExpect(jsonPath("$.data.docs[0]").value("여권"))
+                .andExpect(jsonPath("$.data.updatedAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.noticeChangedAt").doesNotExist());
+        assertThat(jdbcTemplate.queryForObject("SELECT notice_changed_at IS NULL FROM guide WHERE guide_id = ?",
+                Boolean.class, guideId)).isTrue();
+        assertThat(jdbcTemplate.queryForObject("SELECT updated_by FROM guide WHERE guide_id = ?",
+                Long.class, guideId)).isEqualTo(memberId(ADMIN_EMAIL));
+
+        // 실제 안내 내용 변경: notice_changed_at 기록
+        saveGuide(admin, code, "ko", "기한이 바뀐 제목", true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.noticeChangedAt").isNotEmpty());
+        assertThat(jdbcTemplate.queryForObject("SELECT notice_changed_at IS NOT NULL FROM guide WHERE guide_id = ?",
+                Boolean.class, guideId)).isTrue();
+
+        // 없던 언어는 새로 만든다
+        mockMvc.perform(get("/api/admin/guides/{code}/translations/en", code).cookie(admin))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("GUIDE_TRANSLATION_NOT_FOUND"));
+        saveGuide(admin, code, "en", "English title", false).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT title FROM guide_translation WHERE guide_id = ? AND language = 'en'",
+                String.class, guideId)).isEqualTo("English title");
+    }
+
+    @Test
+    void savingGuideTextValidatesInput() throws Exception {
+        Cookie admin = login(ADMIN_EMAIL);
+        saveGuide(admin, "NO-SUCH-CODE", "ko", "제목", false)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("GUIDE_NOT_FOUND"));
+        saveGuide(admin, "CL-01", "ja", "제목", false).andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/admin/guides/CL-01/translations/ko").cookie(admin).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"제목\"}"))   // noticeChanged 없음
+                .andExpect(status().isBadRequest());
+
+        Cookie user = signup(newEmail());
+        saveGuide(user, "CL-01", "ko", "제목", false).andExpect(status().isForbidden());
+    }
+
+    private ResultActions saveGuide(Cookie session, String code, String language, String title,
+                                    boolean noticeChanged) throws Exception {
+        return mockMvc.perform(put("/api/admin/guides/{code}/translations/{language}", code, language)
+                .cookie(session).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"" + title + "\",\"docs\":[\"여권\",\" 사진 \"],\"fee\":\"30,000원\","
+                        + "\"noticeChanged\":" + noticeChanged + "}"));
+    }
+
     private ResultActions changeRole(Cookie admin, long memberId, String role) throws Exception {
         return mockMvc.perform(put("/api/admin/members/{id}/role", memberId).cookie(admin).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)

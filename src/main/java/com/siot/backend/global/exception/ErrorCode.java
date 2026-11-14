@@ -35,6 +35,8 @@ public enum ErrorCode {
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."),
     ADMIN_SELF_DEMOTION(HttpStatus.BAD_REQUEST, "자기 자신의 관리자 권한은 내릴 수 없습니다."),
     CHAT_REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "검토 대상 답변을 찾을 수 없습니다."),
+    GUIDE_NOT_FOUND(HttpStatus.NOT_FOUND, "항목을 찾을 수 없습니다."),
+    GUIDE_TRANSLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "이 언어의 문구가 아직 없습니다."),
 
     // ---- 이메일 인증 (M-01 가입 인증 코드, NTF-09) ----
     EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해 주세요."),

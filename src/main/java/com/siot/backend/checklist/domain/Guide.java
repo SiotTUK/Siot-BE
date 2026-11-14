@@ -82,8 +82,19 @@ public class Guide {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
-    /** 관리자가 '안내 내용 변경'으로 저장할 때 호출한다 (단순 수정에는 호출하지 않음) */
-    public void markNoticeChanged(OffsetDateTime changedAt) {
-        this.noticeChangedAt = changedAt;
+    /**
+     * 관리자가 문구를 저장했다. updated_at(CHK-06)은 항상 바뀌고,
+     * NTF-07 '안내 내용 변경'으로 저장한 경우에만 notice_changed_at 도 바뀐다 (오타 수정 등은 바꾸지 않음).
+     */
+    public void recordEdit(Long adminId, boolean noticeChanged, OffsetDateTime now) {
+        this.updatedBy = adminId;
+        this.updatedAt = now;
+        if (noticeChanged) {
+            this.noticeChangedAt = now;
+        }
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 }

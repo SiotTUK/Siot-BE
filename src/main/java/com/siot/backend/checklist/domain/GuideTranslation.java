@@ -57,4 +57,26 @@ public class GuideTranslation {
     /** 출처 이름 (링크는 Guide.sourceUrl) */
     @Column(name = "source_name")
     private String sourceName;
+
+    public static GuideTranslation create(Long guideId, String language) {
+        GuideTranslation translation = new GuideTranslation();
+        translation.guideId = guideId;
+        translation.language = language;
+        return translation;
+    }
+
+    /** 관리자 저장: 보낸 값으로 모두 바꾼다 (빈 값은 지움) */
+    public void update(String title, String summary, String content, String badge, String place,
+                       List<String> docs, String fee, String law, String penalty, String sourceName) {
+        this.title = title;
+        this.summary = summary;
+        this.content = content;
+        this.badge = badge;
+        this.place = place;
+        this.docs = docs == null ? new ArrayList<>() : new ArrayList<>(docs);
+        this.fee = fee;
+        this.law = law;
+        this.penalty = penalty;
+        this.sourceName = sourceName;
+    }
 }
