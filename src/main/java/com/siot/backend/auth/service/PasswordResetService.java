@@ -20,16 +20,15 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Duration;
-import java.util.Locale;
 
 /**
  * M-11: 비밀번호 재설정.
  * <ol>
- *   <li>ID 입력 → 인증된 알림 이메일(NTF-09)이 있으면 재설정 링크 발송</li>
- *   <li>계정·이메일 존재 여부와 관계없이 같은 응답</li>
+ *   <li>이메일(아이디) 입력 → 가입하고 인증(NTF-09)까지 마친 이메일이면 재설정 링크 발송</li>
+ *   <li>가입·인증 여부와 관계없이 같은 응답</li>
  *   <li>링크는 1회용, 30분 후 만료</li>
  *   <li>재설정이 끝나면 그 회원의 모든 세션 삭제</li>
- *   <li>요청 횟수: ID 기준 1분에 1회, 하루 5회</li>
+ *   <li>요청 횟수: 이메일 기준 1분에 1회, 하루 5회</li>
  * </ol>
  * 토큰 원문은 메일 링크에만 들어가고, Redis 에는 SHA-256 해시만 저장한다.
  */
@@ -57,16 +56,16 @@ public class PasswordResetService {
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
-    public void requestReset(String rawLoginId) {
-        String loginId = rawLoginId.trim().toLowerCase(Locale.ROOT);
+    public void requestReset(String rawEmail) {
+        String email = CredentialPolicy.normalizeEmail(rawEmail);
 
-        switch (rateLimiter.tryAcquire("password-reset:" + loginId, REQUEST_INTERVAL, DAILY_LIMIT, Duration.ofDays(1))) {
+        switch (rateLimiter.tryAcquire("password-reset:" + email, REQUEST_INTERVAL, DAILY_LIMIT, Duration.ofDays(1))) {
             case TOO_FREQUENT -> throw new BusinessException(ErrorCode.PASSWORD_RESET_TOO_FREQUENT);
             case LIMIT_EXCEEDED -> throw new BusinessException(ErrorCode.PASSWORD_RESET_DAILY_LIMIT);
             case ALLOWED -> { }
         }
 
-        appUserRepository.findByLoginId(loginId)
+        appUserRepository.findByEmail(email)
                 .filter(AppUser::hasVerifiedEmail)
                 .ifPresent(this::issueToken);
     }
@@ -88,7 +87,7 @@ public class PasswordResetService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PASSWORD_RESET_TOKEN_INVALID));
 
         // 비밀번호 규칙을 먼저 검사해서, 입력 실수로 링크가 소모되지 않게 한다
-        CredentialPolicy.validatePassword(newPassword, user.getLoginId());
+        CredentialPolicy.validatePassword(newPassword, user.getEmail());
         if (!newPassword.equals(passwordConfirm)) {
             throw new BusinessException(ErrorCode.PASSWORD_CONFIRM_MISMATCH);
         }
@@ -101,9 +100,9 @@ public class PasswordResetService {
         redisTemplate.delete(USER_KEY + userId);
 
         user.changePasswordHash(passwordEncoder.encode(newPassword));
-        loginAttemptService.clear(user.getLoginId());
+        loginAttemptService.clear(user.getEmail());
         // 모든 세션 삭제는 커밋 후 (MemberSessionService)
-        eventPublisher.publishEvent(new MemberPasswordResetEvent(user.getId(), user.getLoginId()));
+        eventPublisher.publishEvent(new MemberPasswordResetEvent(user.getId(), user.getEmail()));
     }
 
     private void issueToken(AppUser user) {
@@ -122,7 +121,7 @@ public class PasswordResetService {
                 .queryParam("token", token)
                 .toUriString();
         emailSender.send(mailTemplates.passwordReset(
-                user.getEmail(), user.getLanguage(), user.getLoginId(), link, TOKEN_TTL.toMinutes()));
+                user.getEmail(), user.getLanguage(), link, TOKEN_TTL.toMinutes()));
     }
 
     private String findUserId(String token) {

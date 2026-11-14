@@ -22,12 +22,12 @@ public class PasswordResetController {
     private final PasswordResetService passwordResetService;
 
     /**
-     * 재설정 링크 요청. 계정·이메일이 없어도 같은 202 응답을 준다.
-     * 화면 문구: "등록된 이메일이 있으면 메일을 보냈습니다"
+     * 재설정 링크 요청. 가입·인증 여부와 관계없이 같은 202 응답을 준다.
+     * 화면 문구: "가입·인증된 이메일이면 메일을 보냈습니다"
      */
     @PostMapping
     public ResponseEntity<Void> request(@Valid @RequestBody PasswordResetRequest request) {
-        passwordResetService.requestReset(request.loginId());
+        passwordResetService.requestReset(request.email());
         return ResponseEntity.accepted().build();
     }
 

@@ -22,17 +22,10 @@ com.siot.backend.{기능}
 
 | 경로 | 허용 메서드 | 접근 | 용도 |
 |---|---|---|---|
-| `/api/auth/**` | 전체 | 누구나 | 가입, ID 중복 확인, 로그인·로그아웃, 비밀번호 재설정, CSRF 토큰 |
-| `/api/chat/**` | 전체 | 누구나 | 챗봇 (비회원은 guest_session_id) |
-| `/api/checklists/**` | GET | 누구나 | 체크리스트 항목·상세 |
-| `/api/rules/**` | GET | 누구나 | 생활수칙 |
-| `/api/schedules/**` | GET | 누구나 | 생활 달력·세금 상세 |
-| `/api/events/**` | GET | 누구나 | 행사 목록·상세·추천 |
-| `/api/reports` | POST | 누구나 | 콘텐츠 오류 신고 |
-| `/api/translations/**` | POST | 누구나 | 고지서 사진 번역 |
-| `/api/members/me/**` | 전체 | 로그인 | 내 정보, 체크리스트 진행, 알림 설정 등 **본인 데이터** |
-| `/api/notifications/**` | 전체 | 로그인 | 알림 목록·읽음 |
+| `/api/auth/**` | 전체 | 누구나 | 가입 인증 코드, 가입, 이메일 중복 확인, 로그인·로그아웃, 비밀번호 재설정, CSRF 토큰 |
+| `/api/members/me/**` | 전체 | 로그인 | 내 정보·온보딩 답, 이메일 인증, 체크리스트 진행, 생활 변화, 알림 설정 등 **본인 데이터** |
 | `/api/admin/**` | 전체 | ADMIN | 관리 기능 |
+| 그 외 `/api/**` | 전체 | 로그인 | 홈·체크리스트·생활 달력·행사·챗봇·신고·번역 등 (**비회원 이용 불가**, 11/13 결정) |
 | `/actuator/health`, `/actuator/info` | GET | 누구나 | 헬스 체크 |
 | 그 외 `/actuator/**` | GET | ADMIN | 운영 지표 |
 
@@ -54,7 +47,7 @@ com.siot.backend.{기능}
 curl -c jar.txt -b jar.txt http://localhost:8080/api/auth/csrf
 TOKEN=$(awk '$6=="XSRF-TOKEN"{print $7}' jar.txt)
 curl -c jar.txt -b jar.txt -H "X-XSRF-TOKEN: $TOKEN" -H "Content-Type: application/json" \
-     -d '{"loginId":"tester01","password":"..."}' http://localhost:8080/api/auth/login
+     -d '{"email":"tester01@example.com","password":"..."}' http://localhost:8080/api/auth/login
 ```
 
 **Postman**: Collection의 Pre-request Script에 다음을 넣습니다. (쿠키는 Postman이 자동 관리)
@@ -123,6 +116,7 @@ if (token) pm.request.headers.upsert({ key: 'X-XSRF-TOKEN', value: token });
 
 - 메일은 `global/mail` 의 `EmailSender` 로 보냅니다. (운영: Gmail SMTP, 로컬: Mailpit)
 - `send()` 는 **비동기**이며 실패해도 예외를 던지지 않고 로그만 남깁니다. 발송 결과를 저장해야 하면(예: 알림 이메일 NTF-05의 `notification.email_status`) 호출하는 쪽에서 별도로 처리합니다.
+- 메일은 **인증된 가입 이메일**(`app_user.email_verified_at` 있음)에만 보냅니다. 예외: 인증 코드 메일.
 - 메일 문구는 `resources/messages/mail*.properties` 에 4개 언어(ko 기본, en, zh, vi)로 추가하고 `MailTemplates` 에 메서드를 만듭니다. MessageFormat 문법이라 문구에 작은따옴표(`'`)를 쓰지 않습니다.
 - Gmail 무료 계정은 하루 약 500통 제한이 있으므로, 사용자가 반복 요청할 수 있는 메일은 `RequestRateLimiter` 로 횟수를 제한합니다.
 - 수신자 이메일 주소는 개인정보이므로 로그에 남기지 않습니다.

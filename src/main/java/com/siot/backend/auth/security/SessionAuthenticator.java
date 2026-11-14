@@ -28,14 +28,14 @@ public class SessionAuthenticator {
     private final SecurityContextLogoutHandler logoutHandler = new SecurityContextLogoutHandler();
 
     /**
-     * ID·비밀번호를 검증하고 세션에 로그인 상태를 저장한다.
+     * 이메일·비밀번호를 검증하고 세션에 로그인 상태를 저장한다.
      *
-     * @throws AuthenticationException ID가 없거나 비밀번호가 틀린 경우
+     * @throws AuthenticationException 가입하지 않은 이메일이거나 비밀번호가 틀린 경우
      */
-    public MemberPrincipal login(String loginId, String password,
+    public MemberPrincipal login(String email, String password,
                                  HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = authenticationManager.authenticate(
-                UsernamePasswordAuthenticationToken.unauthenticated(loginId, password));
+                UsernamePasswordAuthenticationToken.unauthenticated(email, password));
         saveToSession(authentication, request, response);
         return (MemberPrincipal) authentication.getPrincipal();
     }
@@ -54,7 +54,7 @@ public class SessionAuthenticator {
 
     private void saveToSession(Authentication authentication,
                                HttpServletRequest request, HttpServletResponse response) {
-        // 세션 고정 공격 방지: 로그인 전 세션(비회원 챗봇 등)이 있으면 세션 ID를 바꾼다
+        // 세션 고정 공격 방지: 로그인 전 세션(CSRF 토큰 등)이 있으면 세션 ID를 바꾼다
         if (request.getSession(false) != null) {
             request.changeSessionId();
         }

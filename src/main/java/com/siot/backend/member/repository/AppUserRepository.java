@@ -7,7 +7,8 @@ import java.util.Optional;
 
 public interface AppUserRepository extends JpaRepository<AppUser, Long> {
 
-    Optional<AppUser> findByLoginId(String loginId);
+    /** @param email 소문자로 정규화한 값 */
+    Optional<AppUser> findByEmail(String email);
 
-    boolean existsByLoginId(String loginId);
+    boolean existsByEmail(String email);
 }

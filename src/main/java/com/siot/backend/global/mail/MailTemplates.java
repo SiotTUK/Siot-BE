@@ -19,8 +19,9 @@ public class MailTemplates {
         return build(to, language, "mail.email-verification", code, validMinutes);
     }
 
-    public EmailMessage passwordReset(String to, String language, String loginId, String link, long validMinutes) {
-        return build(to, language, "mail.password-reset", loginId, link, validMinutes);
+    /** 받는 주소가 곧 계정(아이디)이다 */
+    public EmailMessage passwordReset(String to, String language, String link, long validMinutes) {
+        return build(to, language, "mail.password-reset", to, link, validMinutes);
     }
 
     private EmailMessage build(String to, String language, String key, Object... args) {

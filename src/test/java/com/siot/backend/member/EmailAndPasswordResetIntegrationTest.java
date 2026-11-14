@@ -1,6 +1,7 @@
 package com.siot.backend.member;
 
 import com.siot.backend.TestcontainersConfiguration;
+import com.siot.backend.auth.service.SignupVerificationService;
 import com.siot.backend.global.mail.EmailMessage;
 import com.siot.backend.global.mail.EmailSender;
 import com.siot.backend.global.mail.MailTemplates;
@@ -31,14 +32,13 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * NTF-09 알림 이메일 등록·인증, M-11 비밀번호 재설정 통합 테스트.
+ * M-01 가입 인증 코드, NTF-09 가입 후 이메일 인증, M-11 비밀번호 재설정 통합 테스트.
  * 실제 메일 대신 EmailSender 를 mock 으로 바꿔 보낸 내용을 확인한다.
  */
 @SpringBootTest
@@ -67,21 +67,91 @@ class EmailAndPasswordResetIntegrationTest {
         clearInvocations(emailSender);
     }
 
-    // ================================================================ NTF-09
+    // ================================================================ M-01 가입 인증 코드
 
     @Test
-    void registerEmailWithVerificationCode() throws Exception {
-        Cookie session = signup(newLoginId());
+    void signupRequiresVerifiedEmailCode() throws Exception {
+        String email = newEmail();
 
-        mockMvc.perform(post("/api/members/me/email/verification").cookie(session).with(csrf())
+        // 코드를 확인하지 않으면 가입할 수 없다
+        signupRequest(email).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+
+        mockMvc.perform(post("/api/auth/signup/email-verification").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"User@Example.com\"}"))
+                        .content("{\"email\":\"%s\",\"language\":\"en\"}".formatted(email.toUpperCase())))
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.data.email").value("user@example.com"))
+                .andExpect(jsonPath("$.data.email").value(email))
                 .andExpect(jsonPath("$.data.expiresInSeconds").value(600));
 
         EmailMessage mail = lastMail();
-        assertThat(mail.to()).isEqualTo("user@example.com");
+        assertThat(mail.to()).isEqualTo(email);
+        assertThat(mail.subject()).isEqualTo(mailTemplates.emailVerification(email, "en", "1", 1).subject());
+        String code = extractCode(mail.body());
+
+        confirmSignupCode(email, wrongCode(code))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EMAIL_VERIFICATION_CODE_INVALID"));
+        confirmSignupCode(email, code).andExpect(status().isNoContent());
+
+        signupRequest(email).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.emailVerified").value(true));
+    }
+
+    @Test
+    void signupCodeIsNotSentForRegisteredOrInvalidEmail() throws Exception {
+        String email = newEmail();
+        signup(email);
+
+        requestSignupCode(email).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_EMAIL"));
+        requestSignupCode("not-an-email").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EMAIL_FORMAT"));
+        verify(emailSender, never()).send(any());
+    }
+
+    @Test
+    void signupCodeLimitsAndExpiry() throws Exception {
+        String email = newEmail();
+        requestSignupCode(email).andExpect(status().isAccepted());
+        String code = extractCode(lastMail().body());
+
+        requestSignupCode(email).andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("EMAIL_VERIFICATION_TOO_FREQUENT"));
+
+        for (int i = 0; i < 4; i++) {
+            confirmSignupCode(email, wrongCode(code)).andExpect(jsonPath("$.code").value("EMAIL_VERIFICATION_CODE_INVALID"));
+        }
+        confirmSignupCode(email, wrongCode(code)).andExpect(jsonPath("$.code").value("EMAIL_VERIFICATION_EXPIRED"));
+        confirmSignupCode(email, code).andExpect(jsonPath("$.code").value("EMAIL_VERIFICATION_EXPIRED"));
+        // 다른 이메일의 코드로는 확인되지 않는다
+        confirmSignupCode(newEmail(), code).andExpect(jsonPath("$.code").value("EMAIL_VERIFICATION_EXPIRED"));
+    }
+
+    @Test
+    void verifiedSignupEmailCanBeUsedOnlyOnce() throws Exception {
+        String email = newEmail();
+        signup(email);
+        jdbcTemplate.update("DELETE FROM app_user WHERE email = ?", email);
+
+        signupRequest(email).andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+    }
+
+    // ================================================================ NTF-09 가입 후 인증 (기존 미인증 회원)
+
+    @Test
+    void verifySignupEmailWithCode() throws Exception {
+        String email = newEmail();
+        Cookie session = signup(email);
+        markUnverified(email);
+
+        mockMvc.perform(post("/api/members/me/email/verification").cookie(session).with(csrf()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.email").value(email))
+                .andExpect(jsonPath("$.data.expiresInSeconds").value(600));
+
+        EmailMessage mail = lastMail();
+        assertThat(mail.to()).isEqualTo(email);
         String code = extractCode(mail.body());
 
         confirmCode(session, wrongCode(code))
@@ -90,29 +160,33 @@ class EmailAndPasswordResetIntegrationTest {
 
         confirmCode(session, code)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.emailRegistered").value(true))
+                .andExpect(jsonPath("$.data.email").value(email))
                 .andExpect(jsonPath("$.data.emailVerified").value(true));
 
-        // 등록 해제
-        mockMvc.perform(delete("/api/members/me/email").cookie(session).with(csrf()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.emailRegistered").value(false));
+        // 이미 인증했으면 코드를 다시 보내지 않는다
+        requestCode(session)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_VERIFIED"));
     }
 
     @Test
     void verificationCodeCanBeRequestedOncePerMinute() throws Exception {
-        Cookie session = signup(newLoginId());
-        requestCode(session, "a@example.com").andExpect(status().isAccepted());
+        String email = newEmail();
+        Cookie session = signup(email);
+        markUnverified(email);
+        requestCode(session).andExpect(status().isAccepted());
 
-        requestCode(session, "a@example.com")
+        requestCode(session)
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("EMAIL_VERIFICATION_TOO_FREQUENT"));
     }
 
     @Test
     void fiveWrongCodesInvalidateVerification() throws Exception {
-        Cookie session = signup(newLoginId());
-        requestCode(session, "b@example.com").andExpect(status().isAccepted());
+        String email = newEmail();
+        Cookie session = signup(email);
+        markUnverified(email);
+        requestCode(session).andExpect(status().isAccepted());
         String code = extractCode(lastMail().body());
 
         for (int i = 0; i < 4; i++) {
@@ -125,9 +199,7 @@ class EmailAndPasswordResetIntegrationTest {
 
     @Test
     void emailRegistrationRequiresLogin() throws Exception {
-        mockMvc.perform(post("/api/members/me/email/verification").with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"c@example.com\"}"))
+        mockMvc.perform(post("/api/members/me/email/verification").with(csrf()))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -135,14 +207,14 @@ class EmailAndPasswordResetIntegrationTest {
 
     @Test
     void resetPasswordWithEmailLink() throws Exception {
-        String loginId = newLoginId();
+        String loginId = newEmail();
         Cookie oldSession = signup(loginId);
-        setVerifiedEmail(loginId, "reset@example.com");
+        markVerified(loginId);
 
-        requestReset(loginId).andExpect(status().isAccepted());
+        requestReset(loginId.toUpperCase()).andExpect(status().isAccepted());
 
         EmailMessage mail = lastMail();
-        assertThat(mail.to()).isEqualTo("reset@example.com");
+        assertThat(mail.to()).isEqualTo(loginId);
         assertThat(mail.body()).contains(loginId);
         String token = extractToken(mail.body());
 
@@ -169,18 +241,19 @@ class EmailAndPasswordResetIntegrationTest {
 
     @Test
     void sameResponseWhetherOrNotAccountOrEmailExists() throws Exception {
-        String withoutEmail = newLoginId();
-        signup(withoutEmail);
+        String unverified = newEmail();
+        signup(unverified);
+        markUnverified(unverified);
 
-        requestReset(withoutEmail).andExpect(status().isAccepted());   // 이메일 미등록
-        requestReset(newLoginId()).andExpect(status().isAccepted());   // 없는 ID
+        requestReset(unverified).andExpect(status().isAccepted());   // 이메일 미인증
+        requestReset(newEmail()).andExpect(status().isAccepted());   // 가입하지 않은 이메일
 
         verify(emailSender, never()).send(any());
     }
 
     @Test
     void resetRequestLimitedToOncePerMinute() throws Exception {
-        String loginId = newLoginId();
+        String loginId = newEmail();
         requestReset(loginId).andExpect(status().isAccepted());
 
         requestReset(loginId)
@@ -190,9 +263,9 @@ class EmailAndPasswordResetIntegrationTest {
 
     @Test
     void newResetLinkInvalidatesPreviousOne() throws Exception {
-        String loginId = newLoginId();
+        String loginId = newEmail();
         signup(loginId);
-        setVerifiedEmail(loginId, "twice@example.com");
+        markVerified(loginId);
 
         requestReset(loginId).andExpect(status().isAccepted());
         String firstToken = extractToken(lastMail().body());
@@ -206,9 +279,9 @@ class EmailAndPasswordResetIntegrationTest {
 
     @Test
     void passwordResetUnlocksLockedLogin() throws Exception {
-        String loginId = newLoginId();
+        String loginId = newEmail();
         signup(loginId);
-        setVerifiedEmail(loginId, "locked@example.com");
+        markVerified(loginId);
         for (int i = 0; i < 5; i++) {
             login(loginId, "wrong1234");
         }
@@ -226,10 +299,10 @@ class EmailAndPasswordResetIntegrationTest {
     void mailTemplatesExistForAllLanguages() {
         for (String language : List.of("ko", "en", "zh", "vi")) {
             EmailMessage verification = mailTemplates.emailVerification("x@example.com", language, "123456", 10);
-            EmailMessage reset = mailTemplates.passwordReset("x@example.com", language, "user01", "http://link", 30);
+            EmailMessage reset = mailTemplates.passwordReset("x@example.com", language, "http://link", 30);
 
             assertThat(verification.body()).contains("123456", "10").doesNotContain("{");
-            assertThat(reset.body()).contains("user01", "http://link", "30").doesNotContain("{");
+            assertThat(reset.body()).contains("x@example.com", "http://link", "30").doesNotContain("{");
         }
         assertThat(mailTemplates.emailVerification("x@example.com", "en", "1", 1).subject())
                 .isNotEqualTo(mailTemplates.emailVerification("x@example.com", "ko", "1", 1).subject());
@@ -244,9 +317,12 @@ class EmailAndPasswordResetIntegrationTest {
         redisTemplate.delete("siot:rate:password-reset:" + loginId + ":interval");
     }
 
-    private void setVerifiedEmail(String loginId, String email) {
-        jdbcTemplate.update("UPDATE app_user SET email = ?, email_verified_at = now() WHERE login_id = ?",
-                email, loginId);
+    private void markUnverified(String email) {
+        jdbcTemplate.update("UPDATE app_user SET email_verified_at = NULL WHERE email = ?", email);
+    }
+
+    private void markVerified(String email) {
+        jdbcTemplate.update("UPDATE app_user SET email_verified_at = now() WHERE email = ?", email);
     }
 
     private EmailMessage lastMail() {
@@ -271,27 +347,42 @@ class EmailAndPasswordResetIntegrationTest {
         return UriComponentsBuilder.fromUriString(url).build().getQueryParams().getFirst("token");
     }
 
-    private Cookie signup(String loginId) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/auth/signup").with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"loginId":"%s","password":"%s","passwordConfirm":"%s"}
-                                """.formatted(loginId, PASSWORD, PASSWORD)))
-                .andExpect(status().isCreated())
-                .andReturn();
+    /** 가입 인증 코드 확인을 마친 상태로 만든 뒤 가입한다 (메일 mock 기록은 지운다) */
+    private Cookie signup(String email) throws Exception {
+        redisTemplate.opsForValue().set(SignupVerificationService.VERIFIED_KEY + email, "1");
+        MvcResult result = signupRequest(email).andExpect(status().isCreated()).andReturn();
+        clearInvocations(emailSender);
         return result.getResponse().getCookie("SIOT_SESSION");
+    }
+
+    private ResultActions signupRequest(String email) throws Exception {
+        return mockMvc.perform(post("/api/auth/signup").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"email":"%s","password":"%s","passwordConfirm":"%s"}
+                        """.formatted(email, PASSWORD, PASSWORD)));
+    }
+
+    private ResultActions requestSignupCode(String email) throws Exception {
+        return mockMvc.perform(post("/api/auth/signup/email-verification").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"%s\"}".formatted(email)));
+    }
+
+    private ResultActions confirmSignupCode(String email, String code) throws Exception {
+        return mockMvc.perform(post("/api/auth/signup/email-verification/confirm").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"%s\",\"code\":\"%s\"}".formatted(email, code)));
     }
 
     private ResultActions login(String loginId, String password) throws Exception {
         return mockMvc.perform(post("/api/auth/login").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"loginId\":\"%s\",\"password\":\"%s\"}".formatted(loginId, password)));
+                .content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(loginId, password)));
     }
 
-    private ResultActions requestCode(Cookie session, String email) throws Exception {
-        return mockMvc.perform(post("/api/members/me/email/verification").cookie(session).with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"%s\"}".formatted(email)));
+    private ResultActions requestCode(Cookie session) throws Exception {
+        return mockMvc.perform(post("/api/members/me/email/verification").cookie(session).with(csrf()));
     }
 
     private ResultActions confirmCode(Cookie session, String code) throws Exception {
@@ -303,7 +394,7 @@ class EmailAndPasswordResetIntegrationTest {
     private ResultActions requestReset(String loginId) throws Exception {
         return mockMvc.perform(post("/api/auth/password-reset").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"loginId\":\"%s\"}".formatted(loginId)));
+                .content("{\"email\":\"%s\"}".formatted(loginId)));
     }
 
     private ResultActions confirmReset(String token, String password, String confirm) throws Exception {
@@ -314,7 +405,7 @@ class EmailAndPasswordResetIntegrationTest {
                         """.formatted(token, password, confirm)));
     }
 
-    private String newLoginId() {
-        return "e" + ThreadLocalRandom.current().nextLong(1_000_000_000L, 9_999_999_999L);
+    private String newEmail() {
+        return "e" + ThreadLocalRandom.current().nextLong(1_000_000_000L, 9_999_999_999L) + "@example.com";
     }
 }

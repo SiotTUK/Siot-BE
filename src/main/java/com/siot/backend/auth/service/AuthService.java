@@ -19,6 +19,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
+
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -27,35 +30,44 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final SessionAuthenticator sessionAuthenticator;
     private final LoginAttemptService loginAttemptService;
+    private final SignupVerificationService signupVerificationService;
+    private final Clock clock;
 
-    /** M-02: ID 사용 가능 여부 (형식이 틀리면 LOGIN_ID_FORMAT) */
+    /** M-02: 이메일 사용 가능 여부 (형식이 틀리면 EMAIL_FORMAT) */
     @Transactional(readOnly = true)
-    public boolean isLoginIdAvailable(String loginId) {
-        CredentialPolicy.validateLoginId(loginId);
-        return !appUserRepository.existsByLoginId(loginId);
+    public boolean isEmailAvailable(String email) {
+        String normalized = CredentialPolicy.normalizeEmail(email);
+        CredentialPolicy.validateEmail(normalized);
+        return !appUserRepository.existsByEmail(normalized);
     }
 
-    /** M-01 ~ M-03: 회원가입 후 바로 로그인 상태로 만든다. */
+    /** M-01 ~ M-03: 인증 코드를 확인한 이메일로 가입하고 바로 로그인 상태로 만든다. */
     @Transactional
     public MemberResponse signup(SignupRequest request,
                                  HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        CredentialPolicy.validateLoginId(request.loginId());
-        CredentialPolicy.validatePassword(request.password(), request.loginId());
+        String email = CredentialPolicy.normalizeEmail(request.email());
+        CredentialPolicy.validateEmail(email);
+        CredentialPolicy.validatePassword(request.password(), email);
         if (!request.password().equals(request.passwordConfirm())) {
             throw new BusinessException(ErrorCode.PASSWORD_CONFIRM_MISMATCH);
         }
-        if (appUserRepository.existsByLoginId(request.loginId())) {
-            throw new BusinessException(ErrorCode.DUPLICATE_LOGIN_ID);
+        if (appUserRepository.existsByEmail(email)) {
+            throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
+        }
+        if (!signupVerificationService.isVerified(email)) {
+            throw new BusinessException(ErrorCode.EMAIL_NOT_VERIFIED);
         }
 
         AppUser user;
         try {
             // M-02: 동시 가입은 DB UNIQUE 제약으로 한 번 더 막는다
-            user = appUserRepository.saveAndFlush(
-                    AppUser.create(request.loginId(), passwordEncoder.encode(request.password())));
+            AppUser newUser = AppUser.create(email, passwordEncoder.encode(request.password()));
+            newUser.markEmailVerified(LocalDateTime.now(clock));
+            user = appUserRepository.saveAndFlush(newUser);
         } catch (DataIntegrityViolationException e) {
-            throw new BusinessException(ErrorCode.DUPLICATE_LOGIN_ID);
+            throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
         }
+        signupVerificationService.consume(email);
 
         sessionAuthenticator.login(MemberPrincipal.from(user), httpRequest, httpResponse);
         return MemberResponse.from(user);
@@ -65,18 +77,19 @@ public class AuthService {
     @Transactional(readOnly = true)
     public MemberResponse login(LoginRequest request,
                                 HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        if (loginAttemptService.isLocked(request.loginId())) {
+        String email = CredentialPolicy.normalizeEmail(request.email());
+        if (loginAttemptService.isLocked(email)) {
             throw new BusinessException(ErrorCode.LOGIN_LOCKED);
         }
 
         MemberPrincipal principal;
         try {
-            principal = sessionAuthenticator.login(request.loginId(), request.password(), httpRequest, httpResponse);
+            principal = sessionAuthenticator.login(email, request.password(), httpRequest, httpResponse);
         } catch (AuthenticationException e) {
-            loginAttemptService.recordFailure(request.loginId());
+            loginAttemptService.recordFailure(email);
             throw new BusinessException(ErrorCode.LOGIN_FAILED);
         }
-        loginAttemptService.recordSuccess(request.loginId());
+        loginAttemptService.recordSuccess(email);
 
         return appUserRepository.findById(principal.getId())
                 .map(MemberResponse::from)

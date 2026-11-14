@@ -58,7 +58,7 @@ docker compose --profile dev up -d mailpit
 docker compose --profile dev up -d   # 전체 + mailpit
 ```
 
-받은 메일 확인: http://localhost:8025 (이메일 인증 코드, 비밀번호 재설정 링크)
+받은 메일 확인: http://localhost:8025 (가입·이메일 인증 코드, 비밀번호 재설정 링크)
 
 ## 테스트
 

@@ -4,7 +4,6 @@ import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.global.exception.ErrorResponseWriter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -37,24 +36,12 @@ public class SecurityConfig {
             "/error"
     };
 
-    /** 비로그인 사용자도 사용하는 API (모든 HTTP 메서드) */
+    /**
+     * 비로그인 사용자가 쓸 수 있는 API. 회원가입하지 않으면 아무것도 못 본다 (11/13 결정).
+     * M-01~M-03 가입 인증 코드·가입·이메일 중복 확인, M-08 로그인, M-09 로그아웃, M-11 비밀번호 재설정, CSRF 토큰
+     */
     private static final String[] PUBLIC_ANY_METHOD = {
-            "/api/auth/**",     // M-01~M-03 가입·ID 중복 확인, M-08 로그인, M-11 비밀번호 재설정, CSRF 토큰
-            "/api/chat/**"      // CB-03 비회원도 이번 방문 대화 유지 (guest_session_id)
-    };
-
-    /** 비로그인 사용자도 조회할 수 있는 콘텐츠 (GET 만 허용) */
-    private static final String[] PUBLIC_GET = {
-            "/api/checklists/**",   // CHK 체크리스트 항목·상세 (개인 진행 상태는 /api/members/me/**)
-            "/api/rules/**",        // RUL 생활수칙
-            "/api/schedules/**",    // CAL 생활 달력·세금 상세
-            "/api/events/**"        // EVE 행사 목록·상세·추천
-    };
-
-    /** 비로그인 사용자도 등록할 수 있는 API (POST 만 허용) */
-    private static final String[] PUBLIC_POST = {
-            "/api/reports",         // COM-01 콘텐츠 오류 신고 (guest_session_id)
-            "/api/translations/**"  // RUL-07 고지서 사진 번역 (사진은 저장하지 않음)
+            "/api/auth/**"
     };
 
     @Bean
@@ -75,9 +62,7 @@ public class SecurityConfig {
                         // ADM-01: 관리 API·운영 지표는 관리자만
                         .requestMatchers("/api/admin/**", "/actuator/**").hasRole("ADMIN")
                         .requestMatchers(PUBLIC_ANY_METHOD).permitAll()
-                        .requestMatchers(HttpMethod.GET, PUBLIC_GET).permitAll()
-                        .requestMatchers(HttpMethod.POST, PUBLIC_POST).permitAll()
-                        // 그 외 (/api/members/me/**, /api/notifications/** 등) 는 로그인 필요
+                        // 그 외 모든 API (체크리스트·홈·행사·챗봇·신고 등) 는 로그인 필요
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, e) ->
@@ -102,7 +87,7 @@ public class SecurityConfig {
         return new HttpSessionSecurityContextRepository();
     }
 
-    /** ID·비밀번호 검증. ID가 없을 때와 비밀번호가 틀릴 때를 구분하지 않는다 (M-08). */
+    /** 이메일·비밀번호 검증. 가입하지 않은 이메일과 틀린 비밀번호를 구분하지 않는다 (M-08). */
     @Bean
     public AuthenticationManager authenticationManager(UserDetailsService userDetailsService,
                                                        PasswordEncoder passwordEncoder) {

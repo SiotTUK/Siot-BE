@@ -23,6 +23,7 @@ curl localhost:8080/actuator/health
 
 - **[개발 규칙 (API 경로·권한, CSRF, 응답 형식, 마이그레이션) — 작업 전 필독](docs/conventions.md)**
 - [인증·회원 API](docs/api-auth.md)
+- [DB ERD (체크리스트 규칙표 반영)](docs/erd.md)
 - [로컬 개발 환경](docs/setup.md)
 - [배포 가이드](docs/deployment.md)
 - [전체 Docker Compose 통합 (프론트엔드 담당자용)](docs/compose-integration.md)
@@ -31,9 +32,9 @@ curl localhost:8080/actuator/health
 
 ```
 com.siot.backend
-├── auth          인증 (세션 로그인, 이메일 인증, 비밀번호 재설정, refresh_token)
-├── member        회원 (app_user)
-├── checklist     체크리스트·생활수칙 (guide, guide_translation, checklist_progress)
+├── auth          인증 (세션 로그인, 아이디 = 이메일, 비밀번호 재설정, refresh_token)
+├── member        회원·온보딩 답 (app_user, member_residence)
+├── checklist     체크리스트·생활 변화 (guide*, checklist_progress, member_life_change)
 ├── schedule      생활 달력 (calendar_schedule)
 ├── event         행사 (event, event_translation, event_subscription)
 ├── reservation   예약 (ERD 미정 - 빈 패키지)

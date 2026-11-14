@@ -1,6 +1,7 @@
 package com.siot.backend.member;
 
 import com.siot.backend.TestcontainersConfiguration;
+import com.siot.backend.auth.service.SignupVerificationService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,6 +42,9 @@ class WithdrawalIntegrationTest {
     JdbcTemplate jdbcTemplate;
 
     @Autowired
+    StringRedisTemplate redisTemplate;
+
+    @Autowired
     FindByIndexNameSessionRepository<?> sessionRepository;
 
     @Test
@@ -70,7 +75,7 @@ class WithdrawalIntegrationTest {
         Cookie firstDevice = sessionCookie(signup(loginId));
         Cookie secondDevice = sessionCookie(login(loginId));
         Long userId = jdbcTemplate.queryForObject(
-                "SELECT user_id FROM app_user WHERE login_id = ?", Long.class, loginId);
+                "SELECT user_id FROM app_user WHERE email = ?", Long.class, loginId);
         Long reportId = createMemberData(userId);
 
         assertThat(sessionRepository.findByPrincipalName(loginId)).hasSize(2);
@@ -80,6 +85,8 @@ class WithdrawalIntegrationTest {
         // M-07: 회원 정보와 소유 데이터는 물리 삭제
         assertThat(countUsers(loginId)).isZero();
         assertThat(count("checklist_progress", userId)).isZero();
+        assertThat(count("member_residence", userId)).isZero();
+        assertThat(count("member_life_change", userId)).isZero();
         assertThat(count("notification", userId)).isZero();
         assertThat(count("notification_preference", userId)).isZero();
         assertThat(count("chat_conversation", userId)).isZero();
@@ -94,18 +101,22 @@ class WithdrawalIntegrationTest {
         mockMvc.perform(get("/api/members/me").cookie(firstDevice)).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/members/me").cookie(secondDevice)).andExpect(status().isUnauthorized());
 
-        // 복구할 수 없고, 같은 ID로 다시 가입할 수 있다
+        // 복구할 수 없고, 같은 이메일로 다시 가입할 수 있다
         login(loginId).andExpect(jsonPath("$.code").value("LOGIN_FAILED"));
-        mockMvc.perform(get("/api/auth/login-id/availability").param("loginId", loginId))
+        mockMvc.perform(get("/api/auth/email/availability").param("email", loginId))
                 .andExpect(jsonPath("$.data.available").value(true));
     }
 
     /** 탈퇴 시 정리되어야 할 회원 소유 데이터를 만든다. 생성한 오류 신고 ID를 돌려준다. */
     private Long createMemberData(Long userId) {
         Long guideId = jdbcTemplate.queryForObject(
-                "INSERT INTO guide (code, kind) VALUES (?, 'CHECKLIST') RETURNING guide_id",
-                Long.class, "W-" + userId);
-        jdbcTemplate.update("INSERT INTO checklist_progress (user_id, guide_id) VALUES (?, ?)", userId, guideId);
+                "SELECT guide_id FROM guide WHERE code = 'CL-04'", Long.class);
+        jdbcTemplate.update(
+                "INSERT INTO checklist_progress (user_id, guide_id, status) VALUES (?, ?, 'DONE')", userId, guideId);
+        jdbcTemplate.update("INSERT INTO member_residence (user_id, residence) VALUES (?, 'CAR')", userId);
+        jdbcTemplate.update(
+                "INSERT INTO member_life_change (user_id, life_change_code, base_date) VALUES (?, 'LC-01', current_date)",
+                userId);
         jdbcTemplate.update("""
                 INSERT INTO notification (user_id, kind, scheduled_at, title, body)
                 VALUES (?, 'TAX', now(), 't', 'b')""", userId);
@@ -130,14 +141,17 @@ class WithdrawalIntegrationTest {
 
     private int countUsers(String loginId) {
         return jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM app_user WHERE login_id = ?", Integer.class, loginId);
+                "SELECT count(*) FROM app_user WHERE email = ?", Integer.class, loginId);
     }
 
     private MvcResult signup(String loginId) throws Exception {
+        // 가입 인증 코드 확인을 마친 상태로 만든다 (코드 발송 흐름은 EmailAndPasswordResetIntegrationTest)
+        redisTemplate.opsForValue().set(
+                SignupVerificationService.VERIFIED_KEY + loginId.trim().toLowerCase(java.util.Locale.ROOT), "1");
         return mockMvc.perform(post("/api/auth/signup").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"loginId":"%s","password":"%s","passwordConfirm":"%s"}
+                                {"email":"%s","password":"%s","passwordConfirm":"%s"}
                                 """.formatted(loginId, PASSWORD, PASSWORD)))
                 .andExpect(status().isCreated())
                 .andReturn();
@@ -147,7 +161,7 @@ class WithdrawalIntegrationTest {
         return mockMvc.perform(post("/api/auth/login").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                        {"loginId":"%s","password":"%s"}
+                        {"email":"%s","password":"%s"}
                         """.formatted(loginId, PASSWORD)));
     }
 
@@ -168,6 +182,6 @@ class WithdrawalIntegrationTest {
     }
 
     private String newLoginId() {
-        return "w" + ThreadLocalRandom.current().nextLong(1_000_000_000L, 9_999_999_999L);
+        return "w" + ThreadLocalRandom.current().nextLong(1_000_000_000L, 9_999_999_999L) + "@example.com";
     }
 }

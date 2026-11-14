@@ -1,5 +1,6 @@
 package com.siot.backend.auth.security;
 
+import com.siot.backend.auth.domain.CredentialPolicy;
 import com.siot.backend.member.repository.AppUserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -16,8 +17,8 @@ public class MemberUserDetailsService implements UserDetailsService {
 
     @Override
     @Transactional(readOnly = true)
-    public UserDetails loadUserByUsername(String loginId) {
-        return appUserRepository.findByLoginId(loginId)
+    public UserDetails loadUserByUsername(String email) {
+        return appUserRepository.findByEmail(CredentialPolicy.normalizeEmail(email))
                 .map(MemberPrincipal::from)
                 .orElseThrow(() -> new UsernameNotFoundException("member not found"));
     }

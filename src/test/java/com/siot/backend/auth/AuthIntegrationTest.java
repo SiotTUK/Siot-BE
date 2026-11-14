@@ -1,6 +1,7 @@
 package com.siot.backend.auth;
 
 import com.siot.backend.TestcontainersConfiguration;
+import com.siot.backend.auth.service.SignupVerificationService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -24,7 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * M-01 ~ M-03, M-08 ~ M-10 회원가입·로그인·로그아웃 통합 테스트 (PostgreSQL + Redis 세션).
+ * M-01 ~ M-03, M-08 ~ M-10 회원가입(아이디 = 이메일)·로그인·로그아웃 통합 테스트 (PostgreSQL + Redis 세션).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -40,6 +42,9 @@ class AuthIntegrationTest {
     @Autowired
     JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    StringRedisTemplate redisTemplate;
+
     // ---------------------------------------------------------------- M-01, M-02, M-03
 
     @Test
@@ -48,8 +53,10 @@ class AuthIntegrationTest {
 
         MvcResult result = signup(loginId, PASSWORD, PASSWORD)
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.loginId").value(loginId))
+                .andExpect(jsonPath("$.data.email").value(loginId))
                 .andExpect(jsonPath("$.data.role").value("USER"))
+                .andExpect(jsonPath("$.data.onboarded").value(false))
+                .andExpect(jsonPath("$.data.emailVerified").value(true))
                 .andExpect(cookie().exists(SESSION_COOKIE))
                 .andExpect(cookie().httpOnly(SESSION_COOKIE, true))
                 .andExpect(cookie().sameSite(SESSION_COOKIE, "Lax"))
@@ -57,47 +64,57 @@ class AuthIntegrationTest {
 
         mockMvc.perform(get("/api/members/me").cookie(sessionCookie(result)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.loginId").value(loginId));
+                .andExpect(jsonPath("$.data.email").value(loginId));
 
         // NFR-02: 비밀번호는 단방향 해시로만 저장
         String hash = jdbcTemplate.queryForObject(
-                "SELECT password_hash FROM app_user WHERE login_id = ?", String.class, loginId);
+                "SELECT password_hash FROM app_user WHERE email = ?", String.class, loginId);
         assertThat(hash).startsWith("{bcrypt}").doesNotContain(PASSWORD);
     }
 
     @Test
-    void signupRejectsDuplicateLoginId() throws Exception {
+    void signupRejectsDuplicateEmailIgnoringCase() throws Exception {
         String loginId = newLoginId();
         signup(loginId, PASSWORD, PASSWORD).andExpect(status().isCreated());
 
-        signup(loginId, PASSWORD, PASSWORD)
+        signup(loginId.toUpperCase(), PASSWORD, PASSWORD)
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("DUPLICATE_LOGIN_ID"));
+                .andExpect(jsonPath("$.code").value("DUPLICATE_EMAIL"));
     }
 
     @Test
-    void loginIdAvailability() throws Exception {
+    void emailIsStoredLowercaseAndLoginIgnoresCase() throws Exception {
+        String loginId = newLoginId();
+        signup("  " + loginId.toUpperCase() + " ", PASSWORD, PASSWORD)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.email").value(loginId));
+
+        login(loginId.toUpperCase(), PASSWORD).andExpect(status().isOk());
+    }
+
+    @Test
+    void emailAvailability() throws Exception {
         String loginId = newLoginId();
         checkAvailability(loginId).andExpect(jsonPath("$.data.available").value(true));
 
         signup(loginId, PASSWORD, PASSWORD).andExpect(status().isCreated());
 
         checkAvailability(loginId).andExpect(jsonPath("$.data.available").value(false));
-        checkAvailability("Bad-ID")
+        checkAvailability("not-an-email")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("LOGIN_ID_FORMAT"));
+                .andExpect(jsonPath("$.code").value("EMAIL_FORMAT"));
     }
 
     @Test
-    void signupValidatesLoginIdAndPasswordRules() throws Exception {
+    void signupValidatesEmailAndPasswordRules() throws Exception {
         String loginId = newLoginId();
-        expectSignupError("ab1", PASSWORD, PASSWORD, "LOGIN_ID_FORMAT");            // 4자 미만
-        expectSignupError("Abcd1234", PASSWORD, PASSWORD, "LOGIN_ID_FORMAT");       // 대문자
+        expectSignupError("user01", PASSWORD, PASSWORD, "EMAIL_FORMAT");            // @ 없음
+        expectSignupError("user@example", PASSWORD, PASSWORD, "EMAIL_FORMAT");      // 도메인에 점 없음
         expectSignupError(loginId, "abc123", "abc123", "PASSWORD_LENGTH");
         expectSignupError(loginId, "abcdefgh", "abcdefgh", "PASSWORD_LETTER_AND_DIGIT_REQUIRED");
         expectSignupError(loginId, "abcd 1234", "abcd 1234", "PASSWORD_WHITESPACE");
         expectSignupError(loginId, "abcd1234가", "abcd1234가", "PASSWORD_INVALID_CHARACTER");
-        expectSignupError("user1234", "user1234", "user1234", "PASSWORD_SAME_AS_LOGIN_ID");
+        expectSignupError("abcd1234@b.co", "abcd1234@b.co", "abcd1234@b.co", "PASSWORD_SAME_AS_EMAIL");
         expectSignupError(loginId, PASSWORD, "abcd12345", "PASSWORD_CONFIRM_MISMATCH");
     }
 
@@ -114,7 +131,7 @@ class AuthIntegrationTest {
 
         MvcResult result = login(loginId, PASSWORD)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.loginId").value(loginId))
+                .andExpect(jsonPath("$.data.email").value(loginId))
                 .andReturn();
         Cookie session = sessionCookie(result);
 
@@ -131,7 +148,7 @@ class AuthIntegrationTest {
     }
 
     @Test
-    void unknownLoginIdGetsSameErrorAsWrongPassword() throws Exception {
+    void unknownEmailGetsSameErrorAsWrongPassword() throws Exception {
         login(newLoginId(), PASSWORD)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("LOGIN_FAILED"));
@@ -170,10 +187,13 @@ class AuthIntegrationTest {
     // ---------------------------------------------------------------- helpers
 
     private ResultActions signup(String loginId, String password, String passwordConfirm) throws Exception {
+        // 가입 인증 코드 확인을 마친 상태로 만든다 (코드 발송 흐름은 EmailAndPasswordResetIntegrationTest)
+        redisTemplate.opsForValue().set(
+                SignupVerificationService.VERIFIED_KEY + loginId.trim().toLowerCase(java.util.Locale.ROOT), "1");
         return mockMvc.perform(post("/api/auth/signup").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                        {"loginId":"%s","password":"%s","passwordConfirm":"%s"}
+                        {"email":"%s","password":"%s","passwordConfirm":"%s"}
                         """.formatted(loginId, password, passwordConfirm)));
     }
 
@@ -187,12 +207,12 @@ class AuthIntegrationTest {
         return mockMvc.perform(post("/api/auth/login").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                        {"loginId":"%s","password":"%s"}
+                        {"email":"%s","password":"%s"}
                         """.formatted(loginId, password)));
     }
 
     private ResultActions checkAvailability(String loginId) throws Exception {
-        return mockMvc.perform(get("/api/auth/login-id/availability").param("loginId", loginId));
+        return mockMvc.perform(get("/api/auth/email/availability").param("email", loginId));
     }
 
     private Cookie sessionCookie(MvcResult result) {
@@ -204,6 +224,6 @@ class AuthIntegrationTest {
     }
 
     private String newLoginId() {
-        return "t" + ThreadLocalRandom.current().nextLong(1_000_000_000L, 9_999_999_999L);
+        return "t" + ThreadLocalRandom.current().nextLong(1_000_000_000L, 9_999_999_999L) + "@example.com";
     }
 }

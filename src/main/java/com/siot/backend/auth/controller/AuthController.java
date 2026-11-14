@@ -1,8 +1,13 @@
 package com.siot.backend.auth.controller;
 
-import com.siot.backend.auth.dto.LoginIdAvailabilityResponse;
+import com.siot.backend.auth.dto.EmailAvailabilityResponse;
+import com.siot.backend.auth.domain.CredentialPolicy;
 import com.siot.backend.auth.dto.LoginRequest;
 import com.siot.backend.auth.dto.SignupRequest;
+import com.siot.backend.auth.dto.SignupVerificationConfirmRequest;
+import com.siot.backend.auth.dto.SignupVerificationRequest;
+import com.siot.backend.auth.dto.SignupVerificationResponse;
+import com.siot.backend.auth.service.SignupVerificationService;
 import com.siot.backend.auth.service.AuthService;
 import com.siot.backend.global.common.ApiResponse;
 import com.siot.backend.member.dto.MemberResponse;
@@ -25,15 +30,32 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final SignupVerificationService signupVerificationService;
 
-    /** M-02: ID 중복 확인 */
-    @GetMapping("/login-id/availability")
-    public ResponseEntity<ApiResponse<LoginIdAvailabilityResponse>> checkLoginId(@RequestParam String loginId) {
-        boolean available = authService.isLoginIdAvailable(loginId);
-        return ResponseEntity.ok(ApiResponse.of(new LoginIdAvailabilityResponse(loginId, available)));
+    /** M-02: 이메일(아이디) 중복 확인 */
+    @GetMapping("/email/availability")
+    public ResponseEntity<ApiResponse<EmailAvailabilityResponse>> checkEmail(@RequestParam String email) {
+        String normalized = CredentialPolicy.normalizeEmail(email);
+        boolean available = authService.isEmailAvailable(normalized);
+        return ResponseEntity.ok(ApiResponse.of(new EmailAvailabilityResponse(normalized, available)));
     }
 
-    /** M-01: 회원가입 (가입 후 로그인 상태) */
+    /** M-01: 가입 인증 코드 발송 (202) */
+    @PostMapping("/signup/email-verification")
+    public ResponseEntity<ApiResponse<SignupVerificationResponse>> requestSignupCode(
+            @Valid @RequestBody SignupVerificationRequest request) {
+        SignupVerificationResponse response = signupVerificationService.requestCode(request.email(), request.language());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.of(response));
+    }
+
+    /** M-01: 가입 인증 코드 확인 (204). 확인 후 30분 안에 가입해야 한다 */
+    @PostMapping("/signup/email-verification/confirm")
+    public ResponseEntity<Void> confirmSignupCode(@Valid @RequestBody SignupVerificationConfirmRequest request) {
+        signupVerificationService.confirmCode(request.email(), request.code());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** M-01: 회원가입. 인증 코드를 확인한 이메일만 가능 (가입 후 로그인 상태) */
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<MemberResponse>> signup(@Valid @RequestBody SignupRequest request,
                                                               HttpServletRequest httpRequest,

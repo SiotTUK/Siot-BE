@@ -8,7 +8,6 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Getter
 @Entity
@@ -21,11 +20,9 @@ public class ChatConversation {
     @Column(name = "conversation_id")
     private Long id;
 
-    @Column(name = "user_id")
+    /** 대화는 회원만 (비회원 사용 없음) */
+    @Column(name = "user_id", nullable = false)
     private Long userId;
-
-    @Column(name = "guest_session_id")
-    private UUID guestSessionId;
 
     @Column(nullable = false, length = 10)
     private String language = "ko";

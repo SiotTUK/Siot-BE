@@ -8,7 +8,6 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Getter
 @Entity
@@ -23,9 +22,6 @@ public class ContentReport {
 
     @Column(name = "reporter_user_id")
     private Long reporterUserId;
-
-    @Column(name = "guest_session_id")
-    private UUID guestSessionId;
 
     @Column(name = "event_id")
     private Long eventId;

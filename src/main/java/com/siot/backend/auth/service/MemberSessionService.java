@@ -21,8 +21,9 @@ public class MemberSessionService {
 
     private final FindByIndexNameSessionRepository<? extends Session> sessionRepository;
 
-    public int invalidateAll(String loginId) {
-        var sessionIds = sessionRepository.findByPrincipalName(loginId).keySet();
+    /** @param email 세션의 principal 이름 (MemberPrincipal#getUsername) */
+    public int invalidateAll(String email) {
+        var sessionIds = sessionRepository.findByPrincipalName(email).keySet();
         sessionIds.forEach(sessionRepository::deleteById);
         return sessionIds.size();
     }
@@ -30,14 +31,14 @@ public class MemberSessionService {
     /** 탈퇴가 DB에 커밋된 뒤에만 세션을 지운다 (삭제 실패 시 로그인 상태 유지) */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onMemberWithdrawn(MemberWithdrawnEvent event) {
-        int count = invalidateAll(event.loginId());
+        int count = invalidateAll(event.email());
         log.info("Member {} withdrawn, {} session(s) invalidated", event.memberId(), count);
     }
 
     /** M-11: 비밀번호 재설정이 커밋된 뒤 모든 세션 삭제 */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPasswordReset(MemberPasswordResetEvent event) {
-        int count = invalidateAll(event.loginId());
+        int count = invalidateAll(event.email());
         log.info("Member {} password reset, {} session(s) invalidated", event.memberId(), count);
     }
 }

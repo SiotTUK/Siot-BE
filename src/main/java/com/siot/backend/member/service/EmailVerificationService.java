@@ -1,7 +1,7 @@
 package com.siot.backend.member.service;
 
 import com.siot.backend.global.common.RequestRateLimiter;
-import com.siot.backend.global.common.TokenUtils;
+import com.siot.backend.global.common.VerificationCodeStore;
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.global.mail.EmailSender;
@@ -11,20 +11,17 @@ import com.siot.backend.member.dto.EmailVerificationResponse;
 import com.siot.backend.member.dto.MemberResponse;
 import com.siot.backend.member.repository.AppUserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Locale;
-import java.util.Map;
 
 /**
- * NTF-09: 알림 이메일 선택 등록. 인증 코드를 메일로 보내고, 코드를 확인한 뒤에만 계정에 저장한다.
- * <p>
- * 인증 대기 정보는 Redis 에 10분 동안 보관한다. (DB에는 인증이 끝난 이메일만 저장)
+ * NTF-09: 가입한 뒤의 이메일 인증. 새 회원은 가입 때 인증을 마치므로(SignupVerificationService),
+ * 인증 기능이 생기기 전에 가입한 미인증 회원이 사용한다.
+ * 인증된 회원만 비밀번호 재설정(M-11)·이메일 알림(NTF-05)을 받는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,69 +33,43 @@ public class EmailVerificationService {
     static final Duration RESEND_INTERVAL = Duration.ofMinutes(1);
     static final int DAILY_LIMIT = 10;
 
-    private static final String PENDING_KEY = "siot:email-verification:";
+    private static final String NAMESPACE = "email-verification";
 
     private final AppUserRepository appUserRepository;
-    private final StringRedisTemplate redisTemplate;
+    private final VerificationCodeStore codeStore;
     private final RequestRateLimiter rateLimiter;
     private final EmailSender emailSender;
     private final MailTemplates mailTemplates;
     private final Clock clock;
 
-    /** 인증 코드 발송. 같은 회원이 다시 요청하면 이전 코드는 무효가 된다. */
-    public EmailVerificationResponse requestVerification(Long memberId, String rawEmail) {
+    /** 가입 이메일로 인증 코드 발송. 다시 요청하면 이전 코드는 무효가 된다. */
+    public EmailVerificationResponse requestVerification(Long memberId) {
         AppUser user = findMember(memberId);
-        String email = rawEmail.trim().toLowerCase(Locale.ROOT);
+        if (user.hasVerifiedEmail()) {
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_VERIFIED);
+        }
 
-        switch (rateLimiter.tryAcquire("email-verification:" + memberId, RESEND_INTERVAL, DAILY_LIMIT, Duration.ofDays(1))) {
+        switch (rateLimiter.tryAcquire(NAMESPACE + ":" + memberId, RESEND_INTERVAL, DAILY_LIMIT, Duration.ofDays(1))) {
             case TOO_FREQUENT -> throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_TOO_FREQUENT);
             case LIMIT_EXCEEDED -> throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_DAILY_LIMIT);
             case ALLOWED -> { }
         }
 
-        String code = TokenUtils.numericCode(6);
-        String key = PENDING_KEY + memberId;
-        redisTemplate.delete(key);
-        redisTemplate.opsForHash().putAll(key, Map.of(
-                "email", email,
-                "codeHash", TokenUtils.sha256(code),
-                "attempts", "0"));
-        redisTemplate.expire(key, CODE_TTL);
-
-        emailSender.send(mailTemplates.emailVerification(email, user.getLanguage(), code, CODE_TTL.toMinutes()));
-        return new EmailVerificationResponse(email, CODE_TTL.toSeconds(), RESEND_INTERVAL.toSeconds());
+        String code = codeStore.issue(NAMESPACE, String.valueOf(memberId), user.getEmail(), CODE_TTL);
+        emailSender.send(mailTemplates.emailVerification(user.getEmail(), user.getLanguage(), code, CODE_TTL.toMinutes()));
+        return new EmailVerificationResponse(user.getEmail(), CODE_TTL.toSeconds(), RESEND_INTERVAL.toSeconds());
     }
 
-    /** 코드가 맞으면 인증된 알림 이메일로 저장한다. 5회 틀리면 코드를 폐기한다. */
+    /** 코드가 맞으면 인증 완료로 기록한다. 5회 틀리면 코드를 폐기한다. */
     @Transactional
     public MemberResponse verify(Long memberId, String code) {
-        String key = PENDING_KEY + memberId;
-        Map<Object, Object> pending = redisTemplate.opsForHash().entries(key);
-        if (pending.isEmpty()) {
-            throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_EXPIRED);
-        }
-
-        if (!TokenUtils.constantTimeEquals(TokenUtils.sha256(code.trim()), (String) pending.get("codeHash"))) {
-            Long attempts = redisTemplate.opsForHash().increment(key, "attempts", 1);
-            if (attempts >= MAX_ATTEMPTS) {
-                redisTemplate.delete(key);
-                throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_EXPIRED);
-            }
-            throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_CODE_INVALID);
-        }
-
-        redisTemplate.delete(key);
         AppUser user = findMember(memberId);
-        user.registerVerifiedEmail((String) pending.get("email"), LocalDateTime.now(clock));
-        return MemberResponse.from(user);
-    }
-
-    /** 알림 이메일 등록 해제 (알림 메일·비밀번호 재설정을 더 이상 받지 않음) */
-    @Transactional
-    public MemberResponse remove(Long memberId) {
-        redisTemplate.delete(PENDING_KEY + memberId);
-        AppUser user = findMember(memberId);
-        user.removeEmail();
+        switch (codeStore.verify(NAMESPACE, String.valueOf(memberId), user.getEmail(), code, MAX_ATTEMPTS)) {
+            case INVALID -> throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_CODE_INVALID);
+            case EXPIRED -> throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_EXPIRED);
+            case VERIFIED -> { }
+        }
+        user.markEmailVerified(LocalDateTime.now(clock));
         return MemberResponse.from(user);
     }
 

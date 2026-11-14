@@ -18,19 +18,19 @@ import java.util.List;
 public class MemberPrincipal implements UserDetails, CredentialsContainer {
 
     private final Long id;
-    private final String loginId;
+    private final String email;
     private final Role role;
     private String passwordHash;
 
-    private MemberPrincipal(Long id, String loginId, Role role, String passwordHash) {
+    private MemberPrincipal(Long id, String email, Role role, String passwordHash) {
         this.id = id;
-        this.loginId = loginId;
+        this.email = email;
         this.role = role;
         this.passwordHash = passwordHash;
     }
 
     public static MemberPrincipal from(AppUser user) {
-        return new MemberPrincipal(user.getId(), user.getLoginId(), user.getRole(), user.getPasswordHash());
+        return new MemberPrincipal(user.getId(), user.getEmail(), user.getRole(), user.getPasswordHash());
     }
 
     public Long getId() {
@@ -51,10 +51,10 @@ public class MemberPrincipal implements UserDetails, CredentialsContainer {
         return passwordHash;
     }
 
-    /** Spring Session 이 사용자별 세션을 찾을 때 쓰는 이름 (M-11 전체 세션 삭제) */
+    /** 로그인 ID(이메일). Spring Session 이 사용자별 세션을 찾을 때 쓰는 이름 (M-07 탈퇴·M-11 비밀번호 재설정 시 전체 세션 삭제) */
     @Override
     public String getUsername() {
-        return loginId;
+        return email;
     }
 
     @Override
