@@ -102,6 +102,13 @@ class ChatIntegrationTest {
                 .andExpect(jsonPath("$.data.answer.sources[0].documentName").value("시흥시 외국인주민 생활안내"))
                 .andExpect(jsonPath("$.data.answer.sources[0].pageStart").value(12))
                 .andExpect(jsonPath("$.data.answer.sources[0].sourceUrl").value("https://example.org/guide.pdf"))
+                // CB-10: 근거 쪽(12~13)과 겹치는 항목만 (CL-01). 쪽이 겹치지 않는 CL-05 는 제외
+                .andExpect(jsonPath("$.data.answer.relatedPages.length()").value(1))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].type").value("CHECKLIST"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value("CL-01"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].title").value("외국인등록"))
+                .andExpect(jsonPath("$.data.answer.emergencyContacts.length()").value(0))
+                .andExpect(jsonPath("$.data.answer.helpful").doesNotExist())
                 .andExpect(jsonPath("$.data.masked").value(false));
 
         // 가장 관련 높은 조각이 근거로 넘어가고, 이전 버전·비활성 문서 조각은 넘어가지 않는다
@@ -117,7 +124,8 @@ class ChatIntegrationTest {
                 .andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].role").value("USER"))
                 .andExpect(jsonPath("$.data[1].sources[0].documentName").value("시흥시 외국인주민 생활안내"))
-                .andExpect(jsonPath("$.data[1].sources[0].pageEnd").value(13));
+                .andExpect(jsonPath("$.data[1].sources[0].pageEnd").value(13))
+                .andExpect(jsonPath("$.data[1].relatedPages[0].code").value("CL-01"));
     }
 
     // ---------------------------------------------------------------- CB-12
@@ -247,6 +255,97 @@ class ChatIntegrationTest {
                 new ChatTurn("질문 2", null), new ChatTurn("질문 3", null), new ChatTurn("질문 4", null)));
     }
 
+    // ---------------------------------------------------------------- CB-09
+
+    @Test
+    void emergencyQuestionShowsEmergencyContacts() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+
+        ask(session, conversationId, "집에 불이 났어요 어떻게 해요?")
+                .andExpect(jsonPath("$.data.answer.emergencyContacts.length()").value(2))
+                .andExpect(jsonPath("$.data.answer.emergencyContacts[0].number").value("119"))
+                .andExpect(jsonPath("$.data.answer.emergencyContacts[0].label").value("화재·구급"))
+                .andExpect(jsonPath("$.data.answer.emergencyContacts[1].number").value("112"))
+                // 질문 메시지에는 붙이지 않는다
+                .andExpect(jsonPath("$.data.question.emergencyContacts.length()").value(0));
+
+        // 대화 기록에서도 다시 보인다
+        mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(session))
+                .andExpect(jsonPath("$.data[1].emergencyContacts[0].number").value("119"));
+    }
+
+    // ---------------------------------------------------------------- CB-04
+
+    @Test
+    void answerCanBeRatedByOwnerOnly() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+        String body = ask(session, conversationId, "도서관은 몇 시까지 해요?")
+                .andReturn().getResponse().getContentAsString();
+        long questionId = Long.parseLong(com.jayway.jsonpath.JsonPath.read(body, "$.data.question.messageId").toString());
+        long answerId = Long.parseLong(com.jayway.jsonpath.JsonPath.read(body, "$.data.answer.messageId").toString());
+
+        feedback(session, conversationId, answerId, false, "전화 010-1234-5678 로 알려 주세요")
+                .andExpect(status().isNoContent());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT feedback_comment FROM chat_message WHERE message_id = ?", String.class, answerId))
+                .isEqualTo("전화 [전화번호] 로 알려 주세요");
+        mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(session))
+                .andExpect(jsonPath("$.data[1].helpful").value(false));
+
+        // 다시 평가하면 덮어쓴다
+        feedback(session, conversationId, answerId, true, null).andExpect(status().isNoContent());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT is_helpful FROM chat_message WHERE message_id = ?", Boolean.class, answerId)).isTrue();
+
+        // 질문은 평가할 수 없다
+        feedback(session, conversationId, questionId, true, null)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CHAT_FEEDBACK_NOT_ALLOWED"));
+        // 다른 대화의 메시지 번호
+        long otherConversation = startConversation(session, "ko");
+        feedback(session, otherConversation, answerId, true, null)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CHAT_MESSAGE_NOT_FOUND"));
+        // 다른 회원
+        feedback(signup(), conversationId, answerId, true, null)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CHAT_CONVERSATION_NOT_FOUND"));
+    }
+
+    // ---------------------------------------------------------------- CB-08
+
+    @Test
+    void suggestionsDependOnUserTypeAndLanguage() throws Exception {
+        Cookie session = signup();
+        String email = com.jayway.jsonpath.JsonPath.read(mockMvc.perform(get("/api/members/me").cookie(session))
+                .andReturn().getResponse().getContentAsString(), "$.data.email");
+
+        // 온보딩 전: 공통 질문, 회원 언어(ko)
+        mockMvc.perform(get("/api/chat/suggestions").cookie(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userType").doesNotExist())
+                .andExpect(jsonPath("$.data.language").value("ko"))
+                .andExpect(jsonPath("$.data.questions.length()").value(3))
+                .andExpect(jsonPath("$.data.questions[0]").value("외국인등록은 어떻게 하나요?"));
+
+        jdbcTemplate.update("UPDATE app_user SET user_type = 'NEW' WHERE email = ?", email);
+        mockMvc.perform(get("/api/chat/suggestions").param("language", "en").cookie(session))
+                .andExpect(jsonPath("$.data.userType").value("NEW"))
+                .andExpect(jsonPath("$.data.questions[1]").value("How do I report a change of address after moving?"));
+
+        jdbcTemplate.update("UPDATE app_user SET user_type = 'LIVING' WHERE email = ?", email);
+        mockMvc.perform(get("/api/chat/suggestions").param("language", "zh").cookie(session))
+                .andExpect(jsonPath("$.data.userType").value("LIVING"))
+                .andExpect(jsonPath("$.data.questions[0]").value("居民税什么时候交？"));
+
+        mockMvc.perform(get("/api/chat/suggestions").param("language", "fr").cookie(session))
+                .andExpect(status().isBadRequest());
+    }
+
     // ---------------------------------------------------------------- CB-03, NFR-03
 
     @Test
@@ -314,11 +413,20 @@ class ChatIntegrationTest {
         insertChunk(current, 1, 12, 13, "외국인등록은 입국일부터 90일 이내에 출입국·외국인관서에서 신청합니다.", AXIS_REGISTRATION);
         insertChunk(current, 2, 30, 30, "자동차세는 매년 6월과 12월에 납부합니다.", AXIS_CAR_TAX);
         insertChunk(oldVersion, 1, 5, 5, "이전 버전의 오래된 안내입니다.", AXIS_OLD_VERSION);
+        // CB-10: 항목이 근거로 삼는 문서 쪽
+        insertGuideReference("CL-01", current, 10, 14);
+        insertGuideReference("CL-10", current, 30, 30);
+        insertGuideReference("CL-05", current, 50, 60);
 
         Long inactive = jdbcTemplate.queryForObject("""
                 INSERT INTO document (name, is_active) VALUES ('사용 중지된 문서', false) RETURNING document_id""", Long.class);
         insertChunk(insertVersion(inactive, 1, true), 1, 1, 1, "사용 중지된 문서의 외국인등록 안내", AXIS_REGISTRATION);
         seeded = true;
+    }
+
+    private void insertGuideReference(String code, Long versionId, int pageStart, int pageEnd) {
+        jdbcTemplate.update("INSERT INTO guide_document_reference (guide_id, document_version_id, page_start, page_end) "
+                + "SELECT guide_id, ?, ?, ? FROM guide WHERE code = ?", versionId, pageStart, pageEnd, code);
     }
 
     private Long insertVersion(Long documentId, int versionNo, boolean current) {
@@ -374,6 +482,18 @@ class ChatIntegrationTest {
                 .andReturn();
         return Long.parseLong(com.jayway.jsonpath.JsonPath.read(
                 result.getResponse().getContentAsString(), "$.data.conversationId").toString());
+    }
+
+    private ResultActions feedback(Cookie session, long conversationId, long messageId, boolean helpful,
+                                   String comment) throws Exception {
+        String json = comment == null
+                ? "{\"helpful\":" + helpful + "}"
+                : "{\"helpful\":" + helpful + ",\"comment\":\"" + comment + "\"}";
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .put("/api/chat/conversations/{cid}/messages/{mid}/feedback", conversationId, messageId)
+                .cookie(session).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json));
     }
 
     private ResultActions ask(Cookie session, long conversationId, String question) throws Exception {

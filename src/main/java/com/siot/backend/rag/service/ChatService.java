@@ -2,6 +2,7 @@ package com.siot.backend.rag.service;
 
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.rag.ai.AiUnavailableException;
 import com.siot.backend.rag.ai.AnswerGenerator;
@@ -17,6 +18,9 @@ import com.siot.backend.rag.domain.ChatMessageSource;
 import com.siot.backend.rag.domain.DocumentChunk;
 import com.siot.backend.rag.dto.AskResponse;
 import com.siot.backend.rag.dto.ConversationResponse;
+import com.siot.backend.rag.dto.EmergencyContact;
+import com.siot.backend.rag.dto.RelatedPage;
+import com.siot.backend.rag.dto.SuggestionsResponse;
 import com.siot.backend.rag.dto.MessageResponse;
 import com.siot.backend.rag.dto.SourceResponse;
 import com.siot.backend.rag.repository.ChatConversationRepository;
@@ -55,6 +59,8 @@ import java.util.stream.Collectors;
 @Service
 public class ChatService {
 
+    private static final java.util.Set<String> SUPPORTED_LANGUAGES = java.util.Set.of("ko", "en", "zh", "vi");
+
     private final ChatConversationRepository conversationRepository;
     private final ChatMessageRepository messageRepository;
     private final ChatMessageSourceRepository sourceRepository;
@@ -64,6 +70,7 @@ public class ChatService {
     private final AnswerGenerator answerGenerator;
     private final QueryRewriter queryRewriter;
     private final ChunkRetriever chunkRetriever;
+    private final RelatedPageFinder relatedPageFinder;
     private final ChatbotProperties properties;
     private final TransactionTemplate tx;
     private final Clock clock;
@@ -77,6 +84,7 @@ public class ChatService {
                        AnswerGenerator answerGenerator,
                        QueryRewriter queryRewriter,
                        ChunkRetriever chunkRetriever,
+                       RelatedPageFinder relatedPageFinder,
                        ChatbotProperties properties,
                        PlatformTransactionManager transactionManager,
                        Clock clock) {
@@ -89,6 +97,7 @@ public class ChatService {
         this.answerGenerator = answerGenerator;
         this.queryRewriter = queryRewriter;
         this.chunkRetriever = chunkRetriever;
+        this.relatedPageFinder = relatedPageFinder;
         this.properties = properties;
         this.tx = new TransactionTemplate(transactionManager);
         this.clock = clock;
@@ -120,9 +129,48 @@ public class ChatService {
     @Transactional(readOnly = true)
     public List<MessageResponse> getMessages(Long userId, Long conversationId) {
         ChatConversation conversation = findOwned(userId, conversationId);
+        String language = conversation.getLanguage();
         List<ChatMessage> messages = messageRepository.findByConversationIdOrderByIdAsc(conversation.getId());
-        Map<Long, List<SourceResponse>> sources = loadSources(messages.stream().map(ChatMessage::getId).toList());
-        return messages.stream().map(m -> toResponse(m, sources.getOrDefault(m.getId(), List.of()))).toList();
+        Map<Long, List<ChatMessageSource>> sources = loadSources(messages.stream().map(ChatMessage::getId).toList());
+        return messages.stream().map(m -> {
+            List<ChatMessageSource> messageSources = sources.getOrDefault(m.getId(), List.of());
+            List<Long> chunkIds = messageSources.stream()
+                    .filter(s -> s.getChunk() != null).map(s -> s.getChunk().getId()).toList();
+            return toResponse(m, messageSources.stream().map(ChatService::toResponse).toList(),
+                    relatedPageFinder.find(chunkIds, language), language);
+        }).toList();
+    }
+
+    // ------------------------------------------------------------------ 추천 질문 (CB-08)
+
+    @Transactional(readOnly = true)
+    public SuggestionsResponse suggestions(Long userId, String language) {
+        AppUser user = appUserRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+        if (language != null && !SUPPORTED_LANGUAGES.contains(language)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        String lang = language != null ? language : user.getLanguage();
+        return new SuggestionsResponse(
+                user.getUserType() == null ? null : user.getUserType().name(),
+                lang,
+                ChatSuggestions.forUser(user.getUserType(), lang));
+    }
+
+    // ------------------------------------------------------------------ 답변 평가 (CB-04)
+
+    @Transactional
+    public void recordFeedback(Long userId, Long conversationId, Long messageId, boolean helpful, String comment) {
+        ChatConversation conversation = findOwned(userId, conversationId);
+        ChatMessage message = messageRepository.findById(messageId)
+                .filter(m -> m.getConversation().getId().equals(conversation.getId()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_MESSAGE_NOT_FOUND));
+        if (!message.isAnswer()) {
+            throw new BusinessException(ErrorCode.CHAT_FEEDBACK_NOT_ALLOWED);
+        }
+        String trimmed = comment == null || comment.isBlank() ? null : comment.strip();
+        // CB-05: 의견도 개인정보를 가려서 저장 (관리자 화면에는 가린 값만 보인다)
+        message.recordFeedback(helpful, trimmed == null ? null : PiiMasker.mask(trimmed).text());
     }
 
     // ------------------------------------------------------------------ 질문 (CB-16)
@@ -149,12 +197,14 @@ public class ChatService {
 
         // 2~4. 검색 → 근거 판단 → 답변 생성 (트랜잭션 밖)
         Outcome outcome = answer(question, language, saved.history());
+        // CB-09: 응급 관련 질문이면 답변과 함께 119/112 를 보여 준다
+        boolean emergency = EmergencyDetector.isEmergency(question);
 
         // 5. 답변·근거 저장
         ChatMessage answer = tx.execute(status -> {
             ChatConversation conversation = conversationRepository.getReferenceById(saved.conversation().getId());
             ChatMessage message = messageRepository.save(
-                    ChatMessage.answer(conversation, outcome.text(), outcome.status()));
+                    ChatMessage.answer(conversation, outcome.text(), outcome.status(), emergency));
             List<ChatMessageSource> sources = new ArrayList<>();
             for (int i = 0; i < outcome.sources().size(); i++) {
                 RetrievedChunk chunk = outcome.sources().get(i);
@@ -171,9 +221,11 @@ public class ChatService {
             sourceResponses.add(new SourceResponse(i + 1, c.documentName(), c.pageStart(), c.pageEnd(),
                     c.sourceUrl(), c.relevance()));
         }
+        List<RelatedPage> relatedPages = relatedPageFinder.find(
+                outcome.sources().stream().map(RetrievedChunk::chunkId).toList(), language);
         return new AskResponse(
-                toResponse(saved.question(), List.of()),
-                toResponse(answer, sourceResponses),
+                toResponse(saved.question(), List.of(), List.of(), language),
+                toResponse(answer, sourceResponses, relatedPages, language),
                 masked.masked());
     }
 
@@ -256,13 +308,12 @@ public class ChatService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_CONVERSATION_NOT_FOUND));
     }
 
-    private Map<Long, List<SourceResponse>> loadSources(List<Long> messageIds) {
+    private Map<Long, List<ChatMessageSource>> loadSources(List<Long> messageIds) {
         if (messageIds.isEmpty()) {
             return Map.of();
         }
         return sourceRepository.findByMessageIdInOrderBySourceOrderAsc(messageIds).stream()
-                .collect(Collectors.groupingBy(s -> s.getMessage().getId(),
-                        Collectors.mapping(ChatService::toResponse, Collectors.toList())));
+                .collect(Collectors.groupingBy(s -> s.getMessage().getId()));
     }
 
     private static SourceResponse toResponse(ChatMessageSource source) {
@@ -275,9 +326,12 @@ public class ChatService {
                 chunk.getPageEnd(), document.getSourceUrl(), source.getRelevanceScore());
     }
 
-    private static MessageResponse toResponse(ChatMessage message, List<SourceResponse> sources) {
+    private static MessageResponse toResponse(ChatMessage message, List<SourceResponse> sources,
+                                              List<RelatedPage> relatedPages, String language) {
         return new MessageResponse(message.getId(), message.getRole(), message.getContent(),
-                message.getAnswerStatus(), sources, message.getCreatedAt());
+                message.getAnswerStatus(), sources, relatedPages,
+                message.isEmergency() ? EmergencyContact.forLanguage(language) : List.of(),
+                message.getHelpful(), message.getCreatedAt());
     }
 
     private static ConversationResponse toResponse(ChatConversation conversation, String title) {

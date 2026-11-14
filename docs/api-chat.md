@@ -9,6 +9,8 @@
 | GET | `/api/chat/conversations?page=0&size=20` | CB-03 | 이전 대화 목록 (최근 대화 순, 제목 = 첫 질문) |
 | GET | `/api/chat/conversations/{id}/messages` | CB-03, CB-17 | 대화 내용 (답변 근거 포함) |
 | POST | `/api/chat/conversations/{id}/messages` | CB-16 | 질문 → 답변 |
+| PUT | `/api/chat/conversations/{id}/messages/{messageId}/feedback` | CB-04 | 답변 평가 (204) |
+| GET | `/api/chat/suggestions?language=` | CB-08 | 사용자 유형별 추천 질문 3개 |
 
 ## 질문
 
@@ -28,6 +30,9 @@ POST /api/chat/conversations/12/messages
                 "sources": [ { "order": 1, "documentName": "시흥시 외국인주민 생활안내",
                                "pageStart": 12, "pageEnd": 13,
                                "sourceUrl": "https://...", "relevanceScore": 0.82 } ],
+                "relatedPages": [ { "type": "CHECKLIST", "code": "CL-01", "title": "외국인등록" } ],
+                "emergencyContacts": [],
+                "helpful": null,
                 "createdAt": "2026-11-14T16:10:04+09:00" },
   "masked": false } }
 ```
@@ -49,6 +54,44 @@ POST /api/chat/conversations/12/messages
 
 화면에는 `documentName` 만 보이고, 누르면 `pageStart`~`pageEnd` 쪽과 `sourceUrl` 을 펼칩니다.
 문서가 삭제된 뒤 예전 대화를 열면 `documentName` 등이 null 입니다.
+
+### 응급 연락처 (CB-09)
+
+질문에 화재·부상·범죄 등 응급 관련 단어(4개 언어)가 있으면 답변의 `emergencyContacts` 에 119·112 가 대화 언어 라벨과 함께 들어 있습니다. 답변 **맨 위에** 크게 보여 주세요. 답변 자체는 평소처럼 만들고, 대화 기록에서도 다시 보입니다(`chat_message.is_emergency`).
+
+```json
+"emergencyContacts": [ { "number": "119", "label": "화재·구급" }, { "number": "112", "label": "경찰" } ]
+```
+
+### 관련 페이지 (CB-10)
+
+답변 근거 조각과 같은 문서의 겹치는 쪽을 근거로 삼는 체크리스트 항목(`guide_document_reference`)이 있으면 `relatedPages` 에 최대 3개를 담습니다. 프론트엔드는 `code`(CL-01, LC-01-1 …)로 상세 화면 경로를 만들어 '관련 내용 보기' 버튼을 보여 줍니다. 행사·생활수칙은 아직 문서와 연결하는 데이터가 없어 대상이 아닙니다.
+
+## 답변 평가 (CB-04)
+
+```http
+PUT /api/chat/conversations/12/messages/32/feedback
+{ "helpful": false, "comment": "주소 변경 방법이 없어요" }
+```
+
+- 204. 본인 대화의 **답변**만 평가할 수 있고(질문이면 400 `CHAT_FEEDBACK_NOT_ALLOWED`), 다른 대화의 메시지면 404 `CHAT_MESSAGE_NOT_FOUND`.
+- 다시 보내면 덮어씁니다. `comment` 는 선택, 500자 이하, 개인정보는 가려서 저장합니다.
+- '도움이 안 됐어요' 답변과 근거 없음(`NO_EVIDENCE`) 질문은 관리자 화면(ADM-08)에서 확인할 대상입니다.
+
+## 추천 질문 (CB-08)
+
+```http
+GET /api/chat/suggestions?language=en
+```
+
+```json
+{ "data": { "userType": "NEW", "language": "en",
+            "questions": [ "How do I register as a foreign resident?", "How do I report a change of address after moving?", "How do I throw away trash?" ] } }
+```
+
+- `userType`: NEW(처음 왔어요) → 외국인등록·체류지 변경신고·쓰레기 배출 / LIVING(살고 있어요) → 주민세·체류기간 연장·건강보험 / 온보딩 전(null) → 공통.
+- `language` 생략 시 회원 언어. ko/en/zh/vi 외에는 400 `INVALID_INPUT`.
+- 버튼을 누르면 그 문장을 질문으로 보냅니다.
 
 ## 처리 순서
 
@@ -81,4 +124,4 @@ Gemini 호출 중에는 DB 트랜잭션을 잡지 않습니다.
 
 ## 아직 없는 것 (다음 단계)
 
-응급 키워드(CB-09), 담당 기관 안내 강화(CB-11), 답변 평가(CB-04), 추천 질문(CB-08), 관련 페이지 링크(CB-10), 질문 언어 판별 강화(CB-15). 질문 횟수는 제한하지 않습니다 (팀 결정).
+담당 기관 안내 강화(CB-11), 질문 언어 판별 강화(CB-15), 관리자 부정 평가·미응답 질문 목록(ADM-08). 질문 횟수는 제한하지 않습니다 (팀 결정).

@@ -38,6 +38,10 @@ public class ChatMessage {
     @Column(name = "feedback_comment", columnDefinition = "text")
     private String feedbackComment;
 
+    /** CB-09: 답변만. 질문에 응급 키워드가 있어 119/112 를 함께 표시 */
+    @Column(name = "is_emergency", nullable = false)
+    private boolean emergency = false;
+
     // ADM-08: 부정 평가 답변 / 미응답 질문 관리자 처리
     @Column(name = "is_reviewed", nullable = false)
     private boolean reviewed = false;
@@ -67,12 +71,24 @@ public class ChatMessage {
         return message;
     }
 
-    public static ChatMessage answer(ChatConversation conversation, String content, AnswerStatus status) {
+    public static ChatMessage answer(ChatConversation conversation, String content, AnswerStatus status,
+                                     boolean emergency) {
         ChatMessage message = new ChatMessage();
         message.conversation = conversation;
         message.role = ROLE_ASSISTANT;
         message.content = content;
         message.answerStatus = status.name();
+        message.emergency = emergency;
         return message;
+    }
+
+    public boolean isAnswer() {
+        return ROLE_ASSISTANT.equals(role);
+    }
+
+    /** CB-04: 답변 평가 (다시 평가하면 덮어쓴다) */
+    public void recordFeedback(boolean helpful, String comment) {
+        this.helpful = helpful;
+        this.feedbackComment = comment;
     }
 }
