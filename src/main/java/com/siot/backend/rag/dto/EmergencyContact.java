@@ -1,10 +1,15 @@
 package com.siot.backend.rag.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.util.List;
 import java.util.Map;
 
 /** CB-09: 답변 맨 위에 보여 줄 긴급 연락처 */
-public record EmergencyContact(String number, String label) {
+@Schema(description = "CB-09 긴급 연락처")
+public record EmergencyContact(
+        @Schema(description = "전화번호", example = "119") String number,
+        @Schema(description = "대화 언어의 라벨", example = "화재·구급") String label) {
 
     private static final Map<String, List<EmergencyContact>> BY_LANGUAGE = Map.of(
             "ko", List.of(new EmergencyContact("119", "화재·구급"), new EmergencyContact("112", "경찰")),

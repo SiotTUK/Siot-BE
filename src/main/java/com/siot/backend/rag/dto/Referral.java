@@ -12,11 +12,17 @@ import java.util.Map;
  * @param notice   "개인 상황은 판단할 수 없다"는 고정 문구 (대화 언어)
  * @param contacts 담당 기관 연락처 (질문 종류마다 1개)
  */
-public record Referral(String notice, List<Contact> contacts) {
+@Schema(description = "CB-11 담당 기관 안내 (판단하지 않고 기관으로 연결)")
+public record Referral(
+        @Schema(description = "'개인 상황은 판단할 수 없다'는 고정 문구 (대화 언어)") String notice,
+        @Schema(description = "담당 기관 (질문 종류마다 1개, VISA → LEGAL → MEDICAL 순)") List<Contact> contacts) {
 
     /** @param topic VISA / LEGAL / MEDICAL */
     @Schema(name = "ReferralContact", description = "CB-11 담당 기관 연락처")
-    public record Contact(String topic, String number, String label) {
+    public record Contact(
+            @Schema(description = "질문 종류", allowableValues = {"VISA", "LEGAL", "MEDICAL"}, example = "VISA") String topic,
+            @Schema(description = "전화번호", example = "1345") String number,
+            @Schema(description = "대화 언어의 기관 이름", example = "외국인종합안내센터 (비자·체류)") String label) {
     }
 
     private static final Map<String, String> NOTICE = Map.of(

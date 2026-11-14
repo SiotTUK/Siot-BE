@@ -65,7 +65,8 @@ DB_USERNAME=<운영 DB 계정>
 DB_PASSWORD=<강력한 비밀번호>
 REDIS_PASSWORD=<강력한 비밀번호>
 SESSION_TIMEOUT=14d
-BACKEND_PORT=127.0.0.1:8080
+BACKEND_PORT=127.0.0.1:8080   # 지금은 임시로 8080 (프론트엔드 개발용 공개, 6장 "임시 공개" 참고)
+SWAGGER_ENABLED=false         # 지금은 임시로 true
 
 # 관리자로 지정할 이메일 (쉼표 구분)
 SIOT_ADMIN_EMAILS=<관리자 이메일>
@@ -106,7 +107,11 @@ FRONTEND_BASE_URL=https://<서비스 도메인>
 3. `sudo gcloud auth configure-docker asia-northeast3-docker.pkg.dev` (root 의 docker 가 Artifact Registry 사용)
 4. VM 메타데이터 `enable-oslogin=TRUE`
 
-- 방화벽: 외부에는 Nginx(80/443)만 연다. 8080·5432·6379는 열지 않는다. `.env` 의 `BACKEND_PORT=127.0.0.1:8080` 으로 백엔드도 VM 내부에만 바인딩한다.
+- 방화벽: 목표는 외부에 Nginx(80/443)만 여는 것이다. 5432·6379는 열지 않는다. 평소에는 `.env` 의 `BACKEND_PORT=127.0.0.1:8080` 으로 백엔드를 VM 내부에만 바인딩한다.
+- **임시 공개 (2026-11-14~)**: 프론트엔드가 API 문서를 볼 수 있도록 백엔드를 `http://34.22.97.3:8080` 으로 공개했다. Swagger: `http://34.22.97.3:8080/swagger-ui.html`
+  - 설정: 방화벽 규칙 `siot-backend-8080`(tcp:8080, 0.0.0.0/0, 태그 http-server), `.env` 의 `BACKEND_PORT=8080`, `SWAGGER_ENABLED=true`
+  - HTTP 라서 운영 세션 쿠키(Secure)가 저장되지 않는다. 이 주소로는 문서 보기와 `/api/auth/**` 공개 API 시험만 되고, 로그인이 필요한 API 는 호출할 수 없다.
+  - 되돌리기 (프론트엔드 Nginx·HTTPS 를 붙일 때): `gcloud compute firewall-rules delete siot-backend-8080`, `.env` 를 `BACKEND_PORT=127.0.0.1:8080`(필요하면 `SWAGGER_ENABLED=false`)으로 바꾸고 `sudo docker compose up -d --no-build`
 - DB 백업: 아래 [8. 백업](#8-백업) 참고 (VM 디스크 스냅샷 일정, 설정됨).
 - 접속: `gcloud compute ssh instance-20261113-012436 --zone asia-northeast3-c` (OS Login, 프로젝트 권한 필요)
 
