@@ -77,6 +77,8 @@ siot:
     top-k: ${CHATBOT_TOP_K:5}
     max-sources: 3
     max-question-length: 1000
+    # 이어지는 질문(CB-07)에 쓰는 최근 대화 턴 수
+    history-turns: 3
   # Gemini (LangChain4j). 키가 없으면 챗봇은 "지금은 답변할 수 없어요" 로 응답한다
   gemini:
     api-key: ${GEMINI_API_KEY:}

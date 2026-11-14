@@ -4,6 +4,8 @@ import com.siot.backend.TestcontainersConfiguration;
 import com.siot.backend.auth.service.SignupVerificationService;
 import com.siot.backend.rag.ai.AiUnavailableException;
 import com.siot.backend.rag.ai.AnswerGenerator;
+import com.siot.backend.rag.ai.ChatTurn;
+import com.siot.backend.rag.ai.QueryRewriter;
 import com.siot.backend.rag.ai.QueryEmbedder;
 import com.siot.backend.rag.ai.RetrievedChunk;
 import jakarta.servlet.http.Cookie;
@@ -66,6 +68,9 @@ class ChatIntegrationTest {
     @MockitoBean
     AnswerGenerator answerGenerator;
 
+    @MockitoBean
+    QueryRewriter queryRewriter;
+
     /** 축 번호 (외국인등록 조각 = 0, 자동차세 조각 = 1, 이전 버전 조각 = 2) */
     private static final int AXIS_REGISTRATION = 0;
     private static final int AXIS_CAR_TAX = 1;
@@ -74,7 +79,7 @@ class ChatIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        clearInvocations(queryEmbedder, answerGenerator);
+        clearInvocations(queryEmbedder, answerGenerator, queryRewriter);
         seedDocumentsOnce();
     }
 
@@ -85,7 +90,7 @@ class ChatIntegrationTest {
         Cookie session = signup();
         long conversationId = startConversation(session, "ko");
         when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_REGISTRATION));
-        when(answerGenerator.generate(anyString(), anyString(), anyList()))
+        when(answerGenerator.generate(anyString(), anyString(), anyList(), anyList()))
                 .thenReturn("입국 후 90일 이내에 출입국·외국인관서에서 외국인등록을 해야 해요.");
 
         ask(session, conversationId, "외국인등록은 언제까지 해야 하나요?")
@@ -102,7 +107,7 @@ class ChatIntegrationTest {
         // 가장 관련 높은 조각이 근거로 넘어가고, 이전 버전·비활성 문서 조각은 넘어가지 않는다
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<RetrievedChunk>> context = ArgumentCaptor.forClass(List.class);
-        verify(answerGenerator).generate(eq("외국인등록은 언제까지 해야 하나요?"), eq("ko"), context.capture());
+        verify(answerGenerator).generate(eq("외국인등록은 언제까지 해야 하나요?"), eq("ko"), context.capture(), eq(List.of()));
         assertThat(context.getValue()).hasSize(1);
         assertThat(context.getValue().get(0).content()).contains("외국인등록");
 
@@ -130,7 +135,7 @@ class ChatIntegrationTest {
                 .andExpect(jsonPath("$.data.answer.sources.length()").value(0));
 
         // 근거가 없으면 Gemini 를 호출하지 않는다
-        verify(answerGenerator, never()).generate(anyString(), anyString(), anyList());
+        verify(answerGenerator, never()).generate(anyString(), anyString(), anyList(), anyList());
     }
 
     @Test
@@ -138,7 +143,7 @@ class ChatIntegrationTest {
         Cookie session = signup();
         long conversationId = startConversation(session, "ko");
         when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_CAR_TAX));
-        when(answerGenerator.generate(anyString(), anyString(), anyList())).thenReturn(AnswerGenerator.NO_ANSWER);
+        when(answerGenerator.generate(anyString(), anyString(), anyList(), anyList())).thenReturn(AnswerGenerator.NO_ANSWER);
 
         ask(session, conversationId, "자동차세를 카드로 낼 수 있나요?")
                 .andExpect(jsonPath("$.data.answer.answerStatus").value("NO_EVIDENCE"))
@@ -167,7 +172,7 @@ class ChatIntegrationTest {
         Cookie session = signup();
         long conversationId = startConversation(session, "ko");
         when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_REGISTRATION));
-        when(answerGenerator.generate(anyString(), anyString(), anyList())).thenReturn("등록증 재발급 안내입니다.");
+        when(answerGenerator.generate(anyString(), anyString(), anyList(), anyList())).thenReturn("등록증 재발급 안내입니다.");
 
         ask(session, conversationId, "제 등록번호 900101-5123456, 전화 010-1234-5678 인데 재발급 되나요?")
                 .andExpect(jsonPath("$.data.masked").value(true))
@@ -175,11 +180,71 @@ class ChatIntegrationTest {
 
         String masked = "제 등록번호 [등록번호], 전화 [전화번호] 인데 재발급 되나요?";
         verify(queryEmbedder).embedQuery(masked);
-        verify(answerGenerator).generate(eq(masked), any(), anyList());
+        verify(answerGenerator).generate(eq(masked), any(), anyList(), anyList());
         Integer leaked = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM chat_message WHERE content LIKE '%5123456%' OR content LIKE '%1234-5678%'",
                 Integer.class);
         assertThat(leaked).isZero();
+    }
+
+    // ---------------------------------------------------------------- CB-07
+
+    @Test
+    void followUpQuestionIsRewrittenForSearchAndAnsweredWithHistory() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_REGISTRATION));
+        when(answerGenerator.generate(anyString(), anyString(), anyList(), anyList()))
+                .thenReturn("입국 후 90일 이내에 해야 해요.", "네, 온라인으로도 신청할 수 있어요.");
+
+        ask(session, conversationId, "외국인등록은 언제까지 해야 하나요?").andExpect(status().isOk());
+        // 첫 질문은 다시 쓰지 않는다
+        verify(queryRewriter, never()).rewrite(anyString(), anyList());
+
+        when(queryRewriter.rewrite(eq("그거 온라인으로도 돼요?"), anyList()))
+                .thenReturn("외국인등록은 온라인으로도 신청할 수 있나요?");
+        ask(session, conversationId, "그거 온라인으로도 돼요?")
+                .andExpect(jsonPath("$.data.answer.answerStatus").value("ANSWERED"))
+                .andExpect(jsonPath("$.data.answer.content").value("네, 온라인으로도 신청할 수 있어요."))
+                // 저장되는 질문은 사용자가 쓴 그대로
+                .andExpect(jsonPath("$.data.question.content").value("그거 온라인으로도 돼요?"));
+
+        List<ChatTurn> expectedHistory = List.of(new ChatTurn("외국인등록은 언제까지 해야 하나요?", "입국 후 90일 이내에 해야 해요."));
+        verify(queryRewriter).rewrite("그거 온라인으로도 돼요?", expectedHistory);
+        // 검색은 독립 질문으로, 답변은 원래 질문 + 앞 대화로
+        verify(queryEmbedder).embedQuery("외국인등록은 온라인으로도 신청할 수 있나요?");
+        verify(answerGenerator).generate(eq("그거 온라인으로도 돼요?"), eq("ko"), anyList(), eq(expectedHistory));
+    }
+
+    @Test
+    void rewriteFailureFallsBackToPreviousQuestion() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+        ask(session, conversationId, "자동차세는 언제 내요?").andExpect(status().isOk());
+
+        when(queryRewriter.rewrite(anyString(), anyList())).thenThrow(new AiUnavailableException("timeout"));
+        ask(session, conversationId, "카드로도 돼요?").andExpect(status().isOk());
+
+        // 근거 없음 답변은 앞 대화의 답으로 넘기지 않는다
+        verify(queryRewriter).rewrite("카드로도 돼요?", List.of(new ChatTurn("자동차세는 언제 내요?", null)));
+        verify(queryEmbedder).embedQuery("자동차세는 언제 내요?\n카드로도 돼요?");
+    }
+
+    @Test
+    void historyIsLimitedToRecentTurns() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+        when(queryRewriter.rewrite(anyString(), anyList())).thenAnswer(inv -> inv.getArgument(0));
+        for (int i = 1; i <= 4; i++) {
+            ask(session, conversationId, "질문 " + i).andExpect(status().isOk());
+        }
+        ask(session, conversationId, "질문 5").andExpect(status().isOk());
+
+        // 기본 3턴: 질문 2·3·4
+        verify(queryRewriter).rewrite("질문 5", List.of(
+                new ChatTurn("질문 2", null), new ChatTurn("질문 3", null), new ChatTurn("질문 4", null)));
     }
 
     // ---------------------------------------------------------------- CB-03, NFR-03

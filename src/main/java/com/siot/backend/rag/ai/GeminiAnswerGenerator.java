@@ -1,9 +1,12 @@
 package com.siot.backend.rag.ai;
 
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -28,6 +31,8 @@ public class GeminiAnswerGenerator implements AnswerGenerator {
                explain what the passages say and suggest contacting the Immigration Contact Center (1345).
             5. Be concise and practical: short paragraphs or bullet points, plain words.
             6. Do not mention passage numbers or the word "passage"; the app shows the sources separately.
+            7. Earlier conversation turns may be given only so you understand what the question refers to.
+               Facts in your answer must still come from the reference passages.
             """;
 
     private final ChatModel model;
@@ -37,7 +42,8 @@ public class GeminiAnswerGenerator implements AnswerGenerator {
     }
 
     @Override
-    public String generate(String question, String language, List<RetrievedChunk> context) {
+    public String generate(String question, String language, List<RetrievedChunk> context,
+                           List<ChatTurn> history) {
         String fallbackLanguage = LANGUAGE_NAMES.getOrDefault(language, "Korean");
         StringBuilder passages = new StringBuilder();
         for (int i = 0; i < context.size(); i++) {
@@ -46,10 +52,17 @@ public class GeminiAnswerGenerator implements AnswerGenerator {
                     .append(chunk.content().strip()).append("\n\n");
         }
         String userText = "Reference passages:\n\n" + passages + "Question:\n" + question;
+
+        // CB-07: 앞선 대화는 실제 대화 메시지로 넘기고, 마지막 메시지에 근거 조각과 현재 질문을 담는다
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(SystemMessage.from(SYSTEM_PROMPT.formatted(fallbackLanguage)));
+        for (ChatTurn turn : history) {
+            messages.add(UserMessage.from(turn.question()));
+            messages.add(AiMessage.from(turn.answer() != null ? turn.answer() : NO_ANSWER));
+        }
+        messages.add(UserMessage.from(userText));
         try {
-            String answer = model.chat(
-                    SystemMessage.from(SYSTEM_PROMPT.formatted(fallbackLanguage)),
-                    UserMessage.from(userText)).aiMessage().text();
+            String answer = model.chat(messages).aiMessage().text();
             return answer == null ? NO_ANSWER : answer.strip();
         } catch (RuntimeException e) {
             throw new AiUnavailableException("Gemini chat failed", e);

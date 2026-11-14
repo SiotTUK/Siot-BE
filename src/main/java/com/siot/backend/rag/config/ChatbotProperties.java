@@ -15,6 +15,7 @@ import org.springframework.validation.annotation.Validated;
  * @param topK         검색해서 답변 근거로 넘기는 조각 수
  * @param maxSources   화면에 표시하는 출처 수 (CB-17)
  * @param maxQuestionLength 질문 최대 길이
+ * @param historyTurns 이어지는 질문(CB-07)에 쓰는 최근 대화 턴 수 (질문+답변 = 1턴)
  */
 @Validated
 @ConfigurationProperties(prefix = "siot.chatbot")
@@ -22,6 +23,7 @@ public record ChatbotProperties(
         @DecimalMin("0.0") @DecimalMax("1.0") double minRelevance,
         @Min(1) int topK,
         @Min(1) int maxSources,
-        @Min(1) int maxQuestionLength
+        @Min(1) int maxQuestionLength,
+        @Min(0) int historyTurns
 ) {
 }

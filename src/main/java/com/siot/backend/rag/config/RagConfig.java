@@ -3,6 +3,8 @@ package com.siot.backend.rag.config;
 import com.siot.backend.rag.ai.AnswerGenerator;
 import com.siot.backend.rag.ai.GeminiAnswerGenerator;
 import com.siot.backend.rag.ai.GeminiQueryEmbedder;
+import com.siot.backend.rag.ai.GeminiQueryRewriter;
+import com.siot.backend.rag.ai.QueryRewriter;
 import com.siot.backend.rag.ai.QueryEmbedder;
 import com.siot.backend.rag.ai.AiUnavailableException;
 import dev.langchain4j.model.googleai.GoogleAiEmbeddingModel;
@@ -43,17 +45,31 @@ public class RagConfig {
     @Bean
     public AnswerGenerator answerGenerator(GeminiProperties props) {
         if (!props.configured()) {
-            return (question, language, context) -> {
+            return (question, language, context, history) -> {
                 throw new AiUnavailableException("Gemini API key is not configured");
             };
         }
-        GoogleAiGeminiChatModel model = GoogleAiGeminiChatModel.builder()
+        return new GeminiAnswerGenerator(chatModel(props, props.temperature()));
+    }
+
+    /** CB-07: 이어지는 질문을 검색용 독립 질문으로 */
+    @Bean
+    public QueryRewriter queryRewriter(GeminiProperties props) {
+        if (!props.configured()) {
+            return (question, history) -> {
+                throw new AiUnavailableException("Gemini API key is not configured");
+            };
+        }
+        return new GeminiQueryRewriter(chatModel(props, 0.0));
+    }
+
+    private static GoogleAiGeminiChatModel chatModel(GeminiProperties props, double temperature) {
+        return GoogleAiGeminiChatModel.builder()
                 .apiKey(props.apiKey())
                 .modelName(props.chatModel())
-                .temperature(props.temperature())
+                .temperature(temperature)
                 .timeout(props.timeout())
                 .maxRetries(1)
                 .build();
-        return new GeminiAnswerGenerator(model);
     }
 }

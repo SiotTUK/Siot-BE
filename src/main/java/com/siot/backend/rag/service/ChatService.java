@@ -5,6 +5,8 @@ import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.rag.ai.AiUnavailableException;
 import com.siot.backend.rag.ai.AnswerGenerator;
+import com.siot.backend.rag.ai.ChatTurn;
+import com.siot.backend.rag.ai.QueryRewriter;
 import com.siot.backend.rag.ai.QueryEmbedder;
 import com.siot.backend.rag.ai.RetrievedChunk;
 import com.siot.backend.rag.config.ChatbotProperties;
@@ -40,9 +42,11 @@ import java.util.stream.Collectors;
  * 챗봇 대화 (CB-03, CB-16) 와 질문 처리 파이프라인.
  * <ol>
  *   <li>개인정보 가리기 (CB-05) → 질문 저장</li>
+ *   <li>앞 대화가 있으면 질문을 검색용 독립 질문으로 바꾸기 (CB-07)</li>
  *   <li>질문 임베딩 → 관련 문서 조각 검색 (CB-14)</li>
  *   <li>가장 관련 높은 조각이 기준보다 낮으면 답변하지 않고 문의처 안내 (CB-12)</li>
- *   <li>검색된 조각만 근거로 Gemini 답변 생성 (CB-13). 모델이 근거에 답이 없다고 하면 3 과 같이 처리</li>
+ *   <li>검색된 조각만 근거로 Gemini 답변 생성 (CB-13). 앞 대화도 함께 넘긴다 (CB-07).
+ *       모델이 근거에 답이 없다고 하면 근거 없음과 같이 처리</li>
  *   <li>답변과 근거(출처) 저장 (CB-17)</li>
  * </ol>
  * Gemini 호출 중에는 DB 트랜잭션을 잡지 않는다 (질문 저장 / 답변 저장을 각각 짧은 트랜잭션으로).
@@ -58,6 +62,7 @@ public class ChatService {
     private final AppUserRepository appUserRepository;
     private final QueryEmbedder queryEmbedder;
     private final AnswerGenerator answerGenerator;
+    private final QueryRewriter queryRewriter;
     private final ChunkRetriever chunkRetriever;
     private final ChatbotProperties properties;
     private final TransactionTemplate tx;
@@ -70,6 +75,7 @@ public class ChatService {
                        AppUserRepository appUserRepository,
                        QueryEmbedder queryEmbedder,
                        AnswerGenerator answerGenerator,
+                       QueryRewriter queryRewriter,
                        ChunkRetriever chunkRetriever,
                        ChatbotProperties properties,
                        PlatformTransactionManager transactionManager,
@@ -81,6 +87,7 @@ public class ChatService {
         this.appUserRepository = appUserRepository;
         this.queryEmbedder = queryEmbedder;
         this.answerGenerator = answerGenerator;
+        this.queryRewriter = queryRewriter;
         this.chunkRetriever = chunkRetriever;
         this.properties = properties;
         this.tx = new TransactionTemplate(transactionManager);
@@ -129,18 +136,19 @@ public class ChatService {
         // 1. 개인정보를 가린 질문만 저장하고 AI 로 보낸다 (CB-05)
         PiiMasker.Result masked = PiiMasker.mask(trimmed);
         String question = masked.text();
-        record Saved(ChatConversation conversation, ChatMessage question) {
+        record Saved(ChatConversation conversation, ChatMessage question, List<ChatTurn> history) {
         }
         Saved saved = tx.execute(status -> {
             ChatConversation conversation = findOwned(userId, conversationId);
+            List<ChatTurn> history = recentTurns(conversation.getId());
             ChatMessage message = messageRepository.save(ChatMessage.question(conversation, question));
             conversation.touch(OffsetDateTime.now(clock));
-            return new Saved(conversation, message);
+            return new Saved(conversation, message, history);
         });
         String language = saved.conversation().getLanguage();
 
         // 2~4. 검색 → 근거 판단 → 답변 생성 (트랜잭션 밖)
-        Outcome outcome = answer(question, language);
+        Outcome outcome = answer(question, language, saved.history());
 
         // 5. 답변·근거 저장
         ChatMessage answer = tx.execute(status -> {
@@ -172,9 +180,10 @@ public class ChatService {
     private record Outcome(String text, AnswerStatus status, List<RetrievedChunk> sources) {
     }
 
-    private Outcome answer(String question, String language) {
+    private Outcome answer(String question, String language, List<ChatTurn> history) {
         try {
-            float[] vector = queryEmbedder.embedQuery(question);
+            String searchQuery = searchQuery(question, history);
+            float[] vector = queryEmbedder.embedQuery(searchQuery);
             List<RetrievedChunk> chunks = chunkRetriever.search(vector, properties.topK());
             // CB-12: 관련도가 기준 미만인 조각은 근거로 쓰지 않는다
             List<RetrievedChunk> relevant = chunks.stream()
@@ -186,7 +195,7 @@ public class ChatService {
                 return new Outcome(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
             }
 
-            String text = answerGenerator.generate(question, language, relevant);
+            String text = answerGenerator.generate(question, language, relevant, history);
             if (text == null || text.isBlank() || text.strip().startsWith(AnswerGenerator.NO_ANSWER)) {
                 return new Outcome(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
             }
@@ -196,6 +205,47 @@ public class ChatService {
             log.warn("Chatbot AI unavailable: {}", e.getMessage());
             return new Outcome(ChatbotMessages.unavailable(language), AnswerStatus.ERROR, List.of());
         }
+    }
+
+    /**
+     * CB-07: 앞 대화가 있으면 검색용 독립 질문으로 바꾼다.
+     * 바꾸기에 실패하면 직전 질문을 앞에 붙여 검색한다 (주제를 놓치지 않도록).
+     */
+    private String searchQuery(String question, List<ChatTurn> history) {
+        if (history.isEmpty()) {
+            return question;
+        }
+        try {
+            String rewritten = queryRewriter.rewrite(question, history);
+            if (rewritten != null && !rewritten.isBlank()) {
+                // 모델이 개인정보를 되살려 쓰는 일이 없도록 한 번 더 가린다
+                return PiiMasker.mask(rewritten.strip()).text();
+            }
+        } catch (AiUnavailableException e) {
+            log.warn("Chatbot query rewrite failed, falling back to previous question: {}", e.getMessage());
+        }
+        return history.get(history.size() - 1).question() + "\n" + question;
+    }
+
+    /** 최근 N턴 (오래된 것부터). 답변은 근거로 답한 경우만 넣는다 */
+    private List<ChatTurn> recentTurns(Long conversationId) {
+        if (properties.historyTurns() == 0) {
+            return List.of();
+        }
+        List<ChatMessage> messages = messageRepository.findByConversationIdOrderByIdAsc(conversationId);
+        List<ChatTurn> turns = new ArrayList<>();
+        for (int i = 0; i < messages.size(); i++) {
+            ChatMessage message = messages.get(i);
+            if (!ChatMessage.ROLE_USER.equals(message.getRole())) {
+                continue;
+            }
+            ChatMessage next = i + 1 < messages.size() ? messages.get(i + 1) : null;
+            String answer = next != null && ChatMessage.ROLE_ASSISTANT.equals(next.getRole())
+                    && AnswerStatus.ANSWERED.name().equals(next.getAnswerStatus()) ? next.getContent() : null;
+            turns.add(new ChatTurn(message.getContent(), answer));
+        }
+        int from = Math.max(0, turns.size() - properties.historyTurns());
+        return List.copyOf(turns.subList(from, turns.size()));
     }
 
     // ------------------------------------------------------------------ helpers
