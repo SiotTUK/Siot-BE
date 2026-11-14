@@ -11,9 +11,9 @@ import java.util.List;
 /**
  * CB-14: 질문 벡터와 가장 가까운 문서 조각을 찾는다 (pgvector 코사인 거리, HNSW 인덱스).
  * <p>
- * 검색 대상: 사용 중인 문서(document.is_active)의 현재 버전(document_version.is_current) 조각 중
- * 같은 임베딩 모델로 만든 것. 새 버전은 반영에 성공한 뒤에만 is_current 가 되므로(ADM-04)
- * 반영 중이거나 실패한 버전은 검색되지 않는다.
+ * 검색 대상: 사용 중인 문서(document.is_active)의 현재 버전(document_version.is_current) 중
+ * 반영이 끝난(processing_status = 'COMPLETED') 버전의 조각이며, 같은 임베딩 모델로 만든 것.
+ * 문서 적재 쪽 약속(COMPLETED 뒤에만 is_current)이 어긋나도 반영 중·실패 버전은 검색되지 않는다 (ADM-04).
  */
 @Component
 @RequiredArgsConstructor
@@ -27,6 +27,7 @@ public class ChunkRetriever {
             JOIN document_version v ON v.document_version_id = c.document_version_id
             JOIN document d ON d.document_id = v.document_id
             WHERE v.is_current
+              AND v.processing_status = 'COMPLETED'
               AND d.is_active
               AND c.embedding IS NOT NULL
               AND c.embedding_model = ?

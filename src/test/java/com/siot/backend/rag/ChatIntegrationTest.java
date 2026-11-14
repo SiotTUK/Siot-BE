@@ -111,7 +111,7 @@ class ChatIntegrationTest {
                 .andExpect(jsonPath("$.data.answer.helpful").doesNotExist())
                 .andExpect(jsonPath("$.data.masked").value(false));
 
-        // 가장 관련 높은 조각이 근거로 넘어가고, 이전 버전·비활성 문서 조각은 넘어가지 않는다
+        // 가장 관련 높은 조각이 근거로 넘어가고, 이전 버전·반영 중·비활성 문서 조각은 넘어가지 않는다
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<RetrievedChunk>> context = ArgumentCaptor.forClass(List.class);
         verify(answerGenerator).generate(eq("외국인등록은 언제까지 해야 하나요?"), eq("ko"), context.capture(), eq(List.of()));
@@ -417,6 +417,15 @@ class ChatIntegrationTest {
         insertGuideReference("CL-01", current, 10, 14);
         insertGuideReference("CL-10", current, 30, 30);
         insertGuideReference("CL-05", current, 50, 60);
+
+        // 현재 버전으로 지정됐지만 아직 반영 중인 문서는 검색되지 않아야 한다
+        Long processing = jdbcTemplate.queryForObject(
+                "INSERT INTO document (name) VALUES ('반영 중인 문서') RETURNING document_id", Long.class);
+        Long processingVersion = jdbcTemplate.queryForObject(
+                "INSERT INTO document_version (document_id, version_no, file_storage_key, processing_status, is_current) "
+                        + "VALUES (?, 1, 'test/p.pdf', 'PROCESSING', true) RETURNING document_version_id",
+                Long.class, processing);
+        insertChunk(processingVersion, 1, 1, 1, "반영 중인 문서의 외국인등록 안내", AXIS_REGISTRATION);
 
         Long inactive = jdbcTemplate.queryForObject("""
                 INSERT INTO document (name, is_active) VALUES ('사용 중지된 문서', false) RETURNING document_id""", Long.class);

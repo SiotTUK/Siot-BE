@@ -97,7 +97,7 @@ GET /api/chat/suggestions?language=en
 
 1. **개인정보 가리기 (CB-05)**: 외국인등록번호·주민등록번호 형식, 여권번호, 전화번호를 `[등록번호]` `[여권번호]` `[전화번호]` 로 바꿉니다. 이름·주소·이메일은 가리지 않습니다. AI 로 보내는 질문과 DB 에 저장하는 질문 모두 가린 값입니다.
 2. **이어지는 질문 (CB-07)**: 같은 대화에 앞선 질문이 있으면 최근 3턴을 보고 질문을 검색용 독립 질문으로 바꿉니다. 예: "그거 온라인으로도 돼요?" → "외국인등록은 온라인으로도 신청할 수 있나요?". 첫 질문은 바꾸지 않고, 바꾸기에 실패하면 직전 질문을 앞에 붙여 검색합니다. 저장되는 질문은 사용자가 쓴 그대로입니다.
-3. **검색 (CB-14)**: 질문을 `gemini-embedding-001`(768차원, RETRIEVAL_QUERY)로 임베딩해 `document_chunk` 에서 코사인 거리로 가까운 조각 `top-k`(기본 5)개를 찾습니다. 사용 중인 문서(`document.is_active`)의 현재 버전(`document_version.is_current`) 조각만 대상입니다.
+3. **검색 (CB-14)**: 질문을 `gemini-embedding-001`(768차원, RETRIEVAL_QUERY)로 임베딩해 `document_chunk` 에서 코사인 거리로 가까운 조각 `top-k`(기본 5)개를 찾습니다. 사용 중인 문서(`document.is_active`)의 현재 버전(`document_version.is_current`) 중 반영이 끝난(`processing_status = 'COMPLETED'`) 버전의 조각만 대상입니다.
 4. **근거 판단 (CB-12)**: 관련도(1 − 코사인 거리)가 `min-relevance`(기본 0.6) 이상인 조각만 근거로 씁니다. 하나도 없으면 Gemini 를 호출하지 않고 `NO_EVIDENCE`.
 5. **답변 (CB-13)**: 근거 조각과 최근 3턴(질문 + 근거로 답한 답변)을 Gemini(`gemini-2.5-flash`)에 넘겨 답변합니다. 앞 대화는 무엇을 가리키는지 이해하는 데만 쓰고, 사실은 근거 조각에서만 가져오게 합니다. 근거에 답이 없으면 모델이 `NO_ANSWER` 를 돌려주고, 이것도 `NO_EVIDENCE` 로 처리합니다. 답변 언어는 질문 언어, 판별이 안 되면 대화 언어입니다.
 6. **저장**: 답변과 근거(최대 3개, `chat_message_source`)를 저장합니다.
@@ -118,9 +118,13 @@ Gemini 호출 중에는 DB 트랜잭션을 잡지 않습니다.
 
 ## 문서 적재(역할 B)와의 약속
 
-- 조각 임베딩은 **같은 모델 `gemini-embedding-001`, 768차원**으로 만들고 `embedding_model` 컬럼에 모델 이름을 넣습니다. 문서는 `RETRIEVAL_DOCUMENT` 용도로 임베딩합니다.
-- 새 버전은 반영(추출·분할·임베딩)에 **성공한 뒤에만** `is_current = true` 로 바꾸고 이전 버전은 false 로 바꿉니다 (ADM-04). 챗봇은 `is_current` 만 봅니다.
-- 출처 표시를 위해 `document.name`, `document.source_url`, `document_chunk.page_start/page_end` 를 채웁니다.
+| 항목 | 약속 |
+|---|---|
+| 임베딩 | `gemini-embedding-001`, `outputDimensionality=768`, 문서는 `RETRIEVAL_DOCUMENT` (질문은 챗봇이 `RETRIEVAL_QUERY`). 저장 전 L2 정규화 권장. `embedding_model` 컬럼 = `gemini-embedding-001` (챗봇이 이 값으로 걸러 검색). 모델을 바꾸면 전체 재임베딩 |
+| 상태 | `processing_status`: `PENDING` → `PROCESSING` → `COMPLETED` / `FAILED`. `COMPLETED` 뒤에만 `is_current = true`, 이전 버전은 같은 트랜잭션에서 false. 실패하면 이전 버전 유지 (ADM-04). 챗봇은 `is_current AND COMPLETED AND document.is_active` 만 검색 |
+| 필수 값 | `document.name` (화면 표시 이름), `document.source_url` (공개 원문 링크), `document_chunk.page_start/page_end` (PDF 기준 1부터), `chunk_no` (버전별 1부터) |
+| 조각 | 목표 600자 / 최대 1,000자 / 100자 겹침. 제목·문단 경계에서 자르고, 조각 첫 줄에 절 제목, 표는 한 조각. 쪽을 넘으면 page_start~page_end 로 기록 |
+| 언어 | 자료는 한국어 원문 그대로. 질문은 번역 없이 검색 (다국어 임베딩). 평가 세트(CB-01)에서 외국어 정답률 80% 미만이면 챗봇이 검색 전 한국어 변환을 추가 |
 
 ## 아직 없는 것 (다음 단계)
 
