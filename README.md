@@ -19,6 +19,8 @@ docker compose up -d --build  # backend + postgres + redis
 curl localhost:8080/actuator/health
 ```
 
+API 문서: http://localhost:8080/swagger-ui.html (사용법은 [로컬 개발 환경](docs/setup.md#api-문서-swagger-ui), 운영은 기본 꺼짐)
+
 자세한 내용:
 
 - **[개발 규칙 (API 경로·권한, CSRF, 응답 형식, 마이그레이션) — 작업 전 필독](docs/conventions.md)**

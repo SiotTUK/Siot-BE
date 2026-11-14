@@ -108,6 +108,45 @@ class SiotBackendApplicationTests {
     }
 
     @Test
+    void swaggerDocsArePublicAndListApis() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.info.title").value("웰컴시흥 (Siot) Backend API"))
+                .andExpect(jsonPath("$.components.securitySchemes.session.name").value("SIOT_SESSION"))
+                .andExpect(jsonPath("$.paths['/api/auth/login']").exists())
+                .andExpect(jsonPath("$.paths['/api/admin/guides/{code}/translations/{language}'].put").exists());
+        mockMvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
+    }
+
+    @Test
+    void swaggerDocsMatchActualBehavior() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                // CsrfToken 인자는 파라미터로 나오지 않는다
+                .andExpect(jsonPath("$.paths['/api/auth/csrf'].get.parameters").doesNotExist())
+                // 실제 성공 코드 (201·202·204)
+                .andExpect(jsonPath("$.paths['/api/auth/signup'].post.responses['201']").exists())
+                .andExpect(jsonPath("$.paths['/api/auth/signup'].post.responses['200']").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/auth/signup/email-verification'].post.responses['202']").exists())
+                .andExpect(jsonPath("$.paths['/api/auth/logout'].post.responses['204'].content").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/chat/conversations'].post.responses['201']").exists())
+                // 공개 API 는 인증 표시 없음, 그 외는 세션 + 401
+                .andExpect(jsonPath("$.paths['/api/auth/login'].post.security").isEmpty())
+                .andExpect(jsonPath("$.paths['/api/auth/login'].post.responses['401'].content['application/json'].examples.LOGIN_FAILED").exists())
+                .andExpect(jsonPath("$.paths['/api/members/me'].get.security").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/members/me'].get.responses['401'].content['application/json'].examples.UNAUTHORIZED").exists())
+                // 관리자 403, 변경 요청 CSRF 403, API 별 오류 코드
+                .andExpect(jsonPath("$.paths['/api/admin/members'].get.responses['403'].content['application/json'].examples.FORBIDDEN").exists())
+                .andExpect(jsonPath("$.paths['/api/chat/conversations/{conversationId}/messages'].post.responses['403'].content['application/json'].examples.CSRF_TOKEN_INVALID").exists())
+                .andExpect(jsonPath("$.paths['/api/auth/signup'].post.responses['409'].content['application/json'].examples.DUPLICATE_EMAIL").exists())
+                .andExpect(jsonPath("$.components.schemas.ErrorResponse.properties.code.enum").isNotEmpty())
+                // 설명·태그
+                .andExpect(jsonPath("$.paths['/api/auth/signup'].post.summary").value("M-01~M-03 회원가입"))
+                .andExpect(jsonPath("$.paths['/api/auth/signup'].post.tags[0]").value("1. 인증·가입"))
+                .andExpect(jsonPath("$.components.schemas.ReferralContact").exists())
+                .andExpect(jsonPath("$.components.schemas.Contact").doesNotExist());
+    }
+
+    @Test
     void healthEndpointIsPublicAndUp() throws Exception {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())

@@ -36,6 +36,14 @@ public class SecurityConfig {
             "/error"
     };
 
+    /** API 문서 (Swagger UI). springdoc 이 꺼진 환경(운영 기본값)에서는 404 */
+    private static final String[] API_DOCS = {
+            "/swagger-ui.html",
+            "/swagger-ui/**",
+            "/v3/api-docs",
+            "/v3/api-docs/**"
+    };
+
     /**
      * 비로그인 사용자가 쓸 수 있는 API. 회원가입하지 않으면 아무것도 못 본다 (11/13 결정).
      * M-01~M-03 가입 인증 코드·가입·이메일 중복 확인, M-08 로그인, M-09 로그아웃, M-11 비밀번호 재설정, CSRF 토큰
@@ -59,6 +67,7 @@ public class SecurityConfig {
                         .sessionFixation(fixation -> fixation.changeSessionId()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(INFRA_PUBLIC).permitAll()
+                        .requestMatchers(API_DOCS).permitAll()
                         // ADM-01: 관리 API·운영 지표는 관리자만
                         .requestMatchers("/api/admin/**", "/actuator/**").hasRole("ADMIN")
                         .requestMatchers(PUBLIC_ANY_METHOD).permitAll()

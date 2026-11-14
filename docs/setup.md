@@ -60,6 +60,17 @@ docker compose --profile dev up -d   # 전체 + mailpit
 
 받은 메일 확인: http://localhost:8025 (가입·이메일 인증 코드, 비밀번호 재설정 링크)
 
+## API 문서 (Swagger UI)
+
+백엔드를 띄운 뒤 http://localhost:8080/swagger-ui.html (OpenAPI JSON: `/v3/api-docs`)
+
+1. `GET /api/auth/csrf` 실행 (XSRF-TOKEN 쿠키 발급)
+2. `POST /api/auth/login` 실행 → 세션 쿠키(SIOT_SESSION)가 브라우저에 저장됨
+3. 이후 다른 API 를 "Try it out" 으로 호출. POST·PUT 등의 `X-XSRF-TOKEN` 헤더는 Swagger UI 가 자동으로 넣습니다.
+
+관리자 API(`/api/admin/**`)는 관리자 계정으로 로그인해야 합니다 (`SIOT_ADMIN_EMAILS`).
+IDE 실행(`local` 프로필)은 기본으로 켜져 있습니다. `prod` 프로필(운영, `docker compose` 전체 실행)은 기본으로 꺼져 있어서 `.env` 에 `SWAGGER_ENABLED=true` 를 넣어야 합니다. 운영에서 켜면 문서는 누구나 볼 수 있습니다 (API 호출 권한은 그대로).
+
 ## 테스트
 
 ```bash

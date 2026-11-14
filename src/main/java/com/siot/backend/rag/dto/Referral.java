@@ -1,6 +1,7 @@
 package com.siot.backend.rag.dto;
 
 import com.siot.backend.rag.domain.ReferralTopic;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,7 @@ import java.util.Map;
 public record Referral(String notice, List<Contact> contacts) {
 
     /** @param topic VISA / LEGAL / MEDICAL */
+    @Schema(name = "ReferralContact", description = "CB-11 담당 기관 연락처")
     public record Contact(String topic, String number, String label) {
     }
 

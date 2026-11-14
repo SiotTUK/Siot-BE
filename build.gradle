@@ -43,6 +43,9 @@ dependencies {
     // Monitoring
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+    // API 문서 (Swagger UI: /swagger-ui.html, OpenAPI JSON: /v3/api-docs). 운영은 기본 꺼짐
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0'
+
     // Mail (Gmail SMTP: NTF-09 이메일 인증, M-11 비밀번호 재설정, NTF-05 알림 이메일)
     implementation 'org.springframework.boot:spring-boot-starter-mail'
 
