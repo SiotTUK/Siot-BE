@@ -28,9 +28,20 @@ public class Guide {
     @Column(nullable = false, length = 50, unique = true)
     private String code;
 
-    /** CHECKLIST(체크리스트 규칙표 CL-xx) / LIFE_CHANGE_TASK(생활 변화 규칙표 LC-xx-n) 등 */
+    /** CHECKLIST(체크리스트 규칙표 CL-xx) / LIFE_CHANGE_TASK(생활 변화 규칙표 LC-xx-n) / RULE(생활수칙) */
     @Column(nullable = false, length = 30)
     private String kind;
+
+    /** RUL-04 자주 묻는 질문 TOP5 에 표시 (생활수칙만). 순서는 {@link #sortOrder} */
+    @Column(name = "is_faq", nullable = false)
+    private boolean faq = false;
+
+    /**
+     * NTF-07 실제 안내 내용이 바뀐 시각. null = 등록 후 바뀐 적 없음.
+     * {@link #updatedAt} 은 오타 수정에도 바뀌므로 변경 표시에는 이 값을 쓴다.
+     */
+    @Column(name = "notice_changed_at")
+    private OffsetDateTime noticeChangedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "item_type", nullable = false, length = 10)
@@ -70,4 +81,9 @@ public class Guide {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    /** 관리자가 '안내 내용 변경'으로 저장할 때 호출한다 (단순 수정에는 호출하지 않음) */
+    public void markNoticeChanged(OffsetDateTime changedAt) {
+        this.noticeChangedAt = changedAt;
+    }
 }

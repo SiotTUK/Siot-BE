@@ -53,13 +53,15 @@ erDiagram
     guide {
         bigint guide_id PK
         varchar code UK "CL-01, LC-01-1"
-        varchar kind "CHECKLIST / LIFE_CHANGE_TASK"
+        varchar kind "CHECKLIST / LIFE_CHANGE_TASK / RULE"
         varchar item_type "REQUIRED/INFO/OPTIONAL"
         varchar life_change_code "LC-01~LC-08 (할 일만)"
         varchar category
         int sort_order
         text source_url "출처 링크"
         varchar contact "문의 전화"
+        boolean is_faq "RUL-04 자주 묻는 질문 TOP5 (RULE만)"
+        timestamptz notice_changed_at "NTF-07 실제 안내 내용 변경 시각"
         timestamptz updated_at "CHK-06 updatedAt"
     }
     guide_translation {
@@ -173,3 +175,13 @@ en / zh / vi 문구와 장소·준비물·과태료 등 상세는 관리자 화�
 | 시간대 없는 시각 | 모든 `TIMESTAMP` → `TIMESTAMPTZ` (Java `OffsetDateTime`) |
 
 세금 납부 기간(CL-10 6/16~6/30·12/16~12/31, CL-11 7/16~7/31·9/16~9/30)은 체크리스트 규칙(코드)이 기준이다. `calendar_schedule` 은 주민세처럼 체크리스트 항목이 아닌 공통 일정에 쓴다.
+
+## 생활수칙·안내 변경 표시 (0900)
+
+| 요구사항 | DB 변경 |
+|---|---|
+| 생활수칙 콘텐츠 | `guide.kind` 에 `RULE` 추가 — 문구는 체크리스트와 같이 `guide_translation` 에 언어별 저장 |
+| RUL-04 자주 묻는 질문 TOP5 | `guide.is_faq` (CHECK: `RULE` 만 true 가능) — `sort_order` 순 상위 5개, 부분 인덱스 `ix_guide_faq` |
+| NTF-07 안내 변경 표시 | `guide.notice_changed_at` — 실제 안내 내용이 바뀐 시각. `updated_at` 은 오타 수정에도 바뀌므로 구분. NULL = 등록 후 바뀐 적 없음 |
+
+반복되는 일(세금 회차·생활 변화 재등록)의 완료 기록은 지우지 않고 `checklist_progress.period_key` 회차별로 쌓는 방식(A)을 유지한다.
