@@ -60,6 +60,10 @@ services:
       SCHEDULING_ENABLED: ${SCHEDULING_ENABLED:-true}
       EVENT_COLLECT_CRON: ${EVENT_COLLECT_CRON:-0 0 3 * * *}
       NOTIFICATION_DISPATCH_INTERVAL: ${NOTIFICATION_DISPATCH_INTERVAL:-1m}
+      # 챗봇 (Gemini). 비어 있으면 챗봇은 안내 문구로만 응답한다
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-2.5-flash}
+      CHATBOT_MIN_RELEVANCE: ${CHATBOT_MIN_RELEVANCE:-0.6}
       # 메일: 기본값은 개발용 Mailpit. 운영은 .env 에 Gmail SMTP 값을 넣는다 (docs/deployment.md)
       MAIL_HOST: ${MAIL_HOST:-mailpit}
       MAIL_PORT: ${MAIL_PORT:-1025}

@@ -37,4 +37,13 @@ public class ChatMessageSource {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
+
+    public static ChatMessageSource of(ChatMessage message, DocumentChunk chunk, double relevanceScore, int order) {
+        ChatMessageSource source = new ChatMessageSource();
+        source.message = message;
+        source.chunk = chunk;
+        source.relevanceScore = relevanceScore;
+        source.sourceOrder = order;
+        return source;
+    }
 }

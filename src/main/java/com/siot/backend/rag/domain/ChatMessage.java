@@ -54,4 +54,25 @@ public class ChatMessage {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
+
+    public static final String ROLE_USER = "USER";
+    public static final String ROLE_ASSISTANT = "ASSISTANT";
+
+    /** @param content 개인정보를 가린 질문 (CB-05) */
+    public static ChatMessage question(ChatConversation conversation, String content) {
+        ChatMessage message = new ChatMessage();
+        message.conversation = conversation;
+        message.role = ROLE_USER;
+        message.content = content;
+        return message;
+    }
+
+    public static ChatMessage answer(ChatConversation conversation, String content, AnswerStatus status) {
+        ChatMessage message = new ChatMessage();
+        message.conversation = conversation;
+        message.role = ROLE_ASSISTANT;
+        message.content = content;
+        message.answerStatus = status.name();
+        return message;
+    }
 }

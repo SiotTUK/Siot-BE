@@ -1,0 +1,237 @@
+package com.siot.backend.rag.service;
+
+import com.siot.backend.global.exception.BusinessException;
+import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.member.repository.AppUserRepository;
+import com.siot.backend.rag.ai.AiUnavailableException;
+import com.siot.backend.rag.ai.AnswerGenerator;
+import com.siot.backend.rag.ai.QueryEmbedder;
+import com.siot.backend.rag.ai.RetrievedChunk;
+import com.siot.backend.rag.config.ChatbotProperties;
+import com.siot.backend.rag.domain.AnswerStatus;
+import com.siot.backend.rag.domain.ChatConversation;
+import com.siot.backend.rag.domain.ChatMessage;
+import com.siot.backend.rag.domain.ChatMessageSource;
+import com.siot.backend.rag.domain.DocumentChunk;
+import com.siot.backend.rag.dto.AskResponse;
+import com.siot.backend.rag.dto.ConversationResponse;
+import com.siot.backend.rag.dto.MessageResponse;
+import com.siot.backend.rag.dto.SourceResponse;
+import com.siot.backend.rag.repository.ChatConversationRepository;
+import com.siot.backend.rag.repository.ChatMessageRepository;
+import com.siot.backend.rag.repository.ChatMessageSourceRepository;
+import com.siot.backend.rag.repository.DocumentChunkRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * 챗봇 대화 (CB-03, CB-16) 와 질문 처리 파이프라인.
+ * <ol>
+ *   <li>개인정보 가리기 (CB-05) → 질문 저장</li>
+ *   <li>질문 임베딩 → 관련 문서 조각 검색 (CB-14)</li>
+ *   <li>가장 관련 높은 조각이 기준보다 낮으면 답변하지 않고 문의처 안내 (CB-12)</li>
+ *   <li>검색된 조각만 근거로 Gemini 답변 생성 (CB-13). 모델이 근거에 답이 없다고 하면 3 과 같이 처리</li>
+ *   <li>답변과 근거(출처) 저장 (CB-17)</li>
+ * </ol>
+ * Gemini 호출 중에는 DB 트랜잭션을 잡지 않는다 (질문 저장 / 답변 저장을 각각 짧은 트랜잭션으로).
+ */
+@Slf4j
+@Service
+public class ChatService {
+
+    private final ChatConversationRepository conversationRepository;
+    private final ChatMessageRepository messageRepository;
+    private final ChatMessageSourceRepository sourceRepository;
+    private final DocumentChunkRepository chunkRepository;
+    private final AppUserRepository appUserRepository;
+    private final QueryEmbedder queryEmbedder;
+    private final AnswerGenerator answerGenerator;
+    private final ChunkRetriever chunkRetriever;
+    private final ChatbotProperties properties;
+    private final TransactionTemplate tx;
+    private final Clock clock;
+
+    public ChatService(ChatConversationRepository conversationRepository,
+                       ChatMessageRepository messageRepository,
+                       ChatMessageSourceRepository sourceRepository,
+                       DocumentChunkRepository chunkRepository,
+                       AppUserRepository appUserRepository,
+                       QueryEmbedder queryEmbedder,
+                       AnswerGenerator answerGenerator,
+                       ChunkRetriever chunkRetriever,
+                       ChatbotProperties properties,
+                       PlatformTransactionManager transactionManager,
+                       Clock clock) {
+        this.conversationRepository = conversationRepository;
+        this.messageRepository = messageRepository;
+        this.sourceRepository = sourceRepository;
+        this.chunkRepository = chunkRepository;
+        this.appUserRepository = appUserRepository;
+        this.queryEmbedder = queryEmbedder;
+        this.answerGenerator = answerGenerator;
+        this.chunkRetriever = chunkRetriever;
+        this.properties = properties;
+        this.tx = new TransactionTemplate(transactionManager);
+        this.clock = clock;
+    }
+
+    // ------------------------------------------------------------------ 대화 (CB-03)
+
+    /** 새 대화 ('새 대화' 버튼) */
+    @Transactional
+    public ConversationResponse startConversation(Long userId, String language) {
+        String lang = language != null ? language : appUserRepository.findById(userId)
+                .map(user -> user.getLanguage())
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+        ChatConversation conversation = conversationRepository.save(ChatConversation.start(userId, lang));
+        return toResponse(conversation, null);
+    }
+
+    /** 이전 대화 목록 (최근 대화 순) */
+    @Transactional(readOnly = true)
+    public Page<ConversationResponse> listConversations(Long userId, Pageable pageable) {
+        return conversationRepository.findByUserIdOrderByUpdatedAtDesc(userId, pageable)
+                .map(c -> toResponse(c, messageRepository
+                        .findFirstByConversationIdAndRoleOrderByIdAsc(c.getId(), ChatMessage.ROLE_USER)
+                        .map(ChatMessage::getContent)
+                        .orElse(null)));
+    }
+
+    /** 대화 내용 (근거 포함) */
+    @Transactional(readOnly = true)
+    public List<MessageResponse> getMessages(Long userId, Long conversationId) {
+        ChatConversation conversation = findOwned(userId, conversationId);
+        List<ChatMessage> messages = messageRepository.findByConversationIdOrderByIdAsc(conversation.getId());
+        Map<Long, List<SourceResponse>> sources = loadSources(messages.stream().map(ChatMessage::getId).toList());
+        return messages.stream().map(m -> toResponse(m, sources.getOrDefault(m.getId(), List.of()))).toList();
+    }
+
+    // ------------------------------------------------------------------ 질문 (CB-16)
+
+    public AskResponse ask(Long userId, Long conversationId, String rawQuestion) {
+        String trimmed = rawQuestion == null ? "" : rawQuestion.strip();
+        if (trimmed.isEmpty() || trimmed.length() > properties.maxQuestionLength()) {
+            throw new BusinessException(ErrorCode.CHAT_QUESTION_LENGTH);
+        }
+
+        // 1. 개인정보를 가린 질문만 저장하고 AI 로 보낸다 (CB-05)
+        PiiMasker.Result masked = PiiMasker.mask(trimmed);
+        String question = masked.text();
+        record Saved(ChatConversation conversation, ChatMessage question) {
+        }
+        Saved saved = tx.execute(status -> {
+            ChatConversation conversation = findOwned(userId, conversationId);
+            ChatMessage message = messageRepository.save(ChatMessage.question(conversation, question));
+            conversation.touch(OffsetDateTime.now(clock));
+            return new Saved(conversation, message);
+        });
+        String language = saved.conversation().getLanguage();
+
+        // 2~4. 검색 → 근거 판단 → 답변 생성 (트랜잭션 밖)
+        Outcome outcome = answer(question, language);
+
+        // 5. 답변·근거 저장
+        ChatMessage answer = tx.execute(status -> {
+            ChatConversation conversation = conversationRepository.getReferenceById(saved.conversation().getId());
+            ChatMessage message = messageRepository.save(
+                    ChatMessage.answer(conversation, outcome.text(), outcome.status()));
+            List<ChatMessageSource> sources = new ArrayList<>();
+            for (int i = 0; i < outcome.sources().size(); i++) {
+                RetrievedChunk chunk = outcome.sources().get(i);
+                DocumentChunk chunkRef = chunkRepository.getReferenceById(chunk.chunkId());
+                sources.add(ChatMessageSource.of(message, chunkRef, chunk.relevance(), i + 1));
+            }
+            sourceRepository.saveAll(sources);
+            return message;
+        });
+
+        List<SourceResponse> sourceResponses = new ArrayList<>();
+        for (int i = 0; i < outcome.sources().size(); i++) {
+            RetrievedChunk c = outcome.sources().get(i);
+            sourceResponses.add(new SourceResponse(i + 1, c.documentName(), c.pageStart(), c.pageEnd(),
+                    c.sourceUrl(), c.relevance()));
+        }
+        return new AskResponse(
+                toResponse(saved.question(), List.of()),
+                toResponse(answer, sourceResponses),
+                masked.masked());
+    }
+
+    private record Outcome(String text, AnswerStatus status, List<RetrievedChunk> sources) {
+    }
+
+    private Outcome answer(String question, String language) {
+        try {
+            float[] vector = queryEmbedder.embedQuery(question);
+            List<RetrievedChunk> chunks = chunkRetriever.search(vector, properties.topK());
+            // CB-12: 관련도가 기준 미만인 조각은 근거로 쓰지 않는다
+            List<RetrievedChunk> relevant = chunks.stream()
+                    .filter(c -> c.relevance() >= properties.minRelevance())
+                    .toList();
+            if (relevant.isEmpty()) {
+                log.info("Chatbot no evidence: best relevance={}",
+                        chunks.isEmpty() ? "none" : String.format("%.3f", chunks.get(0).relevance()));
+                return new Outcome(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
+            }
+
+            String text = answerGenerator.generate(question, language, relevant);
+            if (text == null || text.isBlank() || text.strip().startsWith(AnswerGenerator.NO_ANSWER)) {
+                return new Outcome(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
+            }
+            List<RetrievedChunk> sources = relevant.stream().limit(properties.maxSources()).toList();
+            return new Outcome(text, AnswerStatus.ANSWERED, sources);
+        } catch (AiUnavailableException e) {
+            log.warn("Chatbot AI unavailable: {}", e.getMessage());
+            return new Outcome(ChatbotMessages.unavailable(language), AnswerStatus.ERROR, List.of());
+        }
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    private ChatConversation findOwned(Long userId, Long conversationId) {
+        // NFR-03: 다른 회원의 대화는 존재 여부도 드러내지 않는다
+        return conversationRepository.findByIdAndUserId(conversationId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_CONVERSATION_NOT_FOUND));
+    }
+
+    private Map<Long, List<SourceResponse>> loadSources(List<Long> messageIds) {
+        if (messageIds.isEmpty()) {
+            return Map.of();
+        }
+        return sourceRepository.findByMessageIdInOrderBySourceOrderAsc(messageIds).stream()
+                .collect(Collectors.groupingBy(s -> s.getMessage().getId(),
+                        Collectors.mapping(ChatService::toResponse, Collectors.toList())));
+    }
+
+    private static SourceResponse toResponse(ChatMessageSource source) {
+        DocumentChunk chunk = source.getChunk();
+        if (chunk == null) {
+            return new SourceResponse(source.getSourceOrder(), null, null, null, null, source.getRelevanceScore());
+        }
+        var document = chunk.getDocumentVersion().getDocument();
+        return new SourceResponse(source.getSourceOrder(), document.getName(), chunk.getPageStart(),
+                chunk.getPageEnd(), document.getSourceUrl(), source.getRelevanceScore());
+    }
+
+    private static MessageResponse toResponse(ChatMessage message, List<SourceResponse> sources) {
+        return new MessageResponse(message.getId(), message.getRole(), message.getContent(),
+                message.getAnswerStatus(), sources, message.getCreatedAt());
+    }
+
+    private static ConversationResponse toResponse(ChatConversation conversation, String title) {
+        return new ConversationResponse(conversation.getId(), conversation.getLanguage(), title,
+                conversation.getCreatedAt(), conversation.getUpdatedAt());
+    }
+}

@@ -42,7 +42,11 @@ public enum ErrorCode {
     // ---- 비밀번호 재설정 (M-11) ----
     PASSWORD_RESET_TOO_FREQUENT(HttpStatus.TOO_MANY_REQUESTS, "비밀번호 재설정은 1분에 한 번만 요청할 수 있습니다."),
     PASSWORD_RESET_DAILY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "오늘 비밀번호 재설정 요청 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요."),
-    PASSWORD_RESET_TOKEN_INVALID(HttpStatus.BAD_REQUEST, "재설정 링크가 만료되었거나 이미 사용되었습니다. 다시 요청해 주세요.");
+    PASSWORD_RESET_TOKEN_INVALID(HttpStatus.BAD_REQUEST, "재설정 링크가 만료되었거나 이미 사용되었습니다. 다시 요청해 주세요."),
+
+    // ---- 챗봇 (CB) ----
+    CHAT_CONVERSATION_NOT_FOUND(HttpStatus.NOT_FOUND, "대화를 찾을 수 없습니다."),
+    CHAT_QUESTION_LENGTH(HttpStatus.BAD_REQUEST, "질문은 1~1000자로 입력해 주세요.");
 
     private final HttpStatus status;
     private final String message;

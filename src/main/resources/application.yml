@@ -71,6 +71,21 @@ spring:
         await-termination-period: 30s
 
 siot:
+  # 챗봇 (CB-12~17). 근거 기준값은 실제 문서 적재 후 평가 세트(CB-01)로 조정한다
+  chatbot:
+    min-relevance: ${CHATBOT_MIN_RELEVANCE:0.6}
+    top-k: ${CHATBOT_TOP_K:5}
+    max-sources: 3
+    max-question-length: 1000
+  # Gemini (LangChain4j). 키가 없으면 챗봇은 "지금은 답변할 수 없어요" 로 응답한다
+  gemini:
+    api-key: ${GEMINI_API_KEY:}
+    chat-model: ${GEMINI_CHAT_MODEL:gemini-2.5-flash}
+    # 문서 적재(역할 B)와 반드시 같은 모델·차원 (document_chunk.embedding VECTOR(768))
+    embedding-model: gemini-embedding-001
+    embedding-dimension: 768
+    temperature: 0.2
+    timeout: 20s
   mail:
     # Gmail SMTP 는 로그인한 계정(또는 등록된 별칭) 주소로만 발신할 수 있다
     from: ${MAIL_FROM}

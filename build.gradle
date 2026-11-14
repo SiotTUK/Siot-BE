@@ -46,6 +46,9 @@ dependencies {
     // Mail (Gmail SMTP: NTF-09 이메일 인증, M-11 비밀번호 재설정, NTF-05 알림 이메일)
     implementation 'org.springframework.boot:spring-boot-starter-mail'
 
+    // 챗봇 (CB-13): LangChain4j + Gemini (답변 생성·질문 임베딩)
+    implementation 'dev.langchain4j:langchain4j-google-ai-gemini:1.22.0'
+
     // Lombok / Config metadata
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

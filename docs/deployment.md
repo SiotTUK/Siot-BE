@@ -66,6 +66,9 @@ DB_PASSWORD=<강력한 비밀번호>
 REDIS_PASSWORD=<강력한 비밀번호>
 SESSION_TIMEOUT=14d
 BACKEND_PORT=127.0.0.1:8080
+
+# 챗봇 (Google AI Studio API 키, 비우면 챗봇은 안내 문구로만 응답)
+GEMINI_API_KEY=<Gemini API 키>
 BACKEND_IMAGE=asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend:<배포할 태그>   # CI 가 배포 때마다 바꿈
 
 # 메일 (Gmail SMTP)
