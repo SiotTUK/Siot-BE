@@ -107,7 +107,7 @@ FRONTEND_BASE_URL=https://<서비스 도메인>
 4. VM 메타데이터 `enable-oslogin=TRUE`
 
 - 방화벽: 외부에는 Nginx(80/443)만 연다. 8080·5432·6379는 열지 않는다. `.env` 의 `BACKEND_PORT=127.0.0.1:8080` 으로 백엔드도 VM 내부에만 바인딩한다.
-- VM 디스크 백업(스냅샷 일정)을 설정해 DB 볼륨을 보호한다.
+- DB 백업: 아래 [8. 백업](#8-백업) 참고 (VM 디스크 스냅샷 일정, 설정됨).
 - 접속: `gcloud compute ssh instance-20261113-012436 --zone asia-northeast3-c` (OS Login, 프로젝트 권한 필요)
 
 ## 7. 수동 배포 / 롤백
@@ -124,3 +124,29 @@ curl -f localhost:8080/actuator/health/readiness
 
 롤백: `.env` 의 `BACKEND_IMAGE` 를 이전 `sha-` 태그로 바꾸고 `sudo docker compose up -d --no-build`.
 태그 목록: `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend`
+
+## 8. 백업
+
+DB·Redis 데이터(Docker 볼륨)는 VM 부팅 디스크 안에 있으므로 **디스크 스냅샷 일정**으로 백업한다.
+
+| 항목 | 값 |
+|---|---|
+| 스냅샷 일정 | `default-schedule-1` (리전 `asia-northeast3`) → 디스크 `instance-20261113-012436` 에 연결 |
+| 주기 | 매일 02:00 KST (17:00 UTC) 시작, 4시간 안에 생성 |
+| 보관 | 14일. 디스크·VM 을 지워도 스냅샷은 남김 (`KEEP_AUTO_SNAPSHOTS`) |
+| 저장 위치 | `asia` 멀티 리전 |
+| 일관성 | 실행 중 촬영(`guestFlush: false`). 복원 시 PostgreSQL 이 비정상 종료 후 재시작처럼 WAL 로 복구 |
+
+```bash
+# 스냅샷 목록
+gcloud compute snapshots list --filter="sourceDisk~instance-20261113-012436" --project siot-514601
+```
+
+### 복원
+
+디스크 전체를 스냅샷 시점으로 되돌리는 방식이다. (테이블 하나만 되살리는 논리 백업(pg_dump)은 없다)
+
+1. 스냅샷으로 새 디스크를 만든다.
+   `gcloud compute disks create siot-restore --source-snapshot <스냅샷 이름> --zone asia-northeast3-c --type pd-balanced`
+2. **VM 전체 복구**: VM 을 멈추고 부팅 디스크를 새 디스크로 바꾼 뒤 시작한다.
+3. **일부 데이터만 복구**: 새 디스크로 임시 VM 을 만들어 `/opt/siot` 에서 `sudo docker compose up -d postgres` 후 `pg_dump` 로 필요한 데이터를 꺼내 운영 DB 에 넣는다. 끝나면 임시 VM·디스크를 지운다.
