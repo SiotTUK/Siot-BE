@@ -173,6 +173,69 @@ class ChatIntegrationTest {
                 .andExpect(jsonPath("$.data.answer.content").value(org.hamcrest.Matchers.containsString("1345")));
     }
 
+    @Test
+    void aiFailureStillShowsRelatedPageLinks() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+
+        // 검색은 됐는데 답변 생성이 실패 → 검색된 조각과 연결된 항목 (출처는 보이지 않음)
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_REGISTRATION));
+        when(answerGenerator.generate(anyString(), anyString(), anyList(), anyList()))
+                .thenThrow(new AiUnavailableException("quota"));
+        ask(session, conversationId, "등록증은 어디서 받아요?")
+                .andExpect(jsonPath("$.data.answer.answerStatus").value("ERROR"))
+                .andExpect(jsonPath("$.data.answer.sources.length()").value(0))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value("CL-01"));
+
+        // 임베딩부터 실패 → 질문에 제목이 들어 있는 항목
+        when(queryEmbedder.embedQuery(anyString())).thenThrow(new AiUnavailableException("quota"));
+        ask(session, conversationId, "자동차세는 언제 내요?")
+                .andExpect(jsonPath("$.data.answer.answerStatus").value("ERROR"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value("CL-10"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].title").value("자동차세 내기"));
+
+        // 대화 기록에서도 같은 링크
+        mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(session))
+                .andExpect(jsonPath("$.data[3].relatedPages[0].code").value("CL-10"));
+    }
+
+    @Test
+    void relatedPagesFallBackToTitleMatchWithoutDocumentLink() throws Exception {
+        // CB-10: 문서 연결이 없는 생활수칙도 질문에 제목이 있으면 링크
+        String code = "RUL-T" + java.util.concurrent.ThreadLocalRandom.current().nextInt(10_000, 99_999);
+        jdbcTemplate.update("INSERT INTO guide (code, kind) VALUES (?, 'RULE')", code);
+        jdbcTemplate.update("INSERT INTO guide_translation (guide_id, language, title) "
+                + "SELECT guide_id, 'ko', '분리배출 요일표' FROM guide WHERE code = ?", code);
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+
+        ask(session, conversationId, "우리 동네 분리배출 요일표 알려 주세요")
+                .andExpect(jsonPath("$.data.answer.answerStatus").value("NO_EVIDENCE"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].type").value("RULE"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value(code));
+    }
+
+    @Test
+    void answerTimeIsRecorded() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+        long before = timerCount("NO_EVIDENCE");
+
+        ask(session, conversationId, "아무 질문").andExpect(status().isOk());
+
+        assertThat(timerCount("NO_EVIDENCE")).isEqualTo(before + 1);
+    }
+
+    @Autowired
+    io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
+    private long timerCount(String status) {
+        io.micrometer.core.instrument.Timer timer = meterRegistry.find("siot.chatbot.answer").tag("status", status).timer();
+        return timer == null ? 0 : timer.count();
+    }
+
     // ---------------------------------------------------------------- CB-05
 
     @Test

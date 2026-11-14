@@ -29,6 +29,8 @@ import com.siot.backend.rag.repository.ChatConversationRepository;
 import com.siot.backend.rag.repository.ChatMessageRepository;
 import com.siot.backend.rag.repository.ChatMessageSourceRepository;
 import com.siot.backend.rag.repository.DocumentChunkRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -76,6 +78,7 @@ public class ChatService {
     private final ChatbotProperties properties;
     private final TransactionTemplate tx;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
 
     public ChatService(ChatConversationRepository conversationRepository,
                        ChatMessageRepository messageRepository,
@@ -89,7 +92,8 @@ public class ChatService {
                        RelatedPageFinder relatedPageFinder,
                        ChatbotProperties properties,
                        PlatformTransactionManager transactionManager,
-                       Clock clock) {
+                       Clock clock,
+                       MeterRegistry meterRegistry) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.sourceRepository = sourceRepository;
@@ -103,7 +107,11 @@ public class ChatService {
         this.properties = properties;
         this.tx = new TransactionTemplate(transactionManager);
         this.clock = clock;
+        this.meterRegistry = meterRegistry;
     }
+
+    /** CB-02: 답변 생성 시간 (목표 평균 5초 이하). /actuator/metrics/siot.chatbot.answer (관리자) */
+    static final String ANSWER_TIMER = "siot.chatbot.answer";
 
     // ------------------------------------------------------------------ 대화 (CB-03)
 
@@ -134,15 +142,23 @@ public class ChatService {
         String language = conversation.getLanguage();
         List<ChatMessage> messages = messageRepository.findByConversationIdOrderByIdAsc(conversation.getId());
         Map<Long, List<ChatMessageSource>> sources = loadSources(messages.stream().map(ChatMessage::getId).toList());
-        return messages.stream().map(m -> {
+        List<MessageResponse> responses = new ArrayList<>();
+        String lastQuestion = null;
+        for (ChatMessage m : messages) {
+            if (!m.isAnswer()) {
+                lastQuestion = m.getContent();
+                responses.add(toResponse(m, List.of(), List.of(), language));
+                continue;
+            }
             List<ChatMessageSource> messageSources = sources.getOrDefault(m.getId(), List.of());
             List<Long> chunkIds = messageSources.stream()
                     .filter(s -> s.getChunk() != null).map(s -> s.getChunk().getId()).toList();
             // CB-15: 답변은 답한 언어로 다시 보여 준다 (연락처 라벨·담당 기관 안내·관련 페이지 제목)
             String messageLanguage = m.getLanguage() != null ? m.getLanguage() : language;
-            return toResponse(m, messageSources.stream().map(ChatService::toResponse).toList(),
-                    relatedPageFinder.find(chunkIds, messageLanguage), messageLanguage);
-        }).toList();
+            responses.add(toResponse(m, messageSources.stream().map(ChatService::toResponse).toList(),
+                    relatedPages(lastQuestion, chunkIds, messageLanguage), messageLanguage));
+        }
+        return responses;
     }
 
     // ------------------------------------------------------------------ 추천 질문 (CB-08)
@@ -201,8 +217,14 @@ public class ChatService {
         //   (원문으로 판별: 가린 자리의 "[전화번호]" 같은 한국어 표시에 끌려가지 않도록)
         String language = QuestionLanguageDetector.detect(trimmed).orElse(saved.conversation().getLanguage());
 
-        // 2~4. 검색 → 근거 판단 → 답변 생성 (트랜잭션 밖)
+        // 2~4. 검색 → 근거 판단 → 답변 생성 (트랜잭션 밖). CB-02: 걸린 시간을 상태별로 기록
+        Timer.Sample sample = Timer.start(meterRegistry);
         Outcome outcome = answer(question, language, saved.history());
+        long nanos = sample.stop(Timer.builder(ANSWER_TIMER)
+                .description("챗봇 답변 생성 시간 (검색·답변 생성, CB-02 목표 평균 5초 이하)")
+                .tag("status", outcome.status().name())
+                .register(meterRegistry));
+        log.info("Chatbot answered: status={} took={}ms", outcome.status(), nanos / 1_000_000);
         // CB-09: 응급 관련 질문이면 답변과 함께 119/112 를 보여 준다
         boolean emergency = EmergencyDetector.isEmergency(question);
         // CB-11: 비자 발급 가능 여부·법률·의료 판단 질문이면 고정 안내와 담당 기관을 함께 보여 준다
@@ -230,42 +252,61 @@ public class ChatService {
             sourceResponses.add(new SourceResponse(i + 1, c.documentName(), c.pageStart(), c.pageEnd(),
                     c.sourceUrl(), c.relevance()));
         }
-        List<RelatedPage> relatedPages = relatedPageFinder.find(
-                outcome.sources().stream().map(RetrievedChunk::chunkId).toList(), language);
+        List<RelatedPage> relatedPages = relatedPages(question, outcome.relatedChunkIds(), language);
         return new AskResponse(
                 toResponse(saved.question(), List.of(), List.of(), language),
                 toResponse(answer, sourceResponses, relatedPages, language),
                 masked.masked());
     }
 
-    private record Outcome(String text, AnswerStatus status, List<RetrievedChunk> sources) {
+    /**
+     * @param sources         답변 근거 (ANSWERED 만, 저장·출처 표시)
+     * @param relatedChunkIds 관련 페이지를 찾을 조각. ANSWERED 는 근거, ERROR 는 답변 생성 전에 검색해 둔 조각 (CB-02)
+     */
+    private record Outcome(String text, AnswerStatus status, List<RetrievedChunk> sources, List<Long> relatedChunkIds) {
+
+        static Outcome of(String text, AnswerStatus status, List<RetrievedChunk> sources) {
+            return new Outcome(text, status, sources, sources.stream().map(RetrievedChunk::chunkId).toList());
+        }
     }
 
     private Outcome answer(String question, String language, List<ChatTurn> history) {
+        List<RetrievedChunk> relevant = List.of();
         try {
             String searchQuery = searchQuery(question, history);
             float[] vector = queryEmbedder.embedQuery(searchQuery);
             List<RetrievedChunk> chunks = chunkRetriever.search(vector, properties.topK());
             // CB-12: 관련도가 기준 미만인 조각은 근거로 쓰지 않는다
-            List<RetrievedChunk> relevant = chunks.stream()
+            relevant = chunks.stream()
                     .filter(c -> c.relevance() >= properties.minRelevance())
                     .toList();
             if (relevant.isEmpty()) {
                 log.info("Chatbot no evidence: best relevance={}",
                         chunks.isEmpty() ? "none" : String.format("%.3f", chunks.get(0).relevance()));
-                return new Outcome(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
+                return Outcome.of(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
             }
 
             String text = answerGenerator.generate(question, language, relevant, history);
             if (text == null || text.isBlank() || text.strip().startsWith(AnswerGenerator.NO_ANSWER)) {
-                return new Outcome(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
+                return Outcome.of(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
             }
             List<RetrievedChunk> sources = relevant.stream().limit(properties.maxSources()).toList();
-            return new Outcome(text, AnswerStatus.ANSWERED, sources);
+            return Outcome.of(text, AnswerStatus.ANSWERED, sources);
         } catch (AiUnavailableException e) {
             log.warn("Chatbot AI unavailable: {}", e.getMessage());
-            return new Outcome(ChatbotMessages.unavailable(language), AnswerStatus.ERROR, List.of());
+            // CB-02: 출처는 보이지 않지만, 검색까지 됐으면 그 조각으로 관련 페이지 링크를 보여 준다
+            return new Outcome(ChatbotMessages.unavailable(language), AnswerStatus.ERROR, List.of(),
+                    relevant.stream().limit(properties.maxSources()).map(RetrievedChunk::chunkId).toList());
         }
+    }
+
+    /**
+     * CB-10·CB-02: 근거 조각과 연결된 항목, 없으면 질문에 제목이 들어 있는 항목.
+     * (생활수칙처럼 문서 연결이 없는 항목, AI 오류로 검색하지 못한 경우도 링크를 보여 주기 위해)
+     */
+    private List<RelatedPage> relatedPages(String question, List<Long> chunkIds, String language) {
+        List<RelatedPage> pages = relatedPageFinder.find(chunkIds, language);
+        return pages.isEmpty() ? relatedPageFinder.findByTitle(question, language) : pages;
     }
 
     /**
