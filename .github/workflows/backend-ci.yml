@@ -123,24 +123,25 @@ jobs:
 
       - name: Copy docker-compose.yml
         run: |
-          gcloud compute scp docker-compose.yml "${VM_NAME}:/tmp/docker-compose.yml" --project "$GCP_PROJECT_ID" --zone "$VM_ZONE" --quiet --strict-host-key-checking=no
+          gcloud compute scp docker-compose.yml "${VM_NAME}:/tmp/siot-compose-${GITHUB_RUN_ID}.yml" --project "$GCP_PROJECT_ID" --zone "$VM_ZONE" --quiet --strict-host-key-checking=no
 
       - name: Deploy and wait for readiness
         run: |
           TAG="sha-${GITHUB_SHA::7}"
+          # 배포 폴더는 root 소유(700)라 cd 하지 않고 sudo + 절대 경로로만 다룬다
+          COMPOSE="sudo docker compose --project-directory $DEPLOY_DIR -f $DEPLOY_DIR/docker-compose.yml"
           gcloud compute ssh "$VM_NAME" --project "$GCP_PROJECT_ID" --zone "$VM_ZONE" --quiet --strict-host-key-checking=no --command "
               set -e
-              cd $DEPLOY_DIR
-              sudo mv /tmp/docker-compose.yml docker-compose.yml
+              sudo mv /tmp/siot-compose-$GITHUB_RUN_ID.yml $DEPLOY_DIR/docker-compose.yml
               # 배포한 커밋의 이미지로 고정한다 (롤백: 이전 sha- 태그로 바꾸고 up -d)
-              sudo sed -i 's#^BACKEND_IMAGE=.*#BACKEND_IMAGE=$IMAGE:$TAG#' .env
-              sudo docker compose pull -q backend
-              sudo docker compose up -d --no-build
+              sudo sed -i 's#^BACKEND_IMAGE=.*#BACKEND_IMAGE=$IMAGE:$TAG#' $DEPLOY_DIR/.env
+              $COMPOSE pull -q backend
+              $COMPOSE up -d --no-build
               for i in \$(seq 1 36); do
                 if curl -fsS localhost:8080/actuator/health/readiness >/dev/null 2>&1; then
                   echo 'Deployed $TAG'; sudo docker image prune -f >/dev/null; exit 0
                 fi
                 sleep 5
               done
-              echo 'Backend did not become ready'; sudo docker compose logs --tail 100 backend; exit 1
+              echo 'Backend did not become ready'; $COMPOSE logs --tail 100 backend; exit 1
             "
