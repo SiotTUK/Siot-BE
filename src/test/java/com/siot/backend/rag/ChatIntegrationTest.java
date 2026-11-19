@@ -233,6 +233,26 @@ class ChatIntegrationTest {
     }
 
     @Test
+    void titleFirstWordMatchIsKoreanOnly() throws Exception {
+        // 영어 제목의 첫 단어("How")는 흔한 말이라 첫 단어 일치에 쓰지 않는다. 제목 전체가 들어 있으면 링크
+        String code = "RUL-T" + java.util.concurrent.ThreadLocalRandom.current().nextInt(10_000, 99_999);
+        jdbcTemplate.update("INSERT INTO guide (code, kind) VALUES (?, 'RULE')", code);
+        jdbcTemplate.update("INSERT INTO guide_translation (guide_id, language, title) "
+                + "SELECT guide_id, 'ko', ? FROM guide WHERE code = ?", code + " 택배", code);
+        jdbcTemplate.update("INSERT INTO guide_translation (guide_id, language, title) "
+                + "SELECT guide_id, 'en', 'How to send parcels' FROM guide WHERE code = ?", code);
+        Cookie session = signup();
+        long conversationId = startConversation(session, "en");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+
+        ask(session, conversationId, "How do I renew my passport?")
+                .andExpect(jsonPath("$.data.answer.relatedPages[?(@.code == '%s')]".formatted(code)).isEmpty());
+        ask(session, conversationId, "Tell me how to send parcels abroad")
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value(code))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].title").value("How to send parcels"));
+    }
+
+    @Test
     void eventQuestionLinksUpcomingActiveEvents() throws Exception {
         // CB-10: 행사 질문이면 끝나지 않은 ACTIVE 행사 상세 링크 (지난 행사·삭제된 행사 제외)
         String tag = "시옷T" + ThreadLocalRandom.current().nextInt(10_000, 99_999);

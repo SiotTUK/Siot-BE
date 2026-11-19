@@ -16,9 +16,9 @@ import java.util.regex.Pattern;
 public final class ReferralDetector {
 
     // ---------------------------------------------------------------- VISA: 체류 관련 단어 + "가능한지" 묻는 표현
-    // 서류·절차 질문("어디서 신청할 수 있나요?")은 제외한다 (CB-11 #2).
-    //  - 판단 표현(STRONG): 있으면 항상 감지 ("연장 가능할까요?", "거절될까요?")
-    //  - 약한 표현(WEAK): "할 수 있나요"·"can I" 처럼 절차 질문에도 쓰여서, 절차 단어가 없을 때만 감지
+    // 서류·절차 질문("어디서 신청할 수 있나요?", "언제 하면 될까요?")은 제외한다 (CB-11 #2).
+    //  - 판단 단어(STRONG): 거절·승인·자격처럼 결과를 묻는 단어. 있으면 항상 감지 ("거절될까요?")
+    //  - 가능 여부 표현(WEAK): "가능할까요·될까요·할 수 있나요·can I" 는 절차 질문에도 쓰여서, 절차 단어가 없을 때만 감지
 
     /** "연장"·"延期"·"gia hạn"·"extension" 단독은 운전면허·계약 연장 등에도 쓰여서 넣지 않는다 (비자·체류 단어와 함께 나올 때만) */
     private static final List<String> VISA_TOPICS = List.of(
@@ -37,26 +37,26 @@ public final class ReferralDetector {
 
     private static final List<String> VISA_STRONG_CUES = List.of(
             // ko
-            "가능할까", "가능한가요", "가능한지", "가능성", "될까", "있을까", "거절", "불허", "떨어", "나올까", "승인",
+            "가능성", "거절", "불허", "떨어", "나올까", "승인", "자격이 되", "자격이 있",
             // zh
-            "能不能", "会不会", "有资格", "批准", "拒签", "被拒",
+            "有资格", "批准", "拒签", "被拒",
             // vi
-            "đủ điều kiện", "bị từ chối", "có bị");
+            "đủ điều kiện", "bị từ chối");
 
     private static final List<String> VISA_WEAK_CUES = List.of(
-            // ko
-            "가능", "되나요", "될 수", "받을 수", "할 수 있", "있나요", "안 되", "안되",
+            // ko ("가능" 은 "가능할까·가능한가요" 도 포함)
+            "가능", "될까", "되나요", "될 수", "받을 수", "할 수 있", "있을까", "있나요", "안 되", "안되",
             // zh
-            "可以", "能否", "能吗",
+            "可以", "能否", "能吗", "能不能", "会不会",
             // vi
-            "có được", "được không", "có thể");
+            "có được", "được không", "có thể", "có bị");
 
     private static final Pattern VISA_STRONG_CUES_EN = Pattern.compile(
-            "\\b(will i|would i|am i|eligib\\w*|qualify|approved|denied|rejected|refused)\\b",
+            "\\b(am i|eligib\\w*|qualify|approved|denied|rejected|refused)\\b",
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern VISA_WEAK_CUES_EN = Pattern.compile(
-            "\\b(can i|could i|possible)\\b", Pattern.CASE_INSENSITIVE);
+            "\\b(can i|could i|will i|would i|possible)\\b", Pattern.CASE_INSENSITIVE);
 
     /** 서류·절차를 묻는 단어 */
     private static final List<String> PROCEDURE_WORDS = List.of(

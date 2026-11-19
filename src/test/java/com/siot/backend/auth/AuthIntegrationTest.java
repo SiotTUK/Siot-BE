@@ -233,6 +233,31 @@ class AuthIntegrationTest {
                         """.formatted(loginId, password, passwordConfirm)));
     }
 
+    /** 로그인 상태가 바뀌면 새 CSRF 토큰(XSRF-TOKEN 쿠키)을 받는다 (로그인 전 토큰을 계속 쓰지 못하게) */
+    @Test
+    void signupLoginAndLogoutIssueNewCsrfToken() throws Exception {
+        String loginId = newLoginId();
+        MvcResult signup = signup(loginId, PASSWORD, PASSWORD).andExpect(status().isCreated()).andReturn();
+        String afterSignup = xsrfCookie(signup);
+
+        MvcResult login = login(loginId, PASSWORD).andExpect(status().isOk()).andReturn();
+        String afterLogin = xsrfCookie(login);
+        assertThat(afterLogin).isNotEqualTo(afterSignup);
+
+        MvcResult logout = mockMvc.perform(post("/api/auth/logout").cookie(sessionCookie(login)).with(csrf()))
+                .andExpect(status().isNoContent())
+                .andReturn();
+        assertThat(xsrfCookie(logout)).isNotEqualTo(afterLogin);
+    }
+
+    private String xsrfCookie(MvcResult result) {
+        Cookie cookie = result.getResponse().getCookie("XSRF-TOKEN");
+        assertThat(cookie).as("XSRF-TOKEN cookie").isNotNull();
+        assertThat(cookie.isHttpOnly()).isFalse();   // SPA 가 읽어서 X-XSRF-TOKEN 헤더로 보낸다
+        assertThat(cookie.getValue()).isNotBlank();
+        return cookie.getValue();
+    }
+
     private void expectSignupError(String loginId, String password, String confirm, String code) throws Exception {
         signup(loginId, password, confirm)
                 .andExpect(status().isBadRequest())

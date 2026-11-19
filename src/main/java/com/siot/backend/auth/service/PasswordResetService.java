@@ -17,9 +17,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 /**
  * M-11: 비밀번호 재설정.
@@ -94,10 +97,13 @@ public class PasswordResetService {
 
         // 1회용: 원자적으로 꺼내면서 삭제 (동시에 두 번 써도 한 번만 성공)
         String tokenHash = TokenUtils.sha256(token);
+        Long remainingMillis = redisTemplate.getExpire(TOKEN_KEY + tokenHash, TimeUnit.MILLISECONDS);
         if (redisTemplate.opsForValue().getAndDelete(TOKEN_KEY + tokenHash) == null) {
             throw new BusinessException(ErrorCode.PASSWORD_RESET_TOKEN_INVALID);
         }
         redisTemplate.delete(USER_KEY + userId);
+        // 비밀번호 변경이 DB 에 커밋되지 못하면(롤백) 링크를 다시 쓸 수 있게 되살린다
+        restoreTokenOnRollback(tokenHash, userId, remainingMillis);
 
         user.changePasswordHash(passwordEncoder.encode(newPassword));
         loginAttemptService.clear(user.getEmail());
@@ -122,6 +128,29 @@ public class PasswordResetService {
                 .toUriString();
         emailSender.send(mailTemplates.passwordReset(
                 user.getEmail(), user.getLanguage(), link, TOKEN_TTL.toMinutes()));
+    }
+
+    /**
+     * 롤백 시 토큰을 남은 유효 시간만큼 되살린다. 그사이 새 링크를 요청했으면(USER_KEY 가 있으면) 되살리지 않는다
+     * (회원당 유효한 링크는 하나).
+     */
+    private void restoreTokenOnRollback(String tokenHash, String userId, Long remainingMillis) {
+        if (remainingMillis == null || remainingMillis <= 0
+                || !TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_ROLLED_BACK) {
+                    return;
+                }
+                Duration ttl = Duration.ofMillis(remainingMillis);
+                if (Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(USER_KEY + userId, tokenHash, ttl))) {
+                    redisTemplate.opsForValue().set(TOKEN_KEY + tokenHash, userId, ttl);
+                }
+            }
+        });
     }
 
     private String findUserId(String token) {

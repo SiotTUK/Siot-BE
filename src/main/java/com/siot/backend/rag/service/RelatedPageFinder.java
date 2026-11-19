@@ -52,15 +52,18 @@ public class RelatedPageFinder {
      * 많이 맞은 순: 제목 전체 > 긴 첫 단어 > 짧은 첫 단어 ("자동차세" 질문은 "자동차세 내기"가 "자동차 …"보다 먼저).
      * 문서 연결이 없을 때(CB-10 생활수칙 등)와 AI 오류로 검색하지 못했을 때(CB-02) 쓴다.
      * 한국어 제목과 질문 언어 제목을 모두 비교한다.
+     * 첫 단어 일치는 한국어 제목만 쓴다. 영어·베트남어 제목의 첫 단어("How", "Nộp" 등)는 흔한 말이라
+     * 거의 모든 질문에 걸리기 때문이다 (중국어 제목은 띄어쓰기가 없어 첫 단어 = 제목 전체).
      */
     private static final String TITLE_SQL = """
             SELECT kind, code, title FROM (
                 SELECT g.kind, g.code, COALESCE(t.title, ko.title) AS title, MIN(g.sort_order) AS sort_order,
                        MAX(CASE
-                           WHEN :question LIKE '%' || REPLACE(LOWER(x.title), ' ', '') || '%'
+                           WHEN STRPOS(:question, REPLACE(LOWER(x.title), ' ', '')) > 0
                                THEN 1000 + CHAR_LENGTH(x.title)
-                           WHEN CHAR_LENGTH(SPLIT_PART(x.title, ' ', 1)) >= 3
-                                AND :question LIKE '%' || LOWER(SPLIT_PART(x.title, ' ', 1)) || '%'
+                           WHEN x.language = 'ko'
+                                AND CHAR_LENGTH(SPLIT_PART(x.title, ' ', 1)) >= 3
+                                AND STRPOS(:question, LOWER(SPLIT_PART(x.title, ' ', 1))) > 0
                                THEN CHAR_LENGTH(SPLIT_PART(x.title, ' ', 1))
                            ELSE 0 END) AS score
                 FROM guide g

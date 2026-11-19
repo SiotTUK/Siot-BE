@@ -12,6 +12,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.stereotype.Component;
 
 /**
@@ -24,6 +26,7 @@ public class SessionAuthenticator {
 
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
+    private final CsrfTokenRepository csrfTokenRepository;
     private final SecurityContextHolderStrategy contextHolderStrategy = SecurityContextHolder.getContextHolderStrategy();
     private final SecurityContextLogoutHandler logoutHandler = new SecurityContextLogoutHandler();
 
@@ -50,6 +53,17 @@ public class SessionAuthenticator {
     /** M-09: 서버 세션 삭제 */
     public void logout(HttpServletRequest request, HttpServletResponse response) {
         logoutHandler.logout(request, response, contextHolderStrategy.getContext().getAuthentication());
+        rotateCsrfToken(request, response);
+    }
+
+    /**
+     * 로그인 상태가 바뀌면 CSRF 토큰을 새로 발급한다 (Spring 기본 로그인의 CsrfAuthenticationStrategy 와 같은 목적:
+     * 로그인 전에 노출되거나 심어진 토큰을 로그인 후에 쓰지 못하게). 응답에 새 XSRF-TOKEN 쿠키가 실린다.
+     * 지우기만 하면 프론트엔드가 다시 /api/auth/csrf 를 불러야 하므로 바로 새 값을 준다.
+     */
+    private void rotateCsrfToken(HttpServletRequest request, HttpServletResponse response) {
+        CsrfToken token = csrfTokenRepository.generateToken(request);
+        csrfTokenRepository.saveToken(token, request, response);
     }
 
     private void saveToSession(Authentication authentication,
@@ -62,5 +76,6 @@ public class SessionAuthenticator {
         context.setAuthentication(authentication);
         contextHolderStrategy.setContext(context);
         securityContextRepository.saveContext(context, request, response);
+        rotateCsrfToken(request, response);
     }
 }

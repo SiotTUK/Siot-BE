@@ -41,6 +41,8 @@ com.siot.backend.{기능}
 
 **프론트엔드 (axios)**: `withCredentials: true` 이면 axios가 `XSRF-TOKEN` 쿠키를 읽어 헤더를 자동으로 붙입니다. 앱 시작 시 `/api/auth/csrf` 를 한 번 호출합니다.
 
+**토큰 교체**: 가입·로그인·로그아웃 응답에서 `XSRF-TOKEN` 쿠키가 새 값으로 바뀝니다 (로그인 전 토큰을 로그인 후에 쓰지 못하게). 헤더 값은 요청할 때마다 쿠키에서 다시 읽어야 합니다. 앱 시작 때 읽은 값을 변수에 저장해 두고 계속 쓰면 로그인 뒤 요청이 `CSRF_TOKEN_INVALID`(403)가 됩니다. axios 기본 동작은 매번 쿠키를 읽으므로 그대로 쓰면 됩니다.
+
 **curl**
 
 ```bash

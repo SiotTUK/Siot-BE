@@ -23,13 +23,13 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
      */
     @Query("""
             SELECT u FROM AppUser u
-            WHERE u.email LIKE CONCAT('%', :email, '%')
+            WHERE LOCATE(:email, u.email) > 0
             ORDER BY u.createdAt DESC, u.id DESC""")
     Page<AppUser> searchForAdmin(@Param("email") String email, Pageable pageable);
 
     @Query("""
             SELECT u FROM AppUser u
-            WHERE u.email LIKE CONCAT('%', :email, '%') AND u.role = :role
+            WHERE LOCATE(:email, u.email) > 0 AND u.role = :role
             ORDER BY u.createdAt DESC, u.id DESC""")
     Page<AppUser> searchForAdmin(@Param("email") String email, @Param("role") Role role, Pageable pageable);
 }

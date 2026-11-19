@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 이메일 인증 코드(6자리) 보관·확인. Redis 에 코드 해시만 저장한다 (원문 저장 안 함).
@@ -22,16 +21,22 @@ public class VerificationCodeStore {
 
     private final StringRedisTemplate redisTemplate;
 
+    /**
+     * 삭제·저장·만료 설정을 한 번에 실행한다. 따로 실행하면 그 사이에 서버가 멈출 때 만료 시간 없는 키가 남는다.
+     * KEYS[1] = 코드 키, ARGV = email, 코드 해시, 만료(ms)
+     */
+    private static final RedisScript<Long> ISSUE_SCRIPT = new DefaultRedisScript<>("""
+            redis.call('DEL', KEYS[1])
+            redis.call('HSET', KEYS[1], 'email', ARGV[1], 'codeHash', ARGV[2], 'attempts', '0')
+            redis.call('PEXPIRE', KEYS[1], ARGV[3])
+            return 1
+            """, Long.class);
+
     /** 새 코드를 발급한다. 같은 대상의 이전 코드는 무효가 된다. */
     public String issue(String namespace, String subject, String email, Duration ttl) {
         String code = TokenUtils.numericCode(6);
-        String key = key(namespace, subject);
-        redisTemplate.delete(key);
-        redisTemplate.opsForHash().putAll(key, Map.of(
-                "email", email,
-                "codeHash", TokenUtils.sha256(code),
-                "attempts", "0"));
-        redisTemplate.expire(key, ttl);
+        redisTemplate.execute(ISSUE_SCRIPT, List.of(key(namespace, subject)),
+                email, TokenUtils.sha256(code), String.valueOf(ttl.toMillis()));
         return code;
     }
 

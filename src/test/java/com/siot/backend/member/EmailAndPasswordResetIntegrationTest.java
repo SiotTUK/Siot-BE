@@ -308,6 +308,45 @@ class EmailAndPasswordResetIntegrationTest {
                 .isNotEqualTo(mailTemplates.emailVerification("x@example.com", "ko", "1", 1).subject());
     }
 
+    /** 인증 코드 키는 발급과 동시에 만료 시간이 걸린다 (만료 없는 키가 남지 않게) */
+    @Test
+    void issuedCodeExpires() throws Exception {
+        String email = newEmail();
+        requestSignupCode(email).andExpect(status().isAccepted());
+
+        Long ttl = redisTemplate.getExpire("siot:signup-verification:" + email, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(ttl).isBetween(1L, 600L);
+        assertThat(redisTemplate.opsForHash().get("siot:signup-verification:" + email, "attempts")).isEqualTo("0");
+    }
+
+    @Autowired
+    com.siot.backend.auth.service.PasswordResetService passwordResetService;
+
+    @Autowired
+    org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    /** 비밀번호 변경이 커밋되지 못하면 링크가 소모되지 않는다 */
+    @Test
+    void resetLinkSurvivesRollback() throws Exception {
+        String loginId = newEmail();
+        signup(loginId);
+        markVerified(loginId);
+        requestReset(loginId).andExpect(status().isAccepted());
+        String token = extractToken(lastMail().body());
+
+        new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            passwordResetService.confirmReset(token, NEW_PASSWORD, NEW_PASSWORD);
+            status.setRollbackOnly();
+        });
+
+        // 롤백됐으므로 비밀번호는 그대로이고, 같은 링크로 다시 바꿀 수 있다
+        login(loginId, PASSWORD).andExpect(status().isOk());
+        mockMvc.perform(get("/api/auth/password-reset/validation").param("token", token))
+                .andExpect(status().isNoContent());
+        confirmReset(token, NEW_PASSWORD, NEW_PASSWORD).andExpect(status().isNoContent());
+        login(loginId, NEW_PASSWORD).andExpect(status().isOk());
+    }
+
     // ================================================================ helpers
 
     @Autowired

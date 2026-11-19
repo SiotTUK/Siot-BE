@@ -89,6 +89,20 @@ class AdminIntegrationTest {
         assertThat(adminBootstrap.promoteConfiguredAdmins()).isZero();
     }
 
+    /** 검색어의 _ · % 는 와일드카드가 아니라 글자 그대로 찾는다 */
+    @Test
+    void memberSearchTreatsUnderscoreLiterally() throws Exception {
+        long n = ThreadLocalRandom.current().nextLong(1_000_000_000L, 9_999_999_999L);
+        signup("u_" + n + "@example.com");
+        signup("ux" + n + "@example.com");
+        Cookie admin = login(ADMIN_EMAIL);
+
+        mockMvc.perform(get("/api/admin/members").param("email", "u_" + n).cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].email").value("u_" + n + "@example.com"));
+    }
+
     /** 앱 시작 경로(ApplicationRunner#run)에서도 권한 변경이 저장된다 (내부 호출이라 run 에 트랜잭션이 필요) */
     @Test
     void bootstrapRunPersistsPromotion() throws Exception {
