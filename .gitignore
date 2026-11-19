@@ -41,3 +41,6 @@ Thumbs.db
 ### Logs ###
 *.log
 logs/
+
+### 업로드 문서 (DOCUMENT_STORAGE_DIR 기본값) ###
+data/

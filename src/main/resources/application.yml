@@ -59,6 +59,12 @@ spring:
     basename: messages/mail
     fallback-to-system-locale: false
 
+  # ADM-02: 문서(PDF) 업로드 한도
+  servlet:
+    multipart:
+      max-file-size: 30MB
+      max-request-size: 31MB
+
   task:
     execution:
       thread-name-prefix: siot-async-   # 메일 비동기 발송
@@ -91,6 +97,15 @@ siot:
     embedding-dimension: 768
     temperature: 0.2
     timeout: 20s
+  # 문서 적재 (ADM-02~04, DocumentProperties)
+  document:
+    # 업로드한 PDF 저장 폴더. 실패 버전 재실행에 원본이 필요하므로 지우지 않는다
+    storage-dir: ${DOCUMENT_STORAGE_DIR:./data/documents}
+    # 무료 등급 한도: 묶어서 호출하고 묶음 사이에 쉰다. 429·503 이면 기다렸다 재시도, 계속 실패하면 FAILED
+    embedding-batch-size: 100
+    embedding-batch-pause: 2s
+    embedding-retry-wait: 60s
+    embedding-max-retries: 2
   mail:
     # Gmail SMTP 는 로그인한 계정(또는 등록된 별칭) 주소로만 발신할 수 있다
     from: ${MAIL_FROM}
