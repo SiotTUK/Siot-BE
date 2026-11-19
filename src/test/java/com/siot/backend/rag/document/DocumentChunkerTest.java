@@ -71,6 +71,67 @@ class DocumentChunkerTest {
     }
 
     @Test
+    void squareAndSectionNumberHeadingsAfterListLines() {
+        List<Chunk> chunks = chunker.split(List.of(page(11, """
+                1-4 지방세 납부
+                ■ 재산세
+                · 납부대상 : 매년 6월 1일을 기준으로 주택, 건축물, 토지, 선박을 소유하고 있는 자
+                · 문의 : 시흥시청 시세관리과 ☎(031)310-2081~8
+                ■ 주민세
+                · 납부대상 : 매년 7월 1일을 기준으로 외국인등록 1년 경과 및 시흥시에 주소를 둔 외국인주민
+                · 문의 : 시흥시청 시세관리과 ☎(031)310-2089
+                """)), DOC);
+
+        assertThat(chunks).extracting(Chunk::title)
+                .containsExactly("1-4 지방세 납부 > ■ 재산세", "1-4 지방세 납부 > ■ 주민세");
+        assertThat(chunks.get(0).content()).doesNotContain("주민세");
+    }
+
+    @Test
+    void wrappedListLineIsNotHeading() {
+        List<Chunk> chunks = chunker.split(List.of(page(11, """
+                ■ 자동차세
+                · 납부대상 : 각 기분의 납기가 있는 달의 1일(6월 1일 및 12월 1일) 현재 등록된 자동차, 이륜차,
+                건설기계가 있는 자
+                · 문의 : 시흥시청 시세관리과 ☎(031)310-2093~4
+                """)), DOC);
+
+        assertThat(chunks).extracting(Chunk::title).containsExactly("■ 자동차세");
+        assertThat(chunks.getFirst().content()).contains("이륜차, 건설기계가 있는 자");
+    }
+
+    @Test
+    void upperSectionChangeResetsLowerTitle() {
+        List<Chunk> chunks = chunker.split(List.of(
+                page(11, """
+                        1-4 지방세 납부
+                        ■ 주민세
+                        · 문의 : 시흥시청 시세관리과 ☎(031)310-2089
+                        """),
+                page(12, """
+                        1-5 기타 생활편의
+                        시루는 시흥시에서 발행하는 지역화폐로, 지역 내 가맹점에서 현금처럼 사용할 수 있습니다.
+                        ■ 시흥화폐 '시루'
+                        · 유형 : 종이 / 모바일 / 카드형
+                        """)), DOC);
+
+        assertThat(chunks).extracting(Chunk::title).containsExactly(
+                "1-4 지방세 납부 > ■ 주민세", "1-5 기타 생활편의", "1-5 기타 생활편의 > ■ 시흥화폐 '시루'");
+    }
+
+    @Test
+    void firstLineOfPageCanBeHeading() {
+        List<Chunk> chunks = chunker.split(List.of(
+                page(1, "· 문의 : 시흥시청 민원여권과 ☎(031)310-3150"),
+                page(2, """
+                        체류지 변경 신고
+                        이사한 날부터 15일 이내에 새 주소지 행정복지센터에 신고합니다.
+                        """)), DOC);
+
+        assertThat(chunks).extracting(Chunk::title).containsExactly(DOC, "체류지 변경 신고");
+    }
+
+    @Test
     void keepsSizeLimitsAndOverlapsWithinSection() {
         String sentences = IntStream.rangeClosed(1, 60)
                 .mapToObj(i -> "생활 안내 " + i + "번 문장은 외국인 주민이 알아야 할 내용을 설명합니다.")

@@ -13,8 +13,10 @@ import java.util.regex.Pattern;
  *     <li>목표 {@value #TARGET}자, 최대 {@value #MAX}자 (첫 줄 제목 포함), 같은 절 안에서 앞 조각 끝 약 {@value #OVERLAP}자를 겹친다</li>
  *     <li>절 제목이 바뀌면 새 조각. 조각 첫 줄은 절 제목 ("상위 &gt; 하위"). 제목 전 내용은 문서 이름</li>
  *     <li>문단 경계에서 자르고, 한 문단이 너무 길면 문장 경계, 그래도 길면 공백에서 자른다</li>
- *     <li>제목은 짧고({@value #HEADING_MAX}자 이하) 문장부호로 끝나지 않으며, 앞 내용이 끝난 뒤에 오고, 다음 줄이 본문인 줄만.
+ *     <li>제목은 짧고({@value #HEADING_MAX}자 이하) 문장부호로 끝나지 않으며, 앞 내용이 끝난 뒤(쪽 첫 줄, 빈 줄·문장·목록 줄 뒤)에 오고,
+ *         다음 줄이 본문인 줄만. ■ 와 "1-4" 번호가 붙은 줄은 짧기만 하면 제목이다.
  *         같은 번호 모양이 앞뒤 줄에 이어지면 목록 항목으로 본다 ("1. 여권 / 2. 사진")</li>
+ *     <li>상위 제목("1-4")이 바뀌면 그 아래 제목(■)도 초기화되어, 이전 절 제목이 다음 절로 이어지지 않는다</li>
  *     <li>표는 1차로 문단 기준으로 다룬다. 숫자·짧은 칸이 반복되는 줄이 이어지면 한 덩어리로 묶고 {@link Chunk#tableLike()} 로 표시한다</li>
  * </ul>
  */
@@ -38,26 +40,36 @@ public class DocumentChunker {
     private static final Pattern BULLET = Pattern.compile("^[-•·※○◦▪∙*]\\s*");
     /** 다음 줄로 이어지는 문장 끝 (조사·연결 어미) */
     private static final Pattern CONTINUES = Pattern.compile("[을를은는에의와과며면및]$");
+    /** 다음 줄로 이어지는 목록 줄 끝 (쉼표, 가운뎃점, 여는 괄호, 콜론, 줄표) */
+    private static final Pattern LIST_CONTINUES = Pattern.compile("[,·(:\\-–]\\s*$");
 
-    /** 번호·기호 모양. 순서가 곧 제목 단계 (작을수록 상위) */
+    /**
+     * 번호·기호 모양. level 이 작을수록 상위 제목이다 (상위 제목이 바뀌면 그 아래 제목은 초기화).
+     * strong 인 모양(■, "1-4")은 짧기만 하면 앞뒤 줄과 상관없이 제목으로 본다.
+     */
     enum Marker {
-        CHAPTER(1, "^제\\s*\\d+\\s*[장편부]"),
-        SECTION(2, "^제\\s*\\d+\\s*[절조]"),
-        ROMAN(2, "^(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[IVX]{1,4}\\.)\\s*"),
-        SYMBOL(3, "^[■□▶▷●◆◇◎]\\s*"),
-        NUM_DOT(3, "^\\d{1,2}\\.\\s+"),
-        HANGUL_DOT(4, "^[가-하]\\.\\s*"),
-        NUM_PAREN(5, "^\\d{1,2}\\)\\s*"),
-        PAREN_NUM(5, "^\\(\\d{1,2}\\)\\s*"),
-        CIRCLED(6, "^[①-⑳]\\s*"),
-        NONE(3, null);
+        CHAPTER(1, "^(?:제\\s*\\d+\\s*[장편부]|PART\\s*\\d+)", false),
+        /** "1-4 지방세 납부" (장-절 번호) */
+        SECTION_NUM(2, "^\\d{1,2}-\\d{1,2}\\s+", true),
+        SECTION(2, "^제\\s*\\d+\\s*[절조]", false),
+        ROMAN(2, "^(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[IVX]{1,4}\\.)\\s*", false),
+        SQUARE(3, "^■\\s*", true),
+        SYMBOL(3, "^[□▶▷●◆◇◎]\\s*", false),
+        NUM_DOT(3, "^\\d{1,2}\\.\\s+", false),
+        HANGUL_DOT(4, "^[가-하]\\.\\s*", false),
+        NUM_PAREN(5, "^\\d{1,2}\\)\\s*", false),
+        PAREN_NUM(5, "^\\(\\d{1,2}\\)\\s*", false),
+        CIRCLED(6, "^[①-⑳]\\s*", false),
+        NONE(3, null, false);
 
         final int level;
         final Pattern pattern;
+        final boolean strong;
 
-        Marker(int level, String regex) {
+        Marker(int level, String regex, boolean strong) {
             this.level = level;
             this.pattern = regex == null ? null : Pattern.compile(regex);
+            this.strong = strong;
         }
 
         static Marker of(String line) {
@@ -82,10 +94,12 @@ public class DocumentChunker {
     }
 
     /**
-     * @param table  숫자 칸이 많은 줄 (표의 행)
-     * @param header 짧은 칸만 여러 개인 줄. 바로 아래가 표의 행이면 표의 머리 행
+     * @param pageStart 쪽의 첫 줄
+     * @param table     숫자 칸이 많은 줄 (표의 행)
+     * @param header    짧은 칸만 여러 개인 줄. 바로 아래가 표의 행이면 표의 머리 행
      */
-    private record Line(String text, int page, boolean blankBefore, Marker marker, boolean table, boolean header) {
+    private record Line(String text, int page, boolean blankBefore, boolean pageStart, Marker marker,
+                        boolean table, boolean header) {
     }
 
     /** 문단: 줄을 이은 텍스트와, 글자 위치 → 쪽 번호를 찾기 위한 줄 시작 위치 */
@@ -145,6 +159,7 @@ public class DocumentChunker {
         List<Line> lines = new ArrayList<>();
         boolean blank = true;
         for (PageText page : pages) {
+            boolean pageStart = true;
             for (String raw : page.text().split("\n")) {
                 String text = raw.replace(' ', ' ').strip();
                 if (text.isEmpty()) {
@@ -152,9 +167,10 @@ public class DocumentChunker {
                     continue;
                 }
                 Marker marker = Marker.of(text);
-                lines.add(new Line(text, page.page(), blank, marker,
+                lines.add(new Line(text, page.page(), blank, pageStart, marker,
                         isTableRow(text), marker == Marker.NONE && isHeaderRow(text)));
                 blank = false;
+                pageStart = false;
             }
         }
         return lines;
@@ -203,7 +219,15 @@ public class DocumentChunker {
         // 뒤에서부터: "2. 신청 / 가. 기한 / 본문" 처럼 제목이 이어지면 다음 줄이 제목이어도 된다
         for (int i = n - 1; i >= 0; i--) {
             Line line = lines.get(i);
-            if (i + 1 >= n || !isHeadingCandidate(line) || isListItem(lines, i) || !startsBlock(lines, i)) {
+            if (i + 1 >= n || !isHeadingCandidate(line) || isListItem(lines, i)) {
+                continue;
+            }
+            // ■ 와 "1-4" 는 짧기만 하면 제목
+            if (line.marker().strong) {
+                heading[i] = true;
+                continue;
+            }
+            if (!startsBlock(lines, i)) {
                 continue;
             }
             Line next = lines.get(i + 1);
@@ -241,15 +265,22 @@ public class DocumentChunker {
     }
 
     /**
-     * 제목은 앞 내용이 끝난 뒤에 온다 (문서 처음, 빈 줄 뒤, 문장 끝 뒤).
+     * 제목은 앞 내용이 끝난 뒤에 온다 (문서 처음, 쪽 첫 줄, 빈 줄 뒤, 문장 끝 뒤, 목록 줄 뒤).
      * 번호가 있는 제목은 다른 모양의 번호 제목 바로 뒤에도 올 수 있다 ("2. 외국인등록 / 가. 신청 기한").
      */
     private static boolean startsBlock(List<Line> lines, int i) {
-        if (i == 0 || lines.get(i).blankBefore()) {
+        Line line = lines.get(i);
+        if (i == 0 || line.blankBefore() || line.pageStart()) {
             return true;
         }
         Line prev = lines.get(i - 1);
         if (SENTENCE_END.matcher(prev.text()).find()) {
+            return true;
+        }
+        // "· 문의 : … ☎(031)310-2089" 처럼 마침표 없이 끝나는 목록 줄 다음.
+        // "· 납부대상 : … 이륜차," 처럼 다음 줄로 이어지는 목록 줄 다음은 아니다
+        if (BULLET.matcher(prev.text()).find() && !LIST_CONTINUES.matcher(prev.text()).find()
+                && !CONTINUES.matcher(prev.text()).find()) {
             return true;
         }
         Marker marker = lines.get(i).marker();
