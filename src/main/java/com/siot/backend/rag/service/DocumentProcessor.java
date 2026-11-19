@@ -6,8 +6,8 @@ import com.siot.backend.rag.document.BatchEmbedder;
 import com.siot.backend.rag.document.DocumentChunker;
 import com.siot.backend.rag.document.DocumentChunker.Chunk;
 import com.siot.backend.rag.document.FileStorage;
-import com.siot.backend.rag.document.PageText;
-import com.siot.backend.rag.document.PdfTextExtractor;
+import com.siot.backend.rag.document.ExtractedContent;
+import com.siot.backend.rag.document.PdfContentExtractor;
 import com.siot.backend.rag.domain.ProcessingStage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +27,7 @@ public class DocumentProcessor {
     private final DocumentVersionStateService stateService;
     private final DocumentIndexWriter indexWriter;
     private final FileStorage fileStorage;
-    private final PdfTextExtractor extractor;
+    private final PdfContentExtractor extractor;
     private final DocumentChunker chunker;
     private final BatchEmbedder embedder;
     private final GeminiProperties geminiProperties;
@@ -49,12 +49,13 @@ public class DocumentProcessor {
         }
         long startedAt = System.currentTimeMillis();
         try {
-            List<PageText> pages = extract(job);
-            List<Chunk> chunks = split(pages, job.documentName());
+            ExtractedContent content = extract(job);
+            List<Chunk> chunks = split(content, job.documentName());
             List<float[]> vectors = embed(chunks, job.documentName());
             index(versionId, chunks, vectors);
-            log.info("Document version {} indexed: {} pages, {} chunks in {} ms",
-                    versionId, pages.size(), chunks.size(), System.currentTimeMillis() - startedAt);
+            log.info("Document version {} indexed: {} pages ({}, coverage {}%), {} chunks in {} ms",
+                    versionId, content.pageCount(), content.source(), Math.round(content.coverage() * 100), chunks.size(),
+                    System.currentTimeMillis() - startedAt);
         } catch (StageFailure e) {
             log.warn("Document version {} failed at {}: {}", versionId, e.stage, e.getMessage(), e.getCause());
             stateService.fail(versionId, e.stage, e.getMessage());
@@ -64,23 +65,23 @@ public class DocumentProcessor {
         }
     }
 
-    private List<PageText> extract(DocumentVersionStateService.Job job) {
-        List<PageText> pages;
+    private ExtractedContent extract(DocumentVersionStateService.Job job) {
+        ExtractedContent content;
         try {
-            pages = extractor.extract(fileStorage.load(job.fileStorageKey()));
+            content = extractor.extract(fileStorage.load(job.fileStorageKey()));
         } catch (Exception e) {
             throw new StageFailure(ProcessingStage.EXTRACT, "PDF를 읽을 수 없습니다: " + e.getMessage(), e);
         }
-        if (pages.stream().allMatch(page -> page.text().isBlank())) {
+        if (content.isEmpty()) {
             throw new StageFailure(ProcessingStage.EXTRACT,
                     "PDF에서 텍스트를 찾지 못했습니다. 스캔한 이미지 PDF는 텍스트가 있는 PDF로 다시 올려 주세요.", null);
         }
-        return pages;
+        return content;
     }
 
-    private List<Chunk> split(List<PageText> pages, String documentName) {
+    private List<Chunk> split(ExtractedContent content, String documentName) {
         try {
-            List<Chunk> chunks = chunker.split(pages, documentName);
+            List<Chunk> chunks = chunker.split(content, documentName);
             if (chunks.isEmpty()) {
                 throw new StageFailure(ProcessingStage.SPLIT, "나눌 내용이 없습니다.", null);
             }

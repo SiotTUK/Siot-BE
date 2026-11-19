@@ -1,5 +1,9 @@
 package com.siot.backend.rag.document;
 
+import com.siot.backend.rag.document.ContentBlock.TableBlock;
+import com.siot.backend.rag.document.ContentBlock.TableField;
+import com.siot.backend.rag.document.ContentBlock.TableRow;
+import com.siot.backend.rag.document.ContentBlock.TextLine;
 import com.siot.backend.rag.document.DocumentChunker.Chunk;
 import org.junit.jupiter.api.Test;
 
@@ -216,8 +220,75 @@ class DocumentChunkerTest {
     }
 
     @Test
+    void taggedTableBecomesOwnChunkWithSectionTitle() {
+        TableBlock table = new TableBlock(List.of("구분", "납부 방법", "비고"), List.of(
+                row(11, "구분", "방문 납부", "납부 방법", "전국 은행·우체국·새마을금고·CD/ATM기 이용", "비고", "지로용지 지참"),
+                row(11, "구분", "인터넷 납부", "납부 방법", "위택스(www.wetax.go.kr)", "비고", "공인인증서 필요")));
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                new TextLine("1-4 지방세 납부", 11, true),
+                new TextLine("■ 지방세 납부 방법", 11, true),
+                new TextLine("지방세는 아래 방법으로 낼 수 있습니다.", 11, true),
+                table,
+                new TextLine("납부 기한이 지나면 가산금이 붙습니다.", 12, true)), DOC);
+
+        assertThat(chunks).hasSize(3);
+        assertThat(chunks).extracting(Chunk::title).containsOnly("1-4 지방세 납부 > ■ 지방세 납부 방법");
+        assertThat(chunks).extracting(Chunk::structuredTable).containsExactly(false, true, false);
+        assertThat(chunks.get(1).content()).isEqualTo("""
+                1-4 지방세 납부 > ■ 지방세 납부 방법
+                구분: 방문 납부 / 납부 방법: 전국 은행·우체국·새마을금고·CD/ATM기 이용 / 비고: 지로용지 지참
+                구분: 인터넷 납부 / 납부 방법: 위택스(www.wetax.go.kr) / 비고: 공인인증서 필요""");
+        assertThat(chunks.get(1).pageStart()).isEqualTo(11);
+        assertThat(chunks.get(2).content()).doesNotContain("구분:");
+        assertThat(chunks.get(2).pageStart()).isEqualTo(12);
+    }
+
+    @Test
+    void shortLineRightBeforeTableIsHeading() {
+        TableBlock table = new TableBlock(List.of("기관", "연락처"), List.of(
+                row(14, "기관", "주미국한국대사관", "연락처", "☎+1-202-939-5600")));
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                new TextLine("외국인등록은 90일 이내에 해야 합니다.", 14, true),
+                new TextLine("주요 해외공관 연락처", 14, true),
+                table), DOC);
+
+        assertThat(chunks).extracting(Chunk::title).containsExactly(DOC, "주요 해외공관 연락처");
+    }
+
+    @Test
+    void longTableSplitsAtRowBoundaries() {
+        List<TableRow> rows = IntStream.rangeClosed(1, 40)
+                .mapToObj(i -> row(i <= 20 ? 30 : 31, "행정복지센터", "동 " + i + "번", "주소", "시흥시 어딘가로 " + i + "번길 " + i,
+                        "연락처", "☎(031)310-" + (4000 + i)))
+                .toList();
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                new TextLine("■ 행정복지센터", 30, true),
+                new TableBlock(List.of("행정복지센터", "주소", "연락처"), rows)), DOC);
+
+        assertThat(chunks).hasSizeGreaterThan(1);
+        assertThat(chunks).allSatisfy(chunk -> {
+            assertThat(chunk.content().length()).isLessThanOrEqualTo(DocumentChunker.MAX);
+            assertThat(chunk.content()).startsWith("■ 행정복지센터\n");
+            assertThat(chunk.structuredTable()).isTrue();
+            chunk.content().lines().skip(1).forEach(line -> assertThat(line).matches("행정복지센터: 동 \\d+번 / 주소: .+ / 연락처: .+"));
+        });
+        assertThat(chunks.stream().mapToLong(chunk -> chunk.content().lines().count() - 1).sum()).isEqualTo(40);
+        assertThat(chunks.getFirst().pageStart()).isEqualTo(30);
+        assertThat(chunks.getLast().pageEnd()).isEqualTo(31);
+    }
+
+    @Test
     void emptyTextGivesNoChunks() {
         assertThat(chunker.split(List.of(page(1, "  \n "), page(2, "")), DOC)).isEmpty();
+    }
+
+    /** 열 이름, 값, 열 이름, 값 … */
+    private static TableRow row(int page, String... nameValues) {
+        List<TableField> fields = new java.util.ArrayList<>();
+        for (int i = 0; i < nameValues.length; i += 2) {
+            fields.add(new TableField(nameValues[i], nameValues[i + 1]));
+        }
+        return new TableRow(fields, page);
     }
 
     private static PageText page(int page, String text) {

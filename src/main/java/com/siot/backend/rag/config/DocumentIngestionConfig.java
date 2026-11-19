@@ -5,7 +5,7 @@ import com.siot.backend.rag.document.BatchEmbedder;
 import com.siot.backend.rag.document.DocumentChunker;
 import com.siot.backend.rag.document.FileStorage;
 import com.siot.backend.rag.document.LocalFileStorage;
-import com.siot.backend.rag.document.PdfTextExtractor;
+import com.siot.backend.rag.document.PdfContentExtractor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,8 +23,8 @@ public class DocumentIngestionConfig {
     }
 
     @Bean
-    public PdfTextExtractor pdfTextExtractor() {
-        return new PdfTextExtractor();
+    public PdfContentExtractor pdfContentExtractor() {
+        return new PdfContentExtractor();
     }
 
     @Bean

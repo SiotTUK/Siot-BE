@@ -1,5 +1,9 @@
 package com.siot.backend.rag.document;
 
+import com.siot.backend.rag.document.ContentBlock.TableBlock;
+import com.siot.backend.rag.document.ContentBlock.TableRow;
+import com.siot.backend.rag.document.ContentBlock.TextLine;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -39,7 +43,11 @@ public class DocumentChunker {
     /** 목록 기호 (제목으로 보지 않음) */
     private static final Pattern BULLET = Pattern.compile("^[-•·※○◦▪∙*]\\s*");
     /** 다음 줄로 이어지는 문장 끝 (조사·연결 어미) */
-    private static final Pattern CONTINUES = Pattern.compile("[을를은는에의와과며면및]$");
+    private static final Pattern CONTINUES = Pattern.compile("[을를은는에와과며면및]$");
+    /** 장-절 번호만 있는 줄 (태그 PDF 에서 제목과 따로 놓인 번호) */
+    private static final Pattern SECTION_NUMBER_ONLY = Pattern.compile("^\\d{1,2}-\\d{1,2}$");
+    /** 번호 없는 제목이 될 수 없는 줄: "항목 : 값", 괄호로 시작, 주소 */
+    private static final Pattern NOT_A_TITLE = Pattern.compile("\\s:\\s|^[(\\[]|www\\.|https?://");
     /** 다음 줄로 이어지는 목록 줄 끝 (쉼표, 가운뎃점, 여는 괄호, 콜론, 줄표) */
     private static final Pattern LIST_CONTINUES = Pattern.compile("[,·(:\\-–]\\s*$");
 
@@ -88,18 +96,21 @@ public class DocumentChunker {
      * @param pageEnd   조각 내용이 끝나는 쪽
      * @param content   첫 줄 제목 + 본문
      * @param title     첫 줄 제목 (없으면 null)
-     * @param tableLike 표로 보이는 줄이 들어 있음 (확인용, 저장하지 않음)
+     * @param tableLike       표가 들어 있음 (확인용, 저장하지 않음). 태그 PDF 의 표이거나, 표로 보이는 줄
+     * @param structuredTable 태그 PDF 의 표 (Table 태그) 조각
      */
-    public record Chunk(int chunkNo, int pageStart, int pageEnd, String content, String title, boolean tableLike) {
+    public record Chunk(int chunkNo, int pageStart, int pageEnd, String content, String title, boolean tableLike,
+                        boolean structuredTable) {
     }
 
     /**
-     * @param pageStart 쪽의 첫 줄
-     * @param table     숫자 칸이 많은 줄 (표의 행)
-     * @param header    짧은 칸만 여러 개인 줄. 바로 아래가 표의 행이면 표의 머리 행
+     * @param pageStart  쪽의 첫 줄 (앞 줄과 쪽이 다름)
+     * @param table      숫자 칸이 많은 줄 (표의 행)
+     * @param header     짧은 칸만 여러 개인 줄. 바로 아래가 표의 행이면 표의 머리 행
+     * @param tableBlock 태그 PDF 의 표 자리 (text 는 빈 문자열)
      */
     private record Line(String text, int page, boolean blankBefore, boolean pageStart, Marker marker,
-                        boolean table, boolean header) {
+                        boolean table, boolean header, TableBlock tableBlock) {
     }
 
     /** 문단: 줄을 이은 텍스트와, 글자 위치 → 쪽 번호를 찾기 위한 줄 시작 위치 */
@@ -114,12 +125,16 @@ public class DocumentChunker {
         }
 
         void add(Line line) {
+            add(line.text(), line.page());
+        }
+
+        void add(String lineText, int page) {
             if (!text.isEmpty()) {
                 text.append(table ? '\n' : ' ');
             }
             lineStarts.add(text.length());
-            linePages.add(line.page());
-            text.append(line.text());
+            linePages.add(page);
+            text.append(lineText);
         }
 
         int pageAt(int offset) {
@@ -135,14 +150,29 @@ public class DocumentChunker {
     private record Unit(String text, int pageStart, int pageEnd, boolean table) {
     }
 
-    private record Section(String title, List<Paragraph> paragraphs) {
+    /** 절: 제목과, 순서대로의 문단({@link Paragraph})·표({@link TableBlock}) */
+    private record Section(String title, List<Object> items) {
     }
 
     /**
+     * 태그 없는 PDF 의 쪽 텍스트 (줄 단위).
+     *
      * @param fallbackTitle 첫 제목 전 내용의 첫 줄 (보통 문서 이름). null 이면 제목 줄 없음
      */
     public List<Chunk> split(List<PageText> pages, String fallbackTitle) {
-        List<Line> lines = toLines(pages);
+        return splitBlocks(PdfContentExtractor.toBlocks(pages), fallbackTitle);
+    }
+
+    public List<Chunk> split(ExtractedContent content, String fallbackTitle) {
+        return splitBlocks(content.blocks(), fallbackTitle);
+    }
+
+    /**
+     * @param blocks        읽는 순서대로의 텍스트 줄·표
+     * @param fallbackTitle 첫 제목 전 내용의 첫 줄 (보통 문서 이름). null 이면 제목 줄 없음
+     */
+    public List<Chunk> splitBlocks(List<ContentBlock> blocks, String fallbackTitle) {
+        List<Line> lines = toLines(blocks);
         boolean[] headings = findHeadings(lines);
         List<Section> sections = toSections(lines, headings, fallbackTitle);
 
@@ -155,25 +185,70 @@ public class DocumentChunker {
 
     // ---------------------------------------------------------------- 줄
 
-    private static List<Line> toLines(List<PageText> pages) {
+    /** 표는 빈 줄(text "")로 자리만 잡는다: 제목 판단에서 본문으로 보이고, 절에 표로 들어간다 */
+    private static List<Line> toLines(List<ContentBlock> blocks) {
         List<Line> lines = new ArrayList<>();
-        boolean blank = true;
-        for (PageText page : pages) {
-            boolean pageStart = true;
-            for (String raw : page.text().split("\n")) {
-                String text = raw.replace(' ', ' ').strip();
-                if (text.isEmpty()) {
-                    blank = true;
-                    continue;
+        int previousPage = -1;
+        for (ContentBlock block : blocks) {
+            switch (block) {
+                case TextLine textLine -> {
+                    String text = textLine.text().replace(' ', ' ').strip();
+                    if (text.isEmpty()) {
+                        continue;
+                    }
+                    Marker marker = Marker.of(text);
+                    lines.add(new Line(text, textLine.page(), textLine.newParagraph(), textLine.page() != previousPage,
+                            marker, isTableRow(text), marker == Marker.NONE && isHeaderRow(text), null));
+                    previousPage = textLine.page();
                 }
-                Marker marker = Marker.of(text);
-                lines.add(new Line(text, page.page(), blank, pageStart, marker,
-                        isTableRow(text), marker == Marker.NONE && isHeaderRow(text)));
-                blank = false;
-                pageStart = false;
+                case TableBlock table -> {
+                    if (table.rows().isEmpty()) {
+                        continue;
+                    }
+                    int page = table.firstPage();
+                    lines.add(new Line("", page, true, page != previousPage, Marker.NONE, false, false, table));
+                    previousPage = table.rows().getLast().page();
+                }
             }
         }
-        return lines;
+        return mergeSectionNumbers(lines);
+    }
+
+    /**
+     * 번호만 있는 줄("1-4")을 같은 쪽의 짧은 제목 줄과 합친다 ("1-4 지방세 납부").
+     * 책자 디자인에 따라 번호가 제목 앞이나 뒤에 따로 놓이므로, 앞 줄을 먼저 보고 안 되면 다음 줄을 본다.
+     */
+    private static List<Line> mergeSectionNumbers(List<Line> lines) {
+        List<Line> merged = new ArrayList<>(lines.size());
+        for (int i = 0; i < lines.size(); i++) {
+            Line line = lines.get(i);
+            if (!SECTION_NUMBER_ONLY.matcher(line.text()).matches()) {
+                merged.add(line);
+                continue;
+            }
+            Line previous = merged.isEmpty() ? null : merged.getLast();
+            Line next = i + 1 < lines.size() ? lines.get(i + 1) : null;
+            if (isPlainTitle(previous, line.page())) {
+                merged.set(merged.size() - 1, withText(previous, line.text() + " " + previous.text()));
+            } else if (isPlainTitle(next, line.page())) {
+                merged.add(withText(new Line(next.text(), line.page(), line.blankBefore(), line.pageStart(),
+                        next.marker(), false, false, null), line.text() + " " + next.text()));
+                i++;
+            } else {
+                merged.add(line);
+            }
+        }
+        return merged;
+    }
+
+    private static boolean isPlainTitle(Line line, int page) {
+        return line != null && line.page() == page && line.tableBlock() == null
+                && line.marker() == Marker.NONE && isHeadingCandidate(line);
+    }
+
+    private static Line withText(Line line, String text) {
+        Marker marker = Marker.of(text);
+        return new Line(text, line.page(), line.blankBefore(), line.pageStart(), marker, false, false, null);
     }
 
     /** 칸이 3개 이상이고 그중 40% 이상에 숫자가 있는 줄 (예: "외국인등록 30,000원 3주") */
@@ -250,7 +325,25 @@ public class DocumentChunker {
                 && !line.table()
                 && HAS_LETTER.matcher(text).find()
                 // 번호 없는 줄이 조사로 끝나면 문장이 다음 줄로 이어지는 것 ("... 건강보험에")
-                && !(line.marker() == Marker.NONE && CONTINUES.matcher(text).find());
+                && !(line.marker() == Marker.NONE && CONTINUES.matcher(text).find())
+                // 번호 없는 줄이 숫자 위주면 통계·값 ("514,331명", "101개교")
+                && !(line.marker() == Marker.NONE && mostlyDigits(text))
+                // 번호 없는 줄이 "항목 : 값", 괄호 설명, 주소(URL)면 제목이 아니다
+                && !(line.marker() == Marker.NONE && NOT_A_TITLE.matcher(text).find());
+    }
+
+    private static boolean mostlyDigits(String text) {
+        int letters = 0;
+        int digits = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.isDigit(c)) {
+                digits++;
+            } else if (Character.isLetter(c)) {
+                letters++;
+            }
+        }
+        return letters < 2 || digits > letters;
     }
 
     /** 앞이나 뒤 줄이 같은 번호 모양이면 목록 항목 */
@@ -274,7 +367,7 @@ public class DocumentChunker {
             return true;
         }
         Line prev = lines.get(i - 1);
-        if (SENTENCE_END.matcher(prev.text()).find()) {
+        if (prev.tableBlock() != null || SENTENCE_END.matcher(prev.text()).find()) {
             return true;
         }
         // "· 문의 : … ☎(031)310-2089" 처럼 마침표 없이 끝나는 목록 줄 다음.
@@ -311,12 +404,18 @@ public class DocumentChunker {
                 prev = line;
                 continue;
             }
+            if (line.tableBlock() != null) {
+                section.items().add(line.tableBlock());
+                paragraph = null;
+                prev = line;
+                continue;
+            }
             boolean tableRow = (line.table() && inTableRun(lines, headings, i))
                     || (line.header() && i + 1 < lines.size() && lines.get(i + 1).table()
                     && inTableRun(lines, headings, i + 1));
             if (paragraph == null || startsParagraph(prev, line, paragraph, tableRow)) {
                 paragraph = new Paragraph(tableRow);
-                section.paragraphs().add(paragraph);
+                section.items().add(paragraph);
             }
             paragraph.add(line);
             prev = line;
@@ -331,7 +430,8 @@ public class DocumentChunker {
         if (tableRow) {
             return false;
         }
-        return line.blankBefore()
+        return prev.tableBlock() != null
+                || line.blankBefore()
                 || SENTENCE_END.matcher(prev.text()).find()
                 || line.marker() != Marker.NONE
                 || BULLET.matcher(line.text()).find();
@@ -362,6 +462,7 @@ public class DocumentChunker {
 
     // ---------------------------------------------------------------- 조각
 
+    /** 문단은 목표 길이로 묶고(겹침 있음), 표는 앞뒤 문단과 떼어 따로 조각으로 만든다 */
     private static void pack(Section section, List<Chunk> chunks) {
         String title = section.title();
         int titleLength = title == null ? 0 : title.length() + 1;
@@ -369,10 +470,41 @@ public class DocumentChunker {
         int target = Math.max(MIN_BUDGET / 2, TARGET - titleLength);
 
         List<Unit> units = new ArrayList<>();
-        for (Paragraph paragraph : section.paragraphs()) {
-            units.addAll(toUnits(paragraph, budget));
+        for (Object item : section.items()) {
+            if (item instanceof Paragraph paragraph) {
+                units.addAll(toUnits(paragraph, budget));
+            } else if (item instanceof TableBlock table) {
+                packText(units, title, budget, target, chunks);
+                units.clear();
+                packTable(table, title, budget, chunks);
+            }
         }
+        packText(units, title, budget, target, chunks);
+    }
 
+    /**
+     * 표 하나를 한 조각으로 (한 줄에 한 행, 행마다 열 이름). 길면 행 경계에서 나눈다.
+     * 행마다 열 이름이 붙어 있어 앞 조각 없이도 읽히므로 겹치지 않는다.
+     */
+    private static void packTable(TableBlock table, String title, int budget, List<Chunk> chunks) {
+        List<Unit> current = new ArrayList<>();
+        for (TableRow row : table.rows()) {
+            Paragraph rowText = new Paragraph(true);
+            rowText.add(row.render(), row.page());
+            for (Unit unit : toUnits(rowText, budget)) {
+                if (!current.isEmpty() && length(current) + 1 + unit.text().length() > budget) {
+                    emit(current, title, chunks, true);
+                    current = new ArrayList<>();
+                }
+                current.add(unit);
+            }
+        }
+        if (!current.isEmpty()) {
+            emit(current, title, chunks, true);
+        }
+    }
+
+    private static void packText(List<Unit> units, String title, int budget, int target, List<Chunk> chunks) {
         List<Unit> current = new ArrayList<>();
         Unit carry = null;
         for (Unit unit : units) {
@@ -389,7 +521,7 @@ public class DocumentChunker {
                 current.add(unit);
             } else {
                 carry = tail(current);
-                emit(current, title, chunks);
+                emit(current, title, chunks, false);
                 current = new ArrayList<>();
                 if (carry != null && carry.text().length() + 1 + unit.text().length() <= budget) {
                     current.add(carry);
@@ -398,7 +530,7 @@ public class DocumentChunker {
             }
         }
         if (!current.isEmpty()) {
-            emit(current, title, chunks);
+            emit(current, title, chunks, false);
         }
     }
 
@@ -492,7 +624,7 @@ public class DocumentChunker {
         return length;
     }
 
-    private static void emit(List<Unit> units, String title, List<Chunk> chunks) {
+    private static void emit(List<Unit> units, String title, List<Chunk> chunks, boolean structuredTable) {
         StringBuilder body = new StringBuilder();
         int pageStart = Integer.MAX_VALUE;
         int pageEnd = 0;
@@ -507,6 +639,6 @@ public class DocumentChunker {
             table |= unit.table();
         }
         String content = title == null ? body.toString() : title + "\n" + body;
-        chunks.add(new Chunk(chunks.size() + 1, pageStart, pageEnd, content, title, table));
+        chunks.add(new Chunk(chunks.size() + 1, pageStart, pageEnd, content, title, table, structuredTable));
     }
 }

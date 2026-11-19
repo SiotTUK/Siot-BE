@@ -6,6 +6,7 @@ import com.siot.backend.auth.service.SignupVerificationService;
 import com.siot.backend.rag.ai.AiUnavailableException;
 import com.siot.backend.rag.ai.DocumentEmbedder;
 import com.siot.backend.rag.ai.RetrievedChunk;
+import com.siot.backend.rag.document.TaggedTestPdf;
 import com.siot.backend.rag.document.TestPdfs;
 import com.siot.backend.rag.domain.DocumentChunk;
 import com.siot.backend.rag.service.ChunkRetriever;
@@ -213,6 +214,40 @@ class DocumentIngestionIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DOCUMENT_VERSION_NOT_RETRYABLE"));
         assertThat(currentVersionNos(documentId)).containsExactly(3);
+    }
+
+    @Test
+    void taggedPdfStoresTableRowsAsOwnChunk() throws Exception {
+        byte[] tagged = TaggedTestPdf.create()
+                .page().artifact("Siheung Living Guide 17").paragraph("Foreign residents can join these programs.")
+                .page().artifact("18 Welcome to Siheung")
+                .paragraph("Welfare Center Programs")
+                .table(List.of(
+                        List.of(TaggedTestPdf.Cell.of("Type"), TaggedTestPdf.Cell.of("Program"), TaggedTestPdf.Cell.of("Target")),
+                        List.of(new TaggedTestPdf.Cell("Korean class", 2, 1), TaggedTestPdf.Cell.of("Weekend class"),
+                                TaggedTestPdf.Cell.of("Adults")),
+                        List.of(TaggedTestPdf.Cell.of("Weekday class"), TaggedTestPdf.Cell.of("Workers"))))
+                .build();
+        long documentId = id(mockMvc.perform(multipart("/api/admin/documents")
+                        .file(pdf(tagged))
+                        .param("name", "Tagged Guide " + UUID.randomUUID())
+                        .param("sourceUrl", SOURCE_URL)
+                        .cookie(admin).with(csrf()))
+                .andExpect(status().isCreated()).andReturn(), "$.data.documentId");
+
+        awaitStatus(documentId, 1, "COMPLETED");
+
+        List<String> rows = jdbcTemplate.query("""
+                SELECT c.page_start, c.page_end, c.content
+                FROM document_chunk c JOIN document_version v ON v.document_version_id = c.document_version_id
+                WHERE v.document_id = ? ORDER BY c.chunk_no""",
+                (rs, i) -> rs.getInt(1) + "-" + rs.getInt(2) + "|" + rs.getString(3), documentId);
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(1)).isEqualTo("""
+                2-2|Welfare Center Programs
+                Type: Korean class / Program: Weekend class / Target: Adults
+                Type: Korean class / Program: Weekday class / Target: Workers""");
+        assertThat(String.join("\n", rows)).doesNotContain("Siheung Living Guide", "Welcome to Siheung");
     }
 
     @Test
