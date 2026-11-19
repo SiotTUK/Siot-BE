@@ -44,6 +44,8 @@ public class TaggedPdfExtractor {
             "P", "H", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "Lbl", "LBody", "Caption", "TOCI", "Note",
             "BlockQuote", "Quote", "Code", "Formula");
     private static final Set<String> CELL_TYPES = Set.of("TD", "TH");
+    /** 머리 행에 올 수 없는 값: 전화, URL, 도로명 주소("○○로 12", "○○길 3"), 전화번호 모양 */
+    private static final Pattern VALUE_LIKE = Pattern.compile("☎|www\\.|https?://|[로길]\\s?\\d|\\d{2,}-\\d{3,}");
     private static final Pattern SPACES = Pattern.compile("\\s+");
     /** 강제 줄바꿈으로 보는 줄 첫머리 (목록·번호 기호) */
     private static final Pattern LINE_START_MARKER = Pattern.compile(
@@ -255,8 +257,14 @@ public class TaggedPdfExtractor {
         grid.replaceAll(row -> row.length >= width ? row : java.util.Arrays.copyOf(row, width));
         grid.subList(rows.size(), grid.size()).clear(); // RowSpan 이 표 밖으로 넘친 자리
 
-        int headerRows = headerRows(rows, grid.size());
+        TableShape shape = shape(grid, width);
+        if (shape == TableShape.LABEL_COLUMN) {
+            addLabelColumnTable(grid, width, page);
+            return;
+        }
+        int headerRows = shape == TableShape.NO_HEADER ? 0 : headerRows(rows, grid.size());
         List<String> names = headerRows == 0 ? List.of() : columnNames(grid, headerRows, width);
+        fillMergedCellAbove(grid, headerRows, width);
 
         List<TableRow> tableRows = new ArrayList<>();
         for (int r = headerRows; r < grid.size(); r++) {
@@ -281,6 +289,90 @@ public class TaggedPdfExtractor {
         }
         if (!tableRows.isEmpty()) {
             blocks.add(new TableBlock(names, tableRows));
+        }
+    }
+
+    /** 표 모양: 첫 행이 머리 행 / 머리 행 없음 / 첫 열이 항목 이름 */
+    enum TableShape {
+        HEADER, NO_HEADER, LABEL_COLUMN
+    }
+
+    /**
+     * 첫 행 칸이 값처럼 보이면(전화·주소·URL) 머리 행 없음.
+     * 첫 행 둘째 칸부터가 목록·설명처럼 보이면(· 로 시작, 쉼표, 30자 초과) 첫 열이 항목 이름인 표.
+     */
+    private static TableShape shape(List<Cell[]> grid, int width) {
+        if (grid.size() < 2) {
+            return TableShape.HEADER;
+        }
+        Cell[] first = grid.getFirst();
+        Cell previous = null;
+        boolean descriptive = false;
+        for (int c = 0; c < width; c++) {
+            Cell cell = first[c];
+            if (cell == null || cell == previous || cell.text().isEmpty()) {
+                continue;
+            }
+            previous = cell;
+            if (VALUE_LIKE.matcher(cell.text()).find()) {
+                return TableShape.NO_HEADER;
+            }
+            if (c > 0 && (cell.text().startsWith("·") || cell.text().contains(",") || cell.text().length() > 30)) {
+                descriptive = true;
+            }
+        }
+        return descriptive ? TableShape.LABEL_COLUMN : TableShape.HEADER;
+    }
+
+    /** 첫 열이 항목 이름인 표: 행마다 "항목: 값 / 값 / 값" (첫 행 포함) */
+    private void addLabelColumnTable(List<Cell[]> grid, int width, PDPage page) {
+        List<TableRow> tableRows = new ArrayList<>();
+        for (Cell[] row : grid) {
+            List<TableField> fields = new ArrayList<>();
+            int rowPage = Integer.MAX_VALUE;
+            Cell previous = null;
+            String label = null;
+            for (int c = 0; c < width; c++) {
+                Cell cell = row[c];
+                if (cell == null || cell == previous || cell.text().isEmpty()) {
+                    continue;
+                }
+                previous = cell;
+                rowPage = Math.min(rowPage, cell.page());
+                if (c == 0) {
+                    label = cell.text();
+                } else {
+                    fields.add(new TableField(fields.isEmpty() ? label : null, cell.text()));
+                }
+            }
+            if (fields.isEmpty() && label != null) {
+                fields.add(new TableField(null, label));
+            }
+            if (!fields.isEmpty()) {
+                tableRows.add(new TableRow(fields, rowPage == Integer.MAX_VALUE ? pageNumber(page) : rowPage));
+            }
+        }
+        if (!tableRows.isEmpty()) {
+            blocks.add(new TableBlock(List.of(), tableRows));
+        }
+    }
+
+    /**
+     * 위아래로 합쳐진 칸의 글자가 태그상 둘째 데이터 행에 들어 있고 첫 데이터 행에는 빈 칸(또는 칸 없음)만 있을 때,
+     * 바로 아래 행 같은 열의 합쳐진 칸(RowSpan) 값을 첫 데이터 행에도 채운다.
+     * RowSpan 없이 빈 칸 / 값 / 빈 칸 으로만 합친 것처럼 보이게 한 표는 값을 추정해야 하므로 채우지 않는다.
+     */
+    private static void fillMergedCellAbove(List<Cell[]> grid, int firstDataRow, int width) {
+        if (firstDataRow + 1 >= grid.size()) {
+            return;
+        }
+        Cell[] row = grid.get(firstDataRow);
+        Cell[] below = grid.get(firstDataRow + 1);
+        for (int c = 0; c < width; c++) {
+            boolean emptyAbove = row[c] == null || row[c].text().isEmpty();
+            if (emptyAbove && below[c] != null && below[c].rowSpan() > 1 && !below[c].text().isEmpty()) {
+                row[c] = below[c];
+            }
         }
     }
 

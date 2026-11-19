@@ -33,7 +33,7 @@ public class DocumentChunker {
     /** 표로 볼 연속 줄 수 */
     static final int TABLE_MIN_ROWS = 3;
     private static final int MIN_BUDGET = 200;
-    private static final int TITLE_LEVELS = 2;
+    private static final int TITLE_LEVELS = 3;
 
     private static final Pattern SENTENCE_END = Pattern.compile("[.!?。！？]$");
     private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[.!?。！？])\\s+");

@@ -105,6 +105,18 @@ class DocumentChunkerTest {
     }
 
     @Test
+    void titleKeepsThreeLevels() {
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                new TextLine("3-2 복지", 24, true),
+                new TextLine("■ 아동·가족 복지", 24, true),
+                new TextLine("(2) 공동육아나눔터", 25, true),
+                new TextLine("부모와 아이가 함께 이용하는 공간입니다.", 25, true)), DOC);
+
+        assertThat(chunks).extracting(Chunk::title)
+                .containsExactly("3-2 복지 > ■ 아동·가족 복지 > (2) 공동육아나눔터");
+    }
+
+    @Test
     void upperSectionChangeResetsLowerTitle() {
         List<Chunk> chunks = chunker.split(List.of(
                 page(11, """

@@ -81,6 +81,60 @@ class TaggedPdfExtractorTest {
         assertThat(blocks.get(2)).isEqualTo(new TextLine("Call 031-434-0411 for details.", 1, true));
     }
 
+    /** 머리 행 없이 같은 모양 행만 있는 표 (첫 행에 전화·URL·주소) */
+    @Test
+    void tableWithValuesInFirstRowHasNoHeader() throws IOException {
+        byte[] pdf = TaggedTestPdf.create().page()
+                .table(List.of(
+                        List.of(Cell.of("EBS Durian"), Cell.of("www.ebs.co.kr/durian")),
+                        List.of(Cell.of("Nuri Sejong"), Cell.of("www.sejonghakdang.org"))))
+                .build();
+
+        TableBlock table = (TableBlock) extractor.extract(pdf).blocks().getFirst();
+        assertThat(table.columns()).isEmpty();
+        assertThat(table.rows()).extracting(TableRow::render).containsExactly(
+                "EBS Durian / www.ebs.co.kr/durian",
+                "Nuri Sejong / www.sejonghakdang.org");
+    }
+
+    /** 첫 열이 항목 이름이고 첫 행에도 값(설명)이 있는 표 */
+    @Test
+    void tableWithDescriptiveFirstRowUsesFirstColumnAsLabels() throws IOException {
+        byte[] pdf = TaggedTestPdf.create().page()
+                .table(List.of(
+                        List.of(Cell.of("Programs"), Cell.of("· Korean class · Culture"), Cell.of("· Counseling, jobs")),
+                        List.of(Cell.of("Location"), Cell.of("Gunja-ro 381"), Cell.of("Gongdan 1-daero 259")),
+                        List.of(Cell.of("Hours"), Cell.of("Mon-Fri 09:00-18:00"), Cell.of("Tue-Sun 09:00-18:00"))))
+                .build();
+
+        TableBlock table = (TableBlock) extractor.extract(pdf).blocks().getFirst();
+        assertThat(table.columns()).isEmpty();
+        assertThat(table.rows()).extracting(TableRow::render).containsExactly(
+                "Programs: · Korean class · Culture / · Counseling, jobs",
+                "Location: Gunja-ro 381 / Gongdan 1-daero 259",
+                "Hours: Mon-Fri 09:00-18:00 / Tue-Sun 09:00-18:00");
+    }
+
+    /** 첫 데이터 행은 빈 칸, 합쳐진 칸(RowSpan)의 글자는 둘째 데이터 행에 태그된 표 (InDesign) */
+    @Test
+    void fillsMergedCellTaggedInSecondRowIntoFirstDataRow() throws IOException {
+        byte[] pdf = TaggedTestPdf.create().page()
+                .table(List.of(
+                        List.of(Cell.of("Department"), Cell.of("Team"), Cell.of("Phone")),
+                        List.of(Cell.of(""), Cell.of("Policy team"), Cell.of("3008")),
+                        List.of(new Cell("Foreign Residents", 2, 1), Cell.of("Support team"), Cell.of("2642")),
+                        List.of(Cell.of("Family team"), Cell.of("2611")),
+                        List.of(Cell.of("Library"), Cell.of("Kids team"), Cell.of("5230"))))
+                .build();
+
+        TableBlock table = (TableBlock) extractor.extract(pdf).blocks().getFirst();
+        assertThat(table.rows()).extracting(TableRow::render).containsExactly(
+                "Department: Foreign Residents / Team: Policy team / Phone: 3008",
+                "Department: Foreign Residents / Team: Support team / Phone: 2642",
+                "Department: Foreign Residents / Team: Family team / Phone: 2611",
+                "Department: Library / Team: Kids team / Phone: 5230");
+    }
+
     @Test
     void singleRowTableHasNoColumnNames() throws IOException {
         byte[] pdf = TaggedTestPdf.create().page()
