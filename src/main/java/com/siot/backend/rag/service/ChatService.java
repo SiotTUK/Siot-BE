@@ -14,6 +14,7 @@ import com.siot.backend.rag.config.ChatbotProperties;
 import com.siot.backend.rag.domain.AnswerStatus;
 import com.siot.backend.rag.domain.ChatConversation;
 import com.siot.backend.rag.domain.ChatMessage;
+import com.siot.backend.rag.domain.ChatMessageRelatedPage;
 import com.siot.backend.rag.domain.ChatMessageSource;
 import com.siot.backend.rag.domain.DocumentChunk;
 import com.siot.backend.rag.domain.ReferralTopic;
@@ -26,6 +27,7 @@ import com.siot.backend.rag.dto.SuggestionsResponse;
 import com.siot.backend.rag.dto.MessageResponse;
 import com.siot.backend.rag.dto.SourceResponse;
 import com.siot.backend.rag.repository.ChatConversationRepository;
+import com.siot.backend.rag.repository.ChatMessageRelatedPageRepository;
 import com.siot.backend.rag.repository.ChatMessageRepository;
 import com.siot.backend.rag.repository.ChatMessageSourceRepository;
 import com.siot.backend.rag.repository.DocumentChunkRepository;
@@ -42,8 +44,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -68,6 +72,7 @@ public class ChatService {
     private final ChatConversationRepository conversationRepository;
     private final ChatMessageRepository messageRepository;
     private final ChatMessageSourceRepository sourceRepository;
+    private final ChatMessageRelatedPageRepository relatedPageRepository;
     private final DocumentChunkRepository chunkRepository;
     private final AppUserRepository appUserRepository;
     private final QueryEmbedder queryEmbedder;
@@ -84,6 +89,7 @@ public class ChatService {
     public ChatService(ChatConversationRepository conversationRepository,
                        ChatMessageRepository messageRepository,
                        ChatMessageSourceRepository sourceRepository,
+                       ChatMessageRelatedPageRepository relatedPageRepository,
                        DocumentChunkRepository chunkRepository,
                        AppUserRepository appUserRepository,
                        QueryEmbedder queryEmbedder,
@@ -99,6 +105,7 @@ public class ChatService {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.sourceRepository = sourceRepository;
+        this.relatedPageRepository = relatedPageRepository;
         this.chunkRepository = chunkRepository;
         this.appUserRepository = appUserRepository;
         this.queryEmbedder = queryEmbedder;
@@ -140,11 +147,12 @@ public class ChatService {
     /** 이전 대화 목록 (최근 대화 순) */
     @Transactional(readOnly = true)
     public Page<ConversationResponse> listConversations(Long userId, Pageable pageable) {
-        return conversationRepository.findByUserIdOrderByUpdatedAtDesc(userId, pageable)
-                .map(c -> toResponse(c, messageRepository
-                        .findFirstByConversationIdAndRoleOrderByIdAsc(c.getId(), ChatMessage.ROLE_USER)
-                        .map(ChatMessage::getContent)
-                        .orElse(null)));
+        Page<ChatConversation> page = conversationRepository.findByUserIdOrderByUpdatedAtDesc(userId, pageable);
+        // 제목(첫 질문)은 페이지의 대화들을 한 번에 조회한다
+        Map<Long, String> titles = page.isEmpty() ? Map.of() : messageRepository
+                .findFirstQuestions(page.getContent().stream().map(ChatConversation::getId).toList()).stream()
+                .collect(Collectors.toMap(m -> m.getConversation().getId(), ChatMessage::getContent));
+        return page.map(c -> toResponse(c, titles.get(c.getId())));
     }
 
     /** 대화 내용 (근거 포함) */
@@ -153,7 +161,9 @@ public class ChatService {
         ChatConversation conversation = findOwned(userId, conversationId);
         String language = conversation.getLanguage();
         List<ChatMessage> messages = messageRepository.findByConversationIdOrderByIdAsc(conversation.getId());
-        Map<Long, List<ChatMessageSource>> sources = loadSources(messages.stream().map(ChatMessage::getId).toList());
+        List<Long> messageIds = messages.stream().map(ChatMessage::getId).toList();
+        Map<Long, List<ChatMessageSource>> sources = loadSources(messageIds);
+        Map<Long, List<RelatedPage>> savedPages = loadRelatedPages(messageIds);
         List<MessageResponse> responses = new ArrayList<>();
         String lastQuestion = null;
         for (ChatMessage m : messages) {
@@ -163,12 +173,19 @@ public class ChatService {
                 continue;
             }
             List<ChatMessageSource> messageSources = sources.getOrDefault(m.getId(), List.of());
-            List<Long> chunkIds = messageSources.stream()
-                    .filter(s -> s.getChunk() != null).map(s -> s.getChunk().getId()).toList();
             // CB-15: 답변은 답한 언어로 다시 보여 준다 (연락처 라벨·담당 기관 안내·관련 페이지 제목)
             String messageLanguage = m.getLanguage() != null ? m.getLanguage() : language;
+            // CB-10: 답변할 때 보여 준 링크를 그대로. 이 기능 이전 답변만 근거 조각·질문으로 다시 계산한다
+            List<RelatedPage> pages;
+            if (m.isRelatedPagesRecorded()) {
+                pages = savedPages.getOrDefault(m.getId(), List.of());
+            } else {
+                List<Long> chunkIds = messageSources.stream()
+                        .filter(s -> s.getChunk() != null).map(s -> s.getChunk().getId()).toList();
+                pages = relatedPages(lastQuestion, chunkIds, messageLanguage);
+            }
             responses.add(toResponse(m, messageSources.stream().map(ChatService::toResponse).toList(),
-                    relatedPages(lastQuestion, chunkIds, messageLanguage), messageLanguage));
+                    pages, messageLanguage));
         }
         return responses;
     }
@@ -242,19 +259,33 @@ public class ChatService {
         // CB-11: 비자 발급 가능 여부·법률·의료 판단 질문이면 고정 안내와 담당 기관을 함께 보여 준다
         List<ReferralTopic> referralTopics = ReferralDetector.detect(question);
 
-        // 5. 답변·근거 저장
+        // CB-10: 관련 페이지는 답변과 함께 저장해 대화 기록에서 같은 링크를 보여 준다
+        List<RelatedPage> relatedPages = relatedPages(question, outcome.relatedChunkIds(), language);
+
+        // 5. 답변·근거·관련 페이지 저장
         ChatMessage answer = tx.execute(status -> {
-            ChatConversation conversation = conversationRepository.getReferenceById(saved.conversation().getId());
+            // 답변을 만드는 동안 대화가 지워졌으면 (CB-03 삭제·탈퇴) FK 오류(500) 대신 404
+            ChatConversation conversation = conversationRepository.findById(saved.conversation().getId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_CONVERSATION_NOT_FOUND));
             ChatMessage message = messageRepository.save(
                     ChatMessage.answer(conversation, outcome.text(), outcome.status(), emergency, referralTopics,
                             language));
+            // 검색 뒤 문서 재반영(ADM-04)으로 지워진 조각은 연결하지 않는다 (삭제 시 SET NULL 과 같은 상태로 저장)
+            Set<Long> existingChunkIds = outcome.sources().isEmpty() ? Set.of() : new HashSet<>(
+                    chunkRepository.findExistingIds(outcome.sources().stream().map(RetrievedChunk::chunkId).toList()));
             List<ChatMessageSource> sources = new ArrayList<>();
             for (int i = 0; i < outcome.sources().size(); i++) {
                 RetrievedChunk chunk = outcome.sources().get(i);
-                DocumentChunk chunkRef = chunkRepository.getReferenceById(chunk.chunkId());
+                DocumentChunk chunkRef = existingChunkIds.contains(chunk.chunkId())
+                        ? chunkRepository.getReferenceById(chunk.chunkId()) : null;
                 sources.add(ChatMessageSource.of(message, chunkRef, chunk.relevance(), i + 1));
             }
             sourceRepository.saveAll(sources);
+            List<ChatMessageRelatedPage> pages = new ArrayList<>();
+            for (int i = 0; i < relatedPages.size(); i++) {
+                pages.add(ChatMessageRelatedPage.of(message.getId(), i + 1, relatedPages.get(i)));
+            }
+            relatedPageRepository.saveAll(pages);
             return message;
         });
 
@@ -264,7 +295,6 @@ public class ChatService {
             sourceResponses.add(new SourceResponse(i + 1, c.documentName(), c.pageStart(), c.pageEnd(),
                     c.sourceUrl(), c.relevance()));
         }
-        List<RelatedPage> relatedPages = relatedPages(question, outcome.relatedChunkIds(), language);
         return new AskResponse(
                 toResponse(saved.question(), List.of(), List.of(), language),
                 toResponse(answer, sourceResponses, relatedPages, language),
@@ -298,11 +328,13 @@ public class ChatService {
                 return Outcome.of(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
             }
 
-            String text = answerGenerator.generate(question, language, relevant, history);
+            // CB-17: 답변 근거로 넘긴 조각과 화면에 보여 주는 출처를 같게 한다
+            //   (넘긴 조각이 더 많으면 출처에 없는 자료의 내용이 답변에 들어갈 수 있다)
+            List<RetrievedChunk> sources = relevant.stream().limit(properties.maxSources()).toList();
+            String text = answerGenerator.generate(question, language, sources, history);
             if (text == null || text.isBlank() || text.strip().startsWith(AnswerGenerator.NO_ANSWER)) {
                 return Outcome.of(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
             }
-            List<RetrievedChunk> sources = relevant.stream().limit(properties.maxSources()).toList();
             return Outcome.of(text, AnswerStatus.ANSWERED, sources);
         } catch (AiUnavailableException e) {
             log.warn("Chatbot AI unavailable: {}", e.getMessage());
@@ -387,6 +419,15 @@ public class ChatService {
         }
         return sourceRepository.findByMessageIdInOrderBySourceOrderAsc(messageIds).stream()
                 .collect(Collectors.groupingBy(s -> s.getMessage().getId()));
+    }
+
+    private Map<Long, List<RelatedPage>> loadRelatedPages(List<Long> messageIds) {
+        if (messageIds.isEmpty()) {
+            return Map.of();
+        }
+        return relatedPageRepository.findByMessageIdInOrderByMessageIdAscSortOrderAsc(messageIds).stream()
+                .collect(Collectors.groupingBy(ChatMessageRelatedPage::getMessageId,
+                        Collectors.mapping(ChatMessageRelatedPage::toRelatedPage, Collectors.toList())));
     }
 
     private static SourceResponse toResponse(ChatMessageSource source) {

@@ -56,16 +56,33 @@ public class GeminiAnswerGenerator implements AnswerGenerator {
         // CB-07: 앞선 대화는 실제 대화 메시지로 넘기고, 마지막 메시지에 근거 조각과 현재 질문을 담는다
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(SystemMessage.from(SYSTEM_PROMPT.formatted(fallbackLanguage)));
+        // 근거 없음·오류였던 턴(answer == null)을 "NO_ANSWER" 라는 AI 답변으로 넣으면 모델이 그 응답을 따라 하게 되고,
+        // 일시적인 AI 오류도 "답 없음" 처럼 보인다. 질문만 다음 사용자 메시지 앞에 붙인다 (같은 역할 메시지가 연속되지 않게).
+        StringBuilder unanswered = new StringBuilder();
         for (ChatTurn turn : history) {
-            messages.add(UserMessage.from(turn.question()));
-            messages.add(AiMessage.from(turn.answer() != null ? turn.answer() : NO_ANSWER));
+            if (turn.answer() == null) {
+                unanswered.append("- ").append(turn.question()).append('\n');
+                continue;
+            }
+            messages.add(UserMessage.from(withUnanswered(unanswered, turn.question())));
+            messages.add(AiMessage.from(turn.answer()));
         }
-        messages.add(UserMessage.from(userText));
+        messages.add(UserMessage.from(withUnanswered(unanswered, userText)));
         try {
             String answer = model.chat(messages).aiMessage().text();
             return answer == null ? NO_ANSWER : answer.strip();
         } catch (RuntimeException e) {
             throw new AiUnavailableException("Gemini chat failed", e);
         }
+    }
+
+    /** 답하지 못한 앞 질문들을 맥락으로 앞에 붙이고 비운다 */
+    private static String withUnanswered(StringBuilder unanswered, String text) {
+        if (unanswered.isEmpty()) {
+            return text;
+        }
+        String result = "Earlier questions in this conversation (not answered):\n" + unanswered + "\n" + text;
+        unanswered.setLength(0);
+        return result;
     }
 }

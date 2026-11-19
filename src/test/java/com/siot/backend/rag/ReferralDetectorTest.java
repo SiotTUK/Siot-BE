@@ -17,7 +17,9 @@ class ReferralDetectorTest {
             "Can I get a work visa with my degree?",
             "Am I eligible for permanent residence?",
             "我可以延期签证吗？",
-            "Tôi có thể gia hạn thị thực không?"
+            "Tôi có thể gia hạn thị thực không?",
+            "제 경우 비자 연장 신청하면 거절될까요?",
+            "Will I be approved for a visa if I apply online?"
     })
     void detectsVisaJudgment(String text) {
         assertThat(ReferralDetector.detect(text)).contains(ReferralTopic.VISA);
@@ -59,6 +61,12 @@ class ReferralDetectorTest {
             "자동차세는 언제 내요?",
             "How do I extend my stay?",
             "비자 연장 서류는 뭐가 필요해요?",
+            "체류기간 연장 신청은 어디서 할 수 있나요?",
+            "비자 연장은 온라인으로 할 수 있나요?",
+            "Can I apply for a visa extension online?",
+            "驾照可以延期吗？",
+            "운전면허 연장 가능해요?",
+            "Can I get an extension on my phone bill?",
             "怎么办理外国人登录？",
             "Điều kiện tham gia sự kiện là gì?",
             ""

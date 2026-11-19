@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,8 +15,14 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 
     List<ChatMessage> findByConversationIdOrderByIdAsc(Long conversationId);
 
-    /** 대화 목록의 제목(첫 질문) */
-    Optional<ChatMessage> findFirstByConversationIdAndRoleOrderByIdAsc(Long conversationId, String role);
+    /** 대화 목록의 제목(첫 질문). 페이지의 대화들을 한 번에 조회한다 (대화마다 조회하면 N+1) */
+    @Query("""
+            SELECT m FROM ChatMessage m
+            WHERE m.id IN (
+                SELECT MIN(f.id) FROM ChatMessage f
+                WHERE f.conversation.id IN :conversationIds AND f.role = 'USER'
+                GROUP BY f.conversation.id)""")
+    List<ChatMessage> findFirstQuestions(@Param("conversationIds") Collection<Long> conversationIds);
 
     /** ADM-08: 답변 바로 앞의 질문 */
     Optional<ChatMessage> findFirstByConversationIdAndRoleAndIdLessThanOrderByIdDesc(

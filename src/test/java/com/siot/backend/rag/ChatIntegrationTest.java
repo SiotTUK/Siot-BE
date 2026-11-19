@@ -126,6 +126,22 @@ class ChatIntegrationTest {
                 .andExpect(jsonPath("$.data[1].sources[0].documentName").value("시흥시 외국인주민 생활안내"))
                 .andExpect(jsonPath("$.data[1].sources[0].pageEnd").value(13))
                 .andExpect(jsonPath("$.data[1].relatedPages[0].code").value("CL-01"));
+
+        // CB-10: 대화 기록은 답변할 때 저장한 링크를 다시 계산하지 않고 그대로 보여 준다
+        Long answerId = jdbcTemplate.queryForObject(
+                "SELECT message_id FROM chat_message WHERE conversation_id = ? AND role = 'ASSISTANT'",
+                Long.class, conversationId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT related_pages_recorded FROM chat_message WHERE message_id = ?", Boolean.class, answerId)).isTrue();
+        jdbcTemplate.update("UPDATE chat_message_related_page SET title = '저장된 제목' WHERE message_id = ?", answerId);
+        mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(session))
+                .andExpect(jsonPath("$.data[1].relatedPages.length()").value(1))
+                .andExpect(jsonPath("$.data[1].relatedPages[0].title").value("저장된 제목"));
+
+        // 이 기능 이전 답변(저장 안 됨)은 예전처럼 다시 찾는다
+        jdbcTemplate.update("UPDATE chat_message SET related_pages_recorded = FALSE WHERE message_id = ?", answerId);
+        mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(session))
+                .andExpect(jsonPath("$.data[1].relatedPages[0].title").value("외국인등록"));
     }
 
     // ---------------------------------------------------------------- CB-12

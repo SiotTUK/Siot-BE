@@ -21,7 +21,12 @@ public class AdminBootstrap implements ApplicationRunner {
     private final AdminProperties adminProperties;
     private final AppUserRepository appUserRepository;
 
+    /**
+     * 같은 클래스 안의 호출은 프록시를 거치지 않아 promoteConfiguredAdmins 의 @Transactional 이 적용되지 않는다.
+     * 여기서 트랜잭션을 열어야 변경 감지로 권한 변경이 저장된다.
+     */
     @Override
+    @Transactional
     public void run(ApplicationArguments args) {
         promoteConfiguredAdmins();
     }

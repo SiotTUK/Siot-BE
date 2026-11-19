@@ -1,5 +1,6 @@
 package com.siot.backend.rag.service;
 
+import java.text.Normalizer;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -37,7 +38,8 @@ public final class EmergencyDetector {
         if (text == null || text.isBlank()) {
             return false;
         }
-        String lower = text.toLowerCase(Locale.ROOT);
+        // 분해형(NFD)으로 입력된 베트남어 성조 글자도 맞도록 정규화 (ReferralDetector 와 같음)
+        String lower = Normalizer.normalize(text, Normalizer.Form.NFC).toLowerCase(Locale.ROOT);
         for (String phrase : PHRASES) {
             if (lower.contains(phrase)) {
                 return true;

@@ -1,6 +1,7 @@
 package com.siot.backend.rag;
 
 import com.siot.backend.rag.service.EmergencyDetector;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -38,5 +39,12 @@ class EmergencyDetectorTest {
     })
     void ignoresOrdinaryQuestions(String text) {
         assertThat(EmergencyDetector.isEmergency(text)).isFalse();
+    }
+
+    @Test
+    void detectsDecomposedVietnamese() {
+        // 일부 입력기는 성조 글자를 분해형(NFD)으로 보낸다
+        String nfd = java.text.Normalizer.normalize("Nhà tôi bị cháy, cần cấp cứu", java.text.Normalizer.Form.NFD);
+        assertThat(EmergencyDetector.isEmergency(nfd)).isTrue();
     }
 }

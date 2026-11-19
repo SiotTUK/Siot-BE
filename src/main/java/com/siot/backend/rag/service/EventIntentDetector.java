@@ -1,5 +1,6 @@
 package com.siot.backend.rag.service;
 
+import java.text.Normalizer;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -31,7 +32,8 @@ public final class EventIntentDetector {
         if (question == null || question.isBlank()) {
             return false;
         }
-        String lower = question.toLowerCase(Locale.ROOT);
+        // 분해형(NFD)으로 입력된 베트남어 성조 글자도 맞도록 정규화 (ReferralDetector 와 같음)
+        String lower = Normalizer.normalize(question, Normalizer.Form.NFC).toLowerCase(Locale.ROOT);
         return WORDS.stream().anyMatch(lower::contains) || WORDS_EN.matcher(question).find();
     }
 }

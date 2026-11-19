@@ -65,7 +65,7 @@ class SiotBackendApplicationTests {
     void flywayAppliedAllMigrations() {
         Integer applied = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = true", Integer.class);
-        assertThat(applied).isEqualTo(11);
+        assertThat(applied).isEqualTo(12);
     }
 
     @Test

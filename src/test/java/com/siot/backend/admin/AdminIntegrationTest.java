@@ -89,6 +89,17 @@ class AdminIntegrationTest {
         assertThat(adminBootstrap.promoteConfiguredAdmins()).isZero();
     }
 
+    /** 앱 시작 경로(ApplicationRunner#run)에서도 권한 변경이 저장된다 (내부 호출이라 run 에 트랜잭션이 필요) */
+    @Test
+    void bootstrapRunPersistsPromotion() throws Exception {
+        jdbcTemplate.update("UPDATE app_user SET role = 'USER' WHERE email = ?", ADMIN_EMAIL);
+
+        adminBootstrap.run(new org.springframework.boot.DefaultApplicationArguments());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT role FROM app_user WHERE email = ?", String.class, ADMIN_EMAIL)).isEqualTo("ADMIN");
+    }
+
     @Test
     void adminApisAreForAdminsOnly() throws Exception {
         Cookie user = signup(newEmail());

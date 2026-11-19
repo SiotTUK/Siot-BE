@@ -52,6 +52,10 @@ public class ChatMessage {
     @Column(length = 10)
     private String language;
 
+    /** CB-10: 답변만. 관련 페이지를 chat_message_related_page 에 저장했으면 true (false = 이 기능 이전 답변 → 조회 시 계산) */
+    @Column(name = "related_pages_recorded", nullable = false)
+    private boolean relatedPagesRecorded = false;
+
     // ADM-08: 부정 평가 답변 / 미응답 질문 관리자 처리
     @Column(name = "is_reviewed", nullable = false)
     private boolean reviewed = false;
@@ -91,6 +95,8 @@ public class ChatMessage {
         message.emergency = emergency;
         message.referralTopics = new ArrayList<>(referralTopics.stream().map(Enum::name).toList());
         message.language = language;
+        // 새 답변은 관련 페이지를 함께 저장한다 (없으면 빈 목록이 저장된 것)
+        message.relatedPagesRecorded = true;
         return message;
     }
 
@@ -106,8 +112,9 @@ public class ChatMessage {
     public void review(boolean reviewed, String adminMemo, Long adminId, OffsetDateTime now) {
         this.reviewed = reviewed;
         this.adminMemo = adminMemo;
-        this.reviewedBy = adminId;
-        this.reviewedAt = now;
+        // 미처리로 되돌리면 처리자·처리 시각도 비운다 (메모는 남긴다)
+        this.reviewedBy = reviewed ? adminId : null;
+        this.reviewedAt = reviewed ? now : null;
     }
 
     /** CB-04: 답변 평가 (다시 평가하면 덮어쓴다) */

@@ -16,32 +16,60 @@ import java.util.regex.Pattern;
 public final class ReferralDetector {
 
     // ---------------------------------------------------------------- VISA: 체류 관련 단어 + "가능한지" 묻는 표현
+    // 서류·절차 질문("어디서 신청할 수 있나요?")은 제외한다 (CB-11 #2).
+    //  - 판단 표현(STRONG): 있으면 항상 감지 ("연장 가능할까요?", "거절될까요?")
+    //  - 약한 표현(WEAK): "할 수 있나요"·"can I" 처럼 절차 질문에도 쓰여서, 절차 단어가 없을 때만 감지
 
+    /** "연장"·"延期"·"gia hạn"·"extension" 단독은 운전면허·계약 연장 등에도 쓰여서 넣지 않는다 (비자·체류 단어와 함께 나올 때만) */
     private static final List<String> VISA_TOPICS = List.of(
             // ko
-            "비자", "체류자격", "체류 자격", "체류기간", "체류 기간", "연장", "자격 변경", "영주권", "귀화", "국적",
-            "재입국", "초청", "불법체류", "불법 체류", "출국명령", "강제퇴거", "추방",
+            "비자", "체류자격", "체류 자격", "체류기간", "체류 기간", "체류 연장", "체류연장", "자격 변경", "영주권", "귀화",
+            "국적", "재입국", "초청", "불법체류", "불법 체류", "출국명령", "강제퇴거", "추방",
             // zh
-            "签证", "居留", "延期", "滞留", "永住", "入籍", "国籍", "再入境", "遣返",
+            "签证", "居留", "滞留", "永住", "入籍", "国籍", "再入境", "遣返",
             // vi
-            "thị thực", "lưu trú", "gia hạn", "thường trú", "quốc tịch", "tái nhập cảnh", "trục xuất");
+            "thị thực", "lưu trú", "thường trú", "quốc tịch", "tái nhập cảnh", "trục xuất");
 
     private static final Pattern VISA_TOPICS_EN = Pattern.compile(
-            "\\b(visas?|residence status|stay permit|extend(ing)? my stay|extension|permanent residen\\w*|"
+            "\\b(visas?|residence status|stay permit|extend(ing)? my stay|stay extension|permanent residen\\w*|"
                     + "naturali[sz]\\w*|citizenship|re-?entry|overstay\\w*|deport\\w*)\\b",
             Pattern.CASE_INSENSITIVE);
 
-    private static final List<String> VISA_CUES = List.of(
+    private static final List<String> VISA_STRONG_CUES = List.of(
             // ko
-            "가능", "될까", "되나요", "될 수", "받을 수", "할 수 있", "있을까", "있나요", "안 되", "안되", "거절", "불허",
-            "떨어", "나올까", "승인",
+            "가능할까", "가능한가요", "가능한지", "가능성", "될까", "있을까", "거절", "불허", "떨어", "나올까", "승인",
             // zh
-            "可以", "能不能", "能否", "能吗", "会不会", "有资格", "批准", "拒签", "被拒",
+            "能不能", "会不会", "有资格", "批准", "拒签", "被拒",
             // vi
-            "có được", "được không", "có thể", "đủ điều kiện", "bị từ chối", "có bị");
+            "đủ điều kiện", "bị từ chối", "có bị");
 
-    private static final Pattern VISA_CUES_EN = Pattern.compile(
-            "\\b(can i|could i|will i|would i|am i|eligib\\w*|possible|qualify|approved|denied|rejected|refused)\\b",
+    private static final List<String> VISA_WEAK_CUES = List.of(
+            // ko
+            "가능", "되나요", "될 수", "받을 수", "할 수 있", "있나요", "안 되", "안되",
+            // zh
+            "可以", "能否", "能吗",
+            // vi
+            "có được", "được không", "có thể");
+
+    private static final Pattern VISA_STRONG_CUES_EN = Pattern.compile(
+            "\\b(will i|would i|am i|eligib\\w*|qualify|approved|denied|rejected|refused)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern VISA_WEAK_CUES_EN = Pattern.compile(
+            "\\b(can i|could i|possible)\\b", Pattern.CASE_INSENSITIVE);
+
+    /** 서류·절차를 묻는 단어 */
+    private static final List<String> PROCEDURE_WORDS = List.of(
+            // ko
+            "어디서", "어디에서", "어디로", "어떻게", "방법", "서류", "준비물", "온라인", "인터넷으로", "언제", "수수료",
+            "절차", "신청서", "예약",
+            // zh
+            "哪里", "在哪", "怎么", "如何", "材料", "手续", "网上", "什么时候", "费用", "预约",
+            // vi
+            "ở đâu", "thế nào", "giấy tờ", "hồ sơ", "thủ tục", "trực tuyến", "khi nào", "lệ phí", "đặt lịch");
+
+    private static final Pattern PROCEDURE_WORDS_EN = Pattern.compile(
+            "\\b(where|how|online|documents?|paperwork|when|fees?|procedures?|steps|appointment)\\b",
             Pattern.CASE_INSENSITIVE);
 
     // ---------------------------------------------------------------- LEGAL
@@ -89,7 +117,7 @@ public final class ReferralDetector {
         String lower = normalized.toLowerCase(Locale.ROOT);
         List<ReferralTopic> topics = new ArrayList<>();
         boolean visaTopic = containsAny(lower, VISA_TOPICS) || VISA_TOPICS_EN.matcher(normalized).find();
-        if (visaTopic && (containsAny(lower, VISA_CUES) || VISA_CUES_EN.matcher(normalized).find())) {
+        if (visaTopic && isVisaJudgment(lower, normalized)) {
             topics.add(ReferralTopic.VISA);
         }
         if (containsAny(lower, LEGAL_PHRASES) || LEGAL_EN.matcher(normalized).find()) {
@@ -99,6 +127,15 @@ public final class ReferralDetector {
             topics.add(ReferralTopic.MEDICAL);
         }
         return List.copyOf(topics);
+    }
+
+    private static boolean isVisaJudgment(String lower, String normalized) {
+        if (containsAny(lower, VISA_STRONG_CUES) || VISA_STRONG_CUES_EN.matcher(normalized).find()) {
+            return true;
+        }
+        boolean weakCue = containsAny(lower, VISA_WEAK_CUES) || VISA_WEAK_CUES_EN.matcher(normalized).find();
+        boolean procedure = containsAny(lower, PROCEDURE_WORDS) || PROCEDURE_WORDS_EN.matcher(normalized).find();
+        return weakCue && !procedure;
     }
 
     private static boolean containsAny(String lower, List<String> phrases) {
