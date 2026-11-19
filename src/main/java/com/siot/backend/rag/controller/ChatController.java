@@ -17,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -77,6 +78,19 @@ public class ChatController {
             @AuthenticationPrincipal MemberPrincipal principal,
             @PathVariable Long conversationId) {
         return ResponseEntity.ok(ApiResponse.of(chatService.getMessages(principal.getId(), conversationId)));
+    }
+
+    /** CB-03: 대화 삭제 (204) */
+    @Operation(summary = "CB-03 대화 삭제",
+            description = "대화와 그 안의 질문·답변·출처를 모두 지운다 (복구 불가). 다른 회원의 대화이거나 이미 지운 대화는 404 다.")
+    @SuccessStatus(value = 204, description = "삭제 완료")
+    @ApiErrorCodes(ErrorCode.CHAT_CONVERSATION_NOT_FOUND)
+    @DeleteMapping("/conversations/{conversationId}")
+    public ResponseEntity<Void> delete(
+            @AuthenticationPrincipal MemberPrincipal principal,
+            @PathVariable Long conversationId) {
+        chatService.deleteConversation(principal.getId(), conversationId);
+        return ResponseEntity.noContent().build();
     }
 
     /** CB-16: 질문 → 답변 */

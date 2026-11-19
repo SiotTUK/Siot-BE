@@ -128,6 +128,15 @@ public class ChatService {
         return toResponse(conversation, null);
     }
 
+    /**
+     * 대화 삭제 (CB-03 "지울 수 있다"). 질문·답변·출처는 DB 에서 함께 지워지고(ON DELETE CASCADE) 복구할 수 없다.
+     * 관리자 검토 목록(ADM-08)에서도 빠진다.
+     */
+    @Transactional
+    public void deleteConversation(Long userId, Long conversationId) {
+        conversationRepository.delete(findOwned(userId, conversationId));
+    }
+
     /** 이전 대화 목록 (최근 대화 순) */
     @Transactional(readOnly = true)
     public Page<ConversationResponse> listConversations(Long userId, Pageable pageable) {

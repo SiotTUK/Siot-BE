@@ -539,6 +539,37 @@ class ChatIntegrationTest {
     }
 
     @Test
+    void conversationCanBeDeletedByOwnerOnly() throws Exception {
+        Cookie owner = signup();
+        long conversationId = startConversation(owner, "ko");
+        long kept = startConversation(owner, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+        ask(owner, conversationId, "지울 대화 질문").andExpect(status().isOk());
+
+        // 다른 회원은 지울 수 없다 (존재 여부도 숨김)
+        Cookie other = signup();
+        deleteConversation(other, conversationId)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CHAT_CONVERSATION_NOT_FOUND"));
+
+        deleteConversation(owner, conversationId).andExpect(status().isNoContent());
+
+        // 질문·답변까지 함께 지워지고, 다른 대화는 남는다
+        assertThat(count("chat_message WHERE conversation_id = " + conversationId)).isZero();
+        mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(owner))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/chat/conversations").cookie(owner))
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].conversationId").value(kept));
+        deleteConversation(owner, conversationId).andExpect(status().isNotFound());
+    }
+
+    private ResultActions deleteConversation(Cookie session, long conversationId) throws Exception {
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .delete("/api/chat/conversations/{id}", conversationId).cookie(session).with(csrf()));
+    }
+
+    @Test
     void conversationUsesMemberLanguageByDefaultAndValidatesQuestion() throws Exception {
         Cookie session = signup();
         MvcResult result = mockMvc.perform(post("/api/chat/conversations").cookie(session).with(csrf()))

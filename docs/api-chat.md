@@ -8,6 +8,7 @@
 | POST | `/api/chat/conversations` | CB-03 | 새 대화 (201). 본문 `{ "language": "ko" }` 생략 가능 (회원 언어) |
 | GET | `/api/chat/conversations?page=0&size=20` | CB-03 | 이전 대화 목록 (최근 대화 순, 제목 = 첫 질문) |
 | GET | `/api/chat/conversations/{id}/messages` | CB-03, CB-17 | 대화 내용 (답변 근거 포함) |
+| DELETE | `/api/chat/conversations/{id}` | CB-03 | 대화 삭제 (204). 질문·답변·출처를 모두 지우며 복구할 수 없음. 남의 대화·이미 지운 대화는 404 `CHAT_CONVERSATION_NOT_FOUND`. 지운 대화의 평가는 관리자 검토 목록(ADM-08)에서도 빠짐 |
 | POST | `/api/chat/conversations/{id}/messages` | CB-16 | 질문 → 답변 |
 | PUT | `/api/chat/conversations/{id}/messages/{messageId}/feedback` | CB-04 | 답변 평가 (204) |
 | GET | `/api/chat/suggestions?language=` | CB-08 | 사용자 유형별 추천 질문 3개 |
