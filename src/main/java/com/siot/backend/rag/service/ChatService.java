@@ -75,6 +75,7 @@ public class ChatService {
     private final QueryRewriter queryRewriter;
     private final ChunkRetriever chunkRetriever;
     private final RelatedPageFinder relatedPageFinder;
+    private final EventRelatedPageFinder eventRelatedPageFinder;
     private final ChatbotProperties properties;
     private final TransactionTemplate tx;
     private final Clock clock;
@@ -90,6 +91,7 @@ public class ChatService {
                        QueryRewriter queryRewriter,
                        ChunkRetriever chunkRetriever,
                        RelatedPageFinder relatedPageFinder,
+                       EventRelatedPageFinder eventRelatedPageFinder,
                        ChatbotProperties properties,
                        PlatformTransactionManager transactionManager,
                        Clock clock,
@@ -104,6 +106,7 @@ public class ChatService {
         this.queryRewriter = queryRewriter;
         this.chunkRetriever = chunkRetriever;
         this.relatedPageFinder = relatedPageFinder;
+        this.eventRelatedPageFinder = eventRelatedPageFinder;
         this.properties = properties;
         this.tx = new TransactionTemplate(transactionManager);
         this.clock = clock;
@@ -303,10 +306,21 @@ public class ChatService {
     /**
      * CB-10·CB-02: 근거 조각과 연결된 항목, 없으면 질문에 제목이 들어 있는 항목.
      * (생활수칙처럼 문서 연결이 없는 항목, AI 오류로 검색하지 못한 경우도 링크를 보여 주기 위해)
+     * 행사를 묻는 질문이면 다가오는 행사를 앞에 둔다. 항목 링크가 있으면 행사는 2개까지만 (항목 1개 자리 남김).
      */
     private List<RelatedPage> relatedPages(String question, List<Long> chunkIds, String language) {
-        List<RelatedPage> pages = relatedPageFinder.find(chunkIds, language);
-        return pages.isEmpty() ? relatedPageFinder.findByTitle(question, language) : pages;
+        List<RelatedPage> guides = relatedPageFinder.find(chunkIds, language);
+        if (guides.isEmpty()) {
+            guides = relatedPageFinder.findByTitle(question, language);
+        }
+        int max = RelatedPageFinder.MAX_PAGES;
+        List<RelatedPage> events = eventRelatedPageFinder.find(question, language, guides.isEmpty() ? max : max - 1);
+        if (events.isEmpty()) {
+            return guides;
+        }
+        List<RelatedPage> pages = new ArrayList<>(events);
+        guides.stream().limit(max - events.size()).forEach(pages::add);
+        return pages;
     }
 
     /**

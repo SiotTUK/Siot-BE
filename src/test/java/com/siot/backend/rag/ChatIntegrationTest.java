@@ -217,6 +217,53 @@ class ChatIntegrationTest {
     }
 
     @Test
+    void eventQuestionLinksUpcomingActiveEvents() throws Exception {
+        // CB-10: 행사 질문이면 끝나지 않은 ACTIVE 행사 상세 링크 (지난 행사·삭제된 행사 제외)
+        String tag = "시옷T" + ThreadLocalRandom.current().nextInt(10_000, 99_999);
+        java.time.LocalDate today = java.time.LocalDate.now(com.siot.backend.global.config.ClockConfig.KST);
+        long upcoming = insertEvent("ACTIVE", today.plusDays(10), today.plusDays(10), tag + " 다문화 축제",
+                "Multicultural Festival " + tag);
+        long ongoing = insertEvent("ACTIVE", today.minusDays(1), today.plusDays(1), tag + " 전통 공연", null);
+        insertEvent("ACTIVE", today.minusDays(5), today.minusDays(1), tag + " 지난 축제", null);
+        insertEvent("DELETED", today.plusDays(3), today.plusDays(3), tag + " 취소된 축제", null);
+        Cookie session = signup();
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+
+        long ko = startConversation(session, "ko");
+        // 제목 단어가 많이 맞는 행사가 먼저, 나머지는 시작일 순
+        ask(session, ko, tag + " 다문화 축제는 언제 해요?")
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].type").value("EVENT"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value(String.valueOf(upcoming)))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].title").value(tag + " 다문화 축제"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[1].code").value(String.valueOf(ongoing)))
+                .andExpect(jsonPath("$.data.answer.relatedPages[?(@.type == 'EVENT')].code")
+                        .value(org.hamcrest.Matchers.containsInAnyOrder(String.valueOf(upcoming), String.valueOf(ongoing))));
+
+        // 질문 언어 제목, 번역이 없으면 한국어 제목
+        long en = startConversation(session, "en");
+        ask(session, en, "When is the Multicultural Festival " + tag + "?")
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value(String.valueOf(upcoming)))
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].title").value("Multicultural Festival " + tag))
+                .andExpect(jsonPath("$.data.answer.relatedPages[1].title").value(tag + " 전통 공연"));
+
+        // 행사 질문이 아니면 행사 링크 없음
+        ask(session, ko, tag + " 다문화 가족 지원 알려 주세요")
+                .andExpect(jsonPath("$.data.answer.relatedPages[?(@.type == 'EVENT')]").isEmpty());
+    }
+
+    private long insertEvent(String status, java.time.LocalDate startsOn, java.time.LocalDate endsOn,
+                             String koTitle, String enTitle) {
+        Long id = jdbcTemplate.queryForObject(
+                "INSERT INTO event (status, starts_on, ends_on) VALUES (?, ?, ?) RETURNING event_id",
+                Long.class, status, startsOn, endsOn);
+        jdbcTemplate.update("INSERT INTO event_translation (language, event_id, title) VALUES ('ko', ?, ?)", id, koTitle);
+        if (enTitle != null) {
+            jdbcTemplate.update("INSERT INTO event_translation (language, event_id, title) VALUES ('en', ?, ?)", id, enTitle);
+        }
+        return id;
+    }
+
+    @Test
     void answerTimeIsRecorded() throws Exception {
         Cookie session = signup();
         long conversationId = startConversation(session, "ko");
