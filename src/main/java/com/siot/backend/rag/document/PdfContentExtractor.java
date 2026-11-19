@@ -9,6 +9,7 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * ADM-04 [EXTRACT]: 태그 PDF 는 구조 트리({@link TaggedPdfExtractor}), 아니면 화면 위치 순서({@link PdfTextExtractor}).
@@ -34,9 +35,18 @@ public class PdfContentExtractor {
 
     /** @throws IOException PDF 를 열 수 없음 (손상·암호) */
     public ExtractedContent extract(byte[] pdf) throws IOException {
+        return extract(pdf, Set.of());
+    }
+
+    /**
+     * @param excludedPages 적재에서 뺄 쪽 (표지·목차 등). 추출 방식 판단(비율)은 전체 쪽으로 하고, 결과에서만 뺀다
+     */
+    public ExtractedContent extract(byte[] pdf, Set<Integer> excludedPages) throws IOException {
         try (PDDocument document = Loader.loadPDF(pdf)) {
+            // 머리말·꼬리말 반복 판단은 전체 쪽으로 한다
             List<PageText> raw = plainExtractor.extractRaw(document);
             List<ContentBlock> plain = toBlocks(PageNoiseFilter.clean(raw));
+            int pageCount = document.getNumberOfPages();
             if (TaggedPdfExtractor.isTagged(document)) {
                 TaggedPdfExtractor.Result tagged = taggedExtractor.extract(document);
                 int taggedLength = tagged.usedLength();
@@ -44,14 +54,41 @@ public class PdfContentExtractor {
                 int contentLength = ExtractedContent.nonSpaceLength(toBlocks(raw)) - tagged.artifactLength();
                 double coverage = contentLength <= 0 ? (taggedLength > 0 ? 1 : 0) : (double) taggedLength / contentLength;
                 if (taggedLength > 0 && coverage >= MIN_TAGGED_COVERAGE) {
-                    return new ExtractedContent(tagged.blocks(), document.getNumberOfPages(), Source.TAGGED, coverage);
+                    return new ExtractedContent(withoutPages(tagged.blocks(), excludedPages), pageCount, Source.TAGGED,
+                            coverage);
                 }
                 log.info("Tagged PDF structure covers only {}% of the text, using plain extraction",
                         Math.round(coverage * 100));
-                return new ExtractedContent(plain, document.getNumberOfPages(), Source.PLAIN, coverage);
+                return new ExtractedContent(withoutPages(plain, excludedPages), pageCount, Source.PLAIN, coverage);
             }
-            return new ExtractedContent(plain, document.getNumberOfPages(), Source.PLAIN, 1);
+            return new ExtractedContent(withoutPages(plain, excludedPages), pageCount, Source.PLAIN, 1);
         }
+    }
+
+    /** 뺄 쪽의 줄·표 행을 지운다 (행이 모두 빠진 표는 표째 지운다) */
+    static List<ContentBlock> withoutPages(List<ContentBlock> blocks, Set<Integer> excludedPages) {
+        if (excludedPages.isEmpty()) {
+            return blocks;
+        }
+        List<ContentBlock> kept = new ArrayList<>(blocks.size());
+        for (ContentBlock block : blocks) {
+            switch (block) {
+                case TextLine line -> {
+                    if (!excludedPages.contains(line.page())) {
+                        kept.add(line);
+                    }
+                }
+                case ContentBlock.TableBlock table -> {
+                    List<ContentBlock.TableRow> rows = table.rows().stream()
+                            .filter(row -> !excludedPages.contains(row.page()))
+                            .toList();
+                    if (!rows.isEmpty()) {
+                        kept.add(new ContentBlock.TableBlock(table.columns(), rows));
+                    }
+                }
+            }
+        }
+        return kept;
     }
 
     /** 쪽 텍스트를 줄 단위로. 빈 줄 다음 줄이 새 문단 */

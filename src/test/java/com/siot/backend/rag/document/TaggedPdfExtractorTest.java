@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -133,6 +134,26 @@ class TaggedPdfExtractorTest {
                 "Department: Foreign Residents / Team: Support team / Phone: 2642",
                 "Department: Foreign Residents / Team: Family team / Phone: 2611",
                 "Department: Library / Team: Kids team / Phone: 5230");
+    }
+
+    @Test
+    void leavesOutExcludedPages() throws IOException {
+        byte[] tagged = TaggedTestPdf.create()
+                .page().paragraph("CONTENTS")
+                .page().paragraph("1-1 Basic Rules")
+                .table(List.of(
+                        List.of(Cell.of("Type"), Cell.of("Fine")),
+                        List.of(Cell.of("Parking"), Cell.of("40,000 won"))))
+                .build();
+        byte[] plain = TestPdfs.create(List.of(List.of("Cover page"), List.of("Register within 90 days.")));
+
+        assertThat(extractor.extract(tagged, Set.of(1)).blocks())
+                .hasSize(2)
+                .first().isEqualTo(new TextLine("1-1 Basic Rules", 2, true));
+        assertThat(extractor.extract(tagged, Set.of(2)).blocks())
+                .containsExactly(new TextLine("CONTENTS", 1, true));
+        assertThat(extractor.extract(plain, Set.of(1)).blocks())
+                .containsExactly(new TextLine("Register within 90 days.", 2, false));
     }
 
     @Test

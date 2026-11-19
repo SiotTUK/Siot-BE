@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *     <li>LIVE_PDF: 확인할 PDF 경로 (없으면 건너뜀)</li>
  *     <li>LIVE_DOCUMENT_NAME: 문서 이름 (첫 제목 전 조각의 첫 줄, 임베딩 title). 기본은 파일 이름</li>
  *     <li>LIVE_EMBED_LIMIT: 실제로 임베딩할 조각 수 (무료 한도 절약, 기본 20, 0 이면 임베딩 안 함)</li>
+ *     <li>LIVE_EXCLUDE_PAGES: 적재에서 뺄 쪽 (예: "1-7", "1-3,5")</li>
  *     <li>GEMINI_API_KEY: .env 또는 환경 변수</li>
  * </ul>
  * 조각 전체와 표 목록은 build/live/chunks.txt 에 저장한다. 태그 PDF 의 표 조각은 [표], 표로 보이는 줄이 있는 조각은 [표?].
@@ -49,7 +50,9 @@ class DocumentLiveTest {
         int embedLimit = Integer.parseInt(envOrDefault("LIVE_EMBED_LIMIT", "20"));
 
         long start = System.currentTimeMillis();
-        ExtractedContent content = new PdfContentExtractor().extract(Files.readAllBytes(pdf));
+        java.util.SortedSet<Integer> excludedPages = PageRanges.parse(System.getenv("LIVE_EXCLUDE_PAGES"));
+        ExtractedContent content = new PdfContentExtractor().extract(Files.readAllBytes(pdf), excludedPages);
+        System.out.println("excluded pages: " + (excludedPages.isEmpty() ? "-" : PageRanges.format(excludedPages)));
         List<Chunk> chunks = new DocumentChunker().split(content, documentName);
         long splitMillis = System.currentTimeMillis() - start;
 
