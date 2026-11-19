@@ -7,6 +7,7 @@ import com.siot.backend.auth.security.MemberPrincipal;
 import com.siot.backend.auth.security.SessionAuthenticator;
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.global.common.SupportedLanguages;
 import com.siot.backend.member.config.AdminProperties;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.domain.Role;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -66,6 +68,7 @@ public class AuthService {
             // M-02: 동시 가입은 DB UNIQUE 제약으로 한 번 더 막는다
             AppUser newUser = AppUser.create(email, passwordEncoder.encode(request.password()));
             newUser.markEmailVerified(OffsetDateTime.now(clock));
+            newUser.changeLanguage(SupportedLanguages.orDefault(request.language()));
             // ADM-01: SIOT_ADMIN_EMAILS 에 있는 이메일은 가입과 동시에 관리자
             if (adminProperties.isAdminEmail(email)) {
                 newUser.changeRole(Role.ADMIN);
@@ -93,8 +96,13 @@ public class AuthService {
         try {
             principal = sessionAuthenticator.login(email, request.password(), httpRequest, httpResponse);
         } catch (AuthenticationException e) {
-            loginAttemptService.recordFailure(email);
-            throw new BusinessException(ErrorCode.LOGIN_FAILED);
+            // 화면 "비밀번호가 틀렸어요 (2/5)". 가입하지 않은 이메일도 같은 방식으로 세므로 가입 여부는 드러나지 않는다
+            int failures = loginAttemptService.recordFailure(email);
+            int max = loginAttemptService.maxFailures();
+            throw new BusinessException(ErrorCode.LOGIN_FAILED, Map.of(
+                    "failedAttempts", failures,
+                    "maxAttempts", max,
+                    "remainingAttempts", max - failures));
         }
         loginAttemptService.recordSuccess(email);
 

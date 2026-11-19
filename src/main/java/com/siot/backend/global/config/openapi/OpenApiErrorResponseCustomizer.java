@@ -152,8 +152,7 @@ public class OpenApiErrorResponseCustomizer implements GlobalOperationCustomizer
                     .collect(Collectors.joining("<br>"));
             Map<String, Example> examples = new LinkedHashMap<>();
             for (ErrorCode c : list) {
-                examples.put(c.name(), new Example().summary(c.getMessage())
-                        .value(Map.of("code", c.name(), "message", c.getMessage())));
+                examples.put(c.name(), new Example().summary(c.getMessage()).value(exampleBody(c)));
             }
             MediaType media = new MediaType()
                     .schema(new Schema<>().$ref("#/components/schemas/" + ERROR_SCHEMA))
@@ -173,7 +172,22 @@ public class OpenApiErrorResponseCustomizer implements GlobalOperationCustomizer
         schema.setDescription("실패 응답 공통 형식");
         schema.addProperty("code", code);
         schema.addProperty("message", message);
+        ObjectSchema details = new ObjectSchema();
+        details.setDescription("추가 정보 (일부 오류만, 없으면 생략). LOGIN_FAILED: failedAttempts·maxAttempts·remainingAttempts");
+        details.setAdditionalProperties(true);
+        schema.addProperty("details", details);
         schema.setRequired(List.of("code", "message"));
         return schema;
+    }
+
+    /** 오류 예시 본문. details 가 있는 오류는 실제 응답처럼 넣는다 */
+    private static Map<String, Object> exampleBody(ErrorCode c) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", c.name());
+        body.put("message", c.getMessage());
+        if (c == ErrorCode.LOGIN_FAILED) {
+            body.put("details", Map.of("failedAttempts", 2, "maxAttempts", 5, "remainingAttempts", 3));
+        }
+        return body;
     }
 }

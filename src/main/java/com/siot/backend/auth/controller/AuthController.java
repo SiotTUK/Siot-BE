@@ -97,7 +97,9 @@ public class AuthController {
     /** M-08: 로그인 */
     @Operation(summary = "M-08 로그인",
             description = "성공하면 SIOT_SESSION 쿠키가 설정된다 (마지막 요청 후 14일 유지, M-10). "
-                    + "가입하지 않은 이메일과 틀린 비밀번호는 같은 오류다. 5회 연속 실패하면 5분 동안 막힌다.")
+                    + "가입하지 않은 이메일과 틀린 비밀번호는 같은 오류다. 5회 연속 실패하면 5분 동안 막힌다. "
+                    + "LOGIN_FAILED 의 details 에 연속 실패 횟수(failedAttempts)·최대(maxAttempts)·남은 횟수(remainingAttempts)가 있다 "
+                    + "(화면 \"(2/5)\"). remainingAttempts=0 이면 방금 잠긴 것이고 다음 시도부터 LOGIN_LOCKED 다.")
     @ApiErrorCodes({ErrorCode.LOGIN_FAILED, ErrorCode.LOGIN_LOCKED})
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<MemberResponse>> login(@Valid @RequestBody LoginRequest request,

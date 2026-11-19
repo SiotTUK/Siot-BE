@@ -159,8 +159,13 @@ class AuthIntegrationTest {
         String loginId = newLoginId();
         signup(loginId, PASSWORD, PASSWORD).andExpect(status().isCreated());
 
-        for (int i = 0; i < 5; i++) {
-            login(loginId, "wrong1234").andExpect(jsonPath("$.code").value("LOGIN_FAILED"));
+        // 화면 "(n/5)" 표시용 실패 횟수
+        for (int i = 1; i <= 5; i++) {
+            login(loginId, "wrong1234")
+                    .andExpect(jsonPath("$.code").value("LOGIN_FAILED"))
+                    .andExpect(jsonPath("$.details.failedAttempts").value(i))
+                    .andExpect(jsonPath("$.details.maxAttempts").value(5))
+                    .andExpect(jsonPath("$.details.remainingAttempts").value(5 - i));
         }
 
         // 잠금 중에는 올바른 비밀번호도 거부
@@ -182,6 +187,37 @@ class AuthIntegrationTest {
             login(loginId, "wrong1234").andExpect(status().isUnauthorized());
         }
         login(loginId, PASSWORD).andExpect(status().isOk());
+        // 성공하면 다시 1부터 센다
+        login(loginId, "wrong1234").andExpect(jsonPath("$.details.failedAttempts").value(1));
+    }
+
+    @Test
+    void signupStoresLanguage() throws Exception {
+        String loginId = newLoginId();
+        redisTemplate.opsForValue().set(SignupVerificationService.VERIFIED_KEY + loginId, "1");
+        mockMvc.perform(post("/api/auth/signup").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"%s","password":"%s","passwordConfirm":"%s","language":"vi"}
+                                """.formatted(loginId, PASSWORD, PASSWORD)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.language").value("vi"));
+
+        // 생략하면 ko
+        signup(newLoginId(), PASSWORD, PASSWORD).andExpect(jsonPath("$.data.language").value("ko"));
+    }
+
+    @Test
+    void signupRejectsUnsupportedLanguage() throws Exception {
+        String loginId = newLoginId();
+        redisTemplate.opsForValue().set(SignupVerificationService.VERIFIED_KEY + loginId, "1");
+        mockMvc.perform(post("/api/auth/signup").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"%s","password":"%s","passwordConfirm":"%s","language":"fr"}
+                                """.formatted(loginId, PASSWORD, PASSWORD)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
     }
 
     // ---------------------------------------------------------------- helpers

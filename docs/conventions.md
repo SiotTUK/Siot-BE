@@ -82,6 +82,7 @@ if (token) pm.request.headers.upsert({ key: 'X-XSRF-TOKEN', value: token });
 ```
 
 - 비즈니스 오류는 `throw new BusinessException(ErrorCode.XXX)` 로 던지면 `GlobalExceptionHandler` 가 위 형식으로 응답합니다.
+- 화면에 추가 정보가 필요한 오류만 `details` 객체를 넣습니다 (`new BusinessException(code, Map.of(...))`). 없으면 응답에서 빠집니다. 예: `LOGIN_FAILED` 의 실패 횟수.
 - 새 오류가 필요하면 `ErrorCode` 에 추가합니다. `code` 값은 프론트엔드가 분기에 사용하므로 한 번 정하면 바꾸지 않습니다.
 
 | 공통 code | HTTP |

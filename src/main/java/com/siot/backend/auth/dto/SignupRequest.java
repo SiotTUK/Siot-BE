@@ -2,10 +2,12 @@ package com.siot.backend.auth.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import com.siot.backend.global.common.SupportedLanguages;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 /**
- * M-01: 입력 항목은 이메일(아이디), 비밀번호, 비밀번호 확인 3개.
+ * M-01: 입력 항목은 이메일(아이디), 비밀번호, 비밀번호 확인 3개 + 화면 언어(선택).
  * 이메일은 먼저 가입 인증 코드를 확인해야 한다 (/api/auth/signup/email-verification).
  * 형식 규칙은 CredentialPolicy 에서 검사해 규칙별 오류 코드를 돌려준다.
  */
@@ -16,6 +18,9 @@ public record SignupRequest(
         @Schema(description = "비밀번호 (M-03). 8~64자, 영문·숫자 각 1자 이상, 영문·숫자·특수문자만, 공백 불가, 이메일과 같으면 안 됨", example = "abcd1234")
         @NotNull String password,
         @Schema(description = "비밀번호 확인 (password 와 같아야 함)", example = "abcd1234")
-        @NotNull String passwordConfirm
+        @NotNull String passwordConfirm,
+        @Schema(description = "화면 언어. 가입 화면 언어를 보낸다 (생략 시 ko). 비밀번호 재설정·알림 메일도 이 언어로 간다",
+                allowableValues = {"ko", "en", "zh", "vi"}, nullable = true, example = "en")
+        @Pattern(regexp = SupportedLanguages.PATTERN) String language
 ) {
 }

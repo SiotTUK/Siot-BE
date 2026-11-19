@@ -29,16 +29,26 @@ public class LoginAttemptService {
         return Boolean.TRUE.equals(redisTemplate.hasKey(LOCK_KEY + normalize(email)));
     }
 
-    public void recordFailure(String email) {
+    /**
+     * 실패를 기록하고 지금까지의 연속 실패 횟수(1~{@link #MAX_FAILURES})를 돌려준다.
+     * {@link #MAX_FAILURES} 이면 방금 잠긴 것이다.
+     */
+    public int recordFailure(String email) {
         String key = FAILURE_KEY + normalize(email);
-        Long failures = redisTemplate.opsForValue().increment(key);
-        if (failures != null && failures == 1) {
+        Long counted = redisTemplate.opsForValue().increment(key);
+        int failures = counted == null ? 1 : (int) Math.min(counted, MAX_FAILURES);
+        if (counted != null && counted == 1) {
             redisTemplate.expire(key, FAILURE_WINDOW);
         }
-        if (failures != null && failures >= MAX_FAILURES) {
+        if (failures >= MAX_FAILURES) {
             redisTemplate.opsForValue().set(LOCK_KEY + normalize(email), "1", LOCK_DURATION);
             redisTemplate.delete(key);
         }
+        return failures;
+    }
+
+    public int maxFailures() {
+        return MAX_FAILURES;
     }
 
     public void recordSuccess(String email) {

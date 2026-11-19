@@ -3,6 +3,7 @@ package com.siot.backend.auth.service;
 import com.siot.backend.auth.domain.CredentialPolicy;
 import com.siot.backend.auth.dto.SignupVerificationResponse;
 import com.siot.backend.global.common.RequestRateLimiter;
+import com.siot.backend.global.common.SupportedLanguages;
 import com.siot.backend.global.common.VerificationCodeStore;
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
@@ -15,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.util.Set;
 
 /**
  * M-01: 가입 인증 코드. 이메일(아이디)로 코드를 보내고, 코드를 확인한 이메일만 가입할 수 있다.
@@ -40,7 +40,6 @@ public class SignupVerificationService {
     private static final String NAMESPACE = "signup-verification";
     /** 코드를 확인한 이메일 (값: "1") */
     public static final String VERIFIED_KEY = "siot:signup-verified:";
-    private static final Set<String> LANGUAGES = Set.of("ko", "en", "zh", "vi");
 
     private final AppUserRepository appUserRepository;
     private final VerificationCodeStore codeStore;
@@ -65,7 +64,7 @@ public class SignupVerificationService {
         }
 
         String code = codeStore.issue(NAMESPACE, email, email, CODE_TTL);
-        String mailLanguage = language != null && LANGUAGES.contains(language) ? language : "ko";
+        String mailLanguage = SupportedLanguages.orDefault(language);
         emailSender.send(mailTemplates.emailVerification(email, mailLanguage, code, CODE_TTL.toMinutes()));
         return new SignupVerificationResponse(email, CODE_TTL.toSeconds(), RESEND_INTERVAL.toSeconds());
     }

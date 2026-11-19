@@ -16,6 +16,8 @@ POST 요청은 모두 `X-XSRF-TOKEN` 헤더가 필요합니다. 앱 시작 시 `
 | POST | `/api/auth/login` | - | M-08 | 로그인 |
 | POST | `/api/auth/logout` | - | M-09 | 로그아웃 (204) |
 | GET | `/api/members/me` | 필요 | M-10 | 내 정보. 401이면 로그인 만료 → 로그인 화면으로 |
+| PATCH | `/api/members/me` | 필요 | - | 내 정보 수정 (화면 언어) |
+| PUT | `/api/members/me/onboarding` | 필요 | F02~F06 | 온보딩 답 저장 (처음 온보딩·내 정보 수정 공통) |
 | POST | `/api/members/me/withdrawal` | 필요 | M-06, M-07 | 회원 탈퇴 (204) |
 | POST | `/api/members/me/email/verification` | 필요 | NTF-09 | (기존 미인증 회원) 인증 코드 발송 (202) |
 | POST | `/api/members/me/email/verification/confirm` | 필요 | NTF-09 | (기존 미인증 회원) 인증 코드 확인 → 인증 완료 |
@@ -54,14 +56,15 @@ POST /api/auth/signup/email-verification/confirm
 POST /api/auth/signup
 Content-Type: application/json
 
-{ "email": "user@example.com", "password": "abcd1234", "passwordConfirm": "abcd1234" }
+{ "email": "user@example.com", "password": "abcd1234", "passwordConfirm": "abcd1234", "language": "en" }
 ```
 
 **201**
 
 ```json
-{ "data": { "id": 1, "email": "user@example.com", "role": "USER", "language": "ko",
-            "userType": null, "emailVerified": true, "onboarded": false } }
+{ "data": { "id": 1, "email": "user@example.com", "role": "USER", "language": "en",
+            "userType": null, "entryDate": null, "purpose": null, "residences": [], "stayExpiry": null,
+            "emailVerified": true, "onboarded": false } }
 ```
 
 응답에 `SIOT_SESSION` 쿠키(HttpOnly, SameSite=Lax, 운영은 Secure)가 설정됩니다.
@@ -69,6 +72,7 @@ Content-Type: application/json
 - 코드를 확인하지 않은 이메일이면 400 `EMAIL_NOT_VERIFIED`. 확인 한 번으로 한 번만 가입할 수 있습니다.
 - 이메일은 앞뒤 공백을 지우고 **소문자로 저장**합니다. 로그인·중복 확인도 대소문자를 구분하지 않습니다.
 - `onboarded` 가 false(사용자 유형 미입력)이면 온보딩(사용자 유형) 화면으로 이동합니다.
+- `language` 는 화면 언어(ko/en/zh/vi, 생략 시 ko)입니다. 가입 화면 언어를 보냅니다. 비밀번호 재설정·알림 메일도 이 언어로 갑니다. 지원하지 않는 값이면 400 `INVALID_INPUT`.
 
 ## 이메일 중복 확인
 
@@ -92,11 +96,54 @@ Content-Type: application/json
 ```
 
 - 성공: 200, 회원가입과 같은 `data`
-- 실패: 가입하지 않은 이메일이든 비밀번호가 틀리든 401 `LOGIN_FAILED` 로 같습니다.
-- 5회 연속 실패: 이후 5분 동안 429 `LOGIN_LOCKED` (올바른 비밀번호도 거부). 로그인에 성공하면 실패 횟수가 초기화됩니다.
+- 실패: 가입하지 않은 이메일이든 비밀번호가 틀리든 401 `LOGIN_FAILED` 로 같습니다. `details` 에 연속 실패 횟수가 있어 화면에 "비밀번호가 틀렸어요 (2/5)" 처럼 표시할 수 있습니다.
+
+```json
+{ "code": "LOGIN_FAILED", "message": "이메일 또는 비밀번호가 맞지 않습니다.",
+  "details": { "failedAttempts": 2, "maxAttempts": 5, "remainingAttempts": 3 } }
+```
+
+  가입하지 않은 이메일도 같은 방식으로 세므로 횟수로 가입 여부가 드러나지 않습니다.
+- 5회 연속 실패: 5번째 응답은 `LOGIN_FAILED` (`remainingAttempts: 0`) 이고, 이후 5분 동안 429 `LOGIN_LOCKED` (올바른 비밀번호도 거부). 로그인에 성공하면 실패 횟수가 초기화됩니다.
 - 세션은 마지막 요청 후 14일 동안 유지됩니다 (M-10).
 
 `POST /api/auth/logout` → 204, 서버 세션 삭제. 기기에 저장한 회원 정보 삭제(M-09 2번)는 프론트엔드에서 처리합니다.
+
+## 내 정보 · 온보딩 답
+
+`GET /api/members/me` 는 온보딩 답 5개를 모두 돌려줍니다 (내 정보 화면에서 보여 주고 고칠 때 사용).
+
+```json
+{ "data": { "id": 1, "email": "user@example.com", "role": "USER", "language": "en",
+            "userType": "NEW", "entryDate": "2026-11-01", "purpose": "STUDY",
+            "residences": ["KIDS", "KOREAN"], "stayExpiry": "2027-11-01",
+            "emailVerified": true, "onboarded": true } }
+```
+
+### 온보딩 답 저장 (F02~F06)
+
+```http
+PUT /api/members/me/onboarding
+{ "userType": "NEW", "entryDate": "2026-11-01", "purpose": "STUDY",
+  "residences": ["KIDS", "KOREAN"], "stayExpiry": "2027-11-01" }
+```
+
+- **200**, 내 정보(`onboarded: true`)를 돌려줍니다.
+- `userType`(NEW / LIVING)만 필수입니다. `purpose`: STUDY / WORK / FAMILY / OTHER (건너뛰면 null → 체크리스트는 OTHER로 계산). `residences`: KIDS / CAR / HOUSE / KOREAN / F4 (복수, 안 고르면 빈 배열 또는 생략). 날짜는 `yyyy-MM-dd`.
+- **항상 전체를 덮어씁니다.** 내 정보 화면에서 한 항목만 고쳐도 5개를 모두 보내야 하며, 보내지 않은 선택 항목은 지워집니다.
+- 답을 바꿔도 체크리스트 완료·해당 없음 기록은 지우지 않습니다.
+- 필수 값이 없거나 목록에 없는 값이면 400 `INVALID_INPUT`.
+
+### 화면 언어 수정
+
+```http
+PATCH /api/members/me
+{ "language": "zh" }
+```
+
+- **200**, 내 정보를 돌려줍니다. 보내지 않은(null) 항목은 바꾸지 않습니다.
+- 저장한 언어로 비밀번호 재설정·인증 코드·알림 메일이 갑니다. 사용자가 화면 언어를 바꾸면 이 API로 저장합니다.
+- ko / en / zh / vi 외에는 400 `INVALID_INPUT`.
 
 ## 회원 탈퇴
 
@@ -151,6 +198,7 @@ POST /api/auth/password-reset
 { "email": "user@example.com" }
 ```
 
+- 메일은 **회원이 저장한 언어**(가입 때 `language` 또는 `PATCH /api/members/me`)로 갑니다. 그래서 이 요청에는 언어 칸이 없습니다.
 - **항상 202** 입니다. 가입하지 않았거나 인증하지 않은 이메일이어도 같은 응답이므로, 화면에는 "가입·인증된 이메일이면 메일을 보냈습니다"를 표시합니다.
 - 요청 제한(이메일 기준): **1분에 1회**(`PASSWORD_RESET_TOO_FREQUENT`), **하루 5회**(`PASSWORD_RESET_DAILY_LIMIT`), 모두 429.
 - 메일의 링크: `{FRONTEND_BASE_URL}/password-reset?token=...` → **프론트엔드는 이 경로에 재설정 화면을 만들어야 합니다.**
