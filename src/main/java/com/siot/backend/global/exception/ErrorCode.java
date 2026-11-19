@@ -39,6 +39,15 @@ public enum ErrorCode {
     GUIDE_NOT_FOUND(HttpStatus.NOT_FOUND, "항목을 찾을 수 없습니다."),
     GUIDE_TRANSLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "이 언어의 문구가 아직 없습니다."),
 
+    // ---- 관리자: 문서 (ADM-02~04) ----
+    DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "문서를 찾을 수 없습니다."),
+    DOCUMENT_VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "문서 버전을 찾을 수 없습니다."),
+    DOCUMENT_FILE_INVALID(HttpStatus.BAD_REQUEST, "PDF 파일만 올릴 수 있습니다."),
+    DOCUMENT_FILE_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "파일이 너무 큽니다. 30MB 이하로 올려 주세요."),
+    DOCUMENT_FILE_UNCHANGED(HttpStatus.CONFLICT, "현재 버전과 같은 파일입니다."),
+    DOCUMENT_VERSION_IN_PROGRESS(HttpStatus.CONFLICT, "이 문서의 다른 버전을 반영하는 중입니다. 끝난 뒤 다시 시도해 주세요."),
+    DOCUMENT_VERSION_NOT_RETRYABLE(HttpStatus.CONFLICT, "다시 반영할 수 없는 버전입니다. 실패한 버전 중 현재 버전보다 새 버전만 다시 반영할 수 있습니다."),
+
     // ---- 이메일 인증 (M-01 가입 인증 코드, NTF-09) ----
     EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해 주세요."),
     EMAIL_ALREADY_VERIFIED(HttpStatus.CONFLICT, "이미 인증한 이메일입니다."),
