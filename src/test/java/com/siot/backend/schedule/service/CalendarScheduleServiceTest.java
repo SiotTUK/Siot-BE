@@ -26,6 +26,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class CalendarScheduleServiceTest {
@@ -106,6 +107,27 @@ class CalendarScheduleServiceTest {
             assertThat(r.kind()).isEqualTo("STAY_EXPIRY");
             assertThat(r.targetDescription()).contains("2099-06-30");
         });
+    }
+
+    @Test
+    @DisplayName("연간 일정은 1월만이 아니라 1~12월 공통 일정을 시작일 순으로 돌려준다 (CAL-01)")
+    void getYearlySchedules_wholeYear() {
+        CalendarSchedule car2 = CalendarSchedule.create(null, "TAX_CAR", LocalDate.of(2027, 12, 16), LocalDate.of(2027, 12, 31),
+                "자동차 보유자", null, true, null);
+        CalendarSchedule resident = CalendarSchedule.create(null, "TAX_RESIDENT", LocalDate.of(2027, 8, 16), LocalDate.of(2027, 8, 31),
+                "모든 주민", null, true, null);
+        CalendarSchedule car1 = CalendarSchedule.create(null, "TAX_CAR", LocalDate.of(2027, 6, 16), LocalDate.of(2027, 6, 30),
+                "자동차 보유자", null, true, null);
+        given(calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(
+                LocalDate.of(2027, 1, 1), LocalDate.of(2027, 12, 31)))
+                .willReturn(List.of(car2, resident, car1));
+
+        List<ScheduleResponse> responses = calendarScheduleService.getYearlySchedules(2027, "ko");
+
+        assertThat(responses).extracting(ScheduleResponse::startsOn).containsExactly(
+                LocalDate.of(2027, 6, 16), LocalDate.of(2027, 8, 16), LocalDate.of(2027, 12, 16));
+        assertThat(responses).allSatisfy(r -> assertThat(r.personal()).isFalse());
+        verifyNoInteractions(appUserRepository);
     }
 
     @Test
