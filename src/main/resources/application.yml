@@ -64,6 +64,8 @@ spring:
     multipart:
       max-file-size: 30MB
       max-request-size: 31MB
+      # RUL-07: 고지서 사진(10MB 이하)은 디스크 임시 파일 없이 메모리에서만 받는다. 이보다 큰 파일(문서)만 임시 파일로
+      file-size-threshold: 10MB
 
   task:
     execution:
@@ -133,6 +135,19 @@ siot:
       page-size: 1000
       max-pages: 5
       address-prefix: 경기도 시흥시
+  # 번역 (TranslationProperties). 고지서 사진 번역(RUL-07)은 사진을 저장하지 않는다
+  translation:
+    # 고지서 사진(RUL-07) 전용 모델. 비어 있으면 siot.gemini.chat-model 을 쓴다
+    bill-model: ${GEMINI_BILL_MODEL:}
+    # 사진 읽기 1회 호출 제한 시간. 사진은 글보다 오래 걸린다 (라이브 확인 9~31초). 넘으면 503 AI_UNAVAILABLE
+    bill-timeout: ${GEMINI_BILL_TIMEOUT:45s}
+    bill-max-file-size: 10MB
+    bill-retry-wait: 2s
+    # 회원당 시간당 10회 (Gemini 무료 한도를 챗봇과 같이 쓴다). 넘으면 429
+    bill-rate-limit:
+      max-requests: ${BILL_RATE_LIMIT_MAX_REQUESTS:10}
+      window: 1h
+      min-interval: 2s
   mail:
     # Gmail SMTP 는 로그인한 계정(또는 등록된 별칭) 주소로만 발신할 수 있다
     from: ${MAIL_FROM}
