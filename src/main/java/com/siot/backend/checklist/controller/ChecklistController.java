@@ -5,6 +5,9 @@ import com.siot.backend.checklist.dto.*;
 import com.siot.backend.checklist.service.ChecklistService;
 import com.siot.backend.checklist.service.MemberLifeChangeService;
 import com.siot.backend.global.common.ApiResponse;
+import com.siot.backend.global.config.openapi.ApiErrorCodes;
+import com.siot.backend.global.config.openapi.SuccessStatus;
+import com.siot.backend.global.exception.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -19,7 +22,7 @@ import java.util.List;
 /**
  * 회원 맞춤 정착 체크리스트 & 생활 변화 등록 REST API (CHK-01 ~ CHK-12)
  */
-@Tag(name = "4. 체크리스트", description = "맞춤 체크리스트 조회, 완료/해당없음 상태 변경, 생활 변화 등록/삭제 (CHK-01~12)")
+@Tag(name = "5. 체크리스트", description = "맞춤 체크리스트 조회, 완료/해당없음 상태 변경, 생활 변화 등록/삭제 (CHK-01~12)")
 @RestController
 @RequestMapping("/api/members/me")
 @RequiredArgsConstructor
@@ -30,6 +33,7 @@ public class ChecklistController {
 
     @Operation(summary = "내 맞춤 체크리스트 및 진행률 조회",
             description = "온보딩 답과 등록된 생활 변화를 바탕으로 마감일·D-day를 실시간 계산하여 반환합니다.")
+    @ApiErrorCodes({ErrorCode.MEMBER_NOT_FOUND})
     @GetMapping("/checklist")
     public ResponseEntity<ApiResponse<ChecklistSummaryResponse>> getMyChecklist(
             @AuthenticationPrincipal MemberPrincipal principal,
@@ -42,6 +46,8 @@ public class ChecklistController {
 
     @Operation(summary = "체크리스트 항목 상태 변경 (완료 / 해당 없음 / 해제)",
             description = "status에 DONE 또는 NOT_APPLICABLE을 지정합니다. status를 null로 보내면 상태가 해제(TODO)됩니다.")
+    @SuccessStatus(value = 204, description = "상태 변경 완료")
+    @ApiErrorCodes({ErrorCode.GUIDE_NOT_FOUND})
     @PutMapping("/checklist/{code}")
     public ResponseEntity<Void> updateProgress(
             @AuthenticationPrincipal MemberPrincipal principal,
@@ -75,6 +81,8 @@ public class ChecklistController {
     }
 
     @Operation(summary = "생활 변화 삭제", description = "생활 변화를 삭제하면 관련된 생활 변화 할 일도 체크리스트에서 제외됩니다.")
+    @SuccessStatus(value = 204, description = "삭제 완료")
+    @ApiErrorCodes({ErrorCode.LIFE_CHANGE_NOT_FOUND})
     @DeleteMapping("/life-changes/{code}")
     public ResponseEntity<Void> deleteLifeChange(
             @AuthenticationPrincipal MemberPrincipal principal,

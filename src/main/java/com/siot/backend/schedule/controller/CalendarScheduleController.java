@@ -19,7 +19,7 @@ import java.util.List;
 /**
  * 생활 달력 & 세금 상세 일정 REST API (CAL-01 ~ CAL-04)
  */
-@Tag(name = "6. 생활 달력", description = "공통 세금 일정, 로그인 회원의 체류 만료일 및 자동차세/재산세 일정 병합 (CAL-01~04)")
+@Tag(name = "7. 생활 달력", description = "공통 세금 일정, 로그인 회원의 체류 만료일 및 자동차세/재산세 일정 병합 (CAL-01~04)")
 @RestController
 @RequestMapping("/api/schedules")
 @RequiredArgsConstructor

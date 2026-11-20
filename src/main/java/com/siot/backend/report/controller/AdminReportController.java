@@ -3,6 +3,8 @@ package com.siot.backend.report.controller;
 import com.siot.backend.auth.security.MemberPrincipal;
 import com.siot.backend.global.common.ApiResponse;
 import com.siot.backend.global.common.PageResponse;
+import com.siot.backend.global.config.openapi.ApiErrorCodes;
+import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.report.dto.ContentReportAdminUpdateRequest;
 import com.siot.backend.report.dto.ContentReportResponse;
 import com.siot.backend.report.service.ContentReportService;
@@ -17,7 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-@Tag(name = "관리자 - 오류 신고", description = "콘텐츠 오류 신고 목록 조회 및 상태 처리 (ADM-07)")
+@Tag(name = "9-4. 관리자: 오류 신고", description = "콘텐츠 오류 신고 목록 조회 및 상태 처리 (ADM-07)")
 @RestController
 @RequestMapping("/api/admin/reports")
 @RequiredArgsConstructor
@@ -36,6 +38,7 @@ public class AdminReportController {
     }
 
     @Operation(summary = "관리자 오류 신고 단건 조회")
+    @ApiErrorCodes({ErrorCode.CONTENT_REPORT_NOT_FOUND})
     @GetMapping("/{reportId}")
     public ResponseEntity<ApiResponse<ContentReportResponse>> getReport(@PathVariable Long reportId) {
         return ResponseEntity.ok(ApiResponse.of(contentReportService.getReport(reportId)));
@@ -43,6 +46,7 @@ public class AdminReportController {
 
     @Operation(summary = "관리자 오류 신고 처리 (ADM-07)",
             description = "상태 변경(IN_REVIEW, RESOLVED, REJECTED) 및 관리자 메모를 기록합니다.")
+    @ApiErrorCodes({ErrorCode.CONTENT_REPORT_NOT_FOUND})
     @PatchMapping("/{reportId}")
     public ResponseEntity<ApiResponse<ContentReportResponse>> processReport(
             @PathVariable Long reportId,
