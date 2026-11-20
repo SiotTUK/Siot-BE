@@ -148,8 +148,9 @@ public class EventUpsertService {
                 .min((a, b) -> Long.compare(a.getId(), b.getId()));
     }
 
-    /** 행사명 키워드 태그로 맞춘다 */
-    private void syncTags(Long eventId, String title) {
+    /** 행사명 키워드 태그로 맞춘다 (수집, 관리자 등록·수정). 호출하는 쪽 트랜잭션에서 */
+    @Transactional
+    public void syncTags(Long eventId, String title) {
         Set<String> wanted = EventKeywords.tags(title);
         List<EventTag> current = tagRepository.findByEventId(eventId);
         Set<String> have = current.stream().map(EventTag::getTag).collect(Collectors.toSet());

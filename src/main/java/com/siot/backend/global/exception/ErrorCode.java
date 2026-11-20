@@ -48,6 +48,11 @@ public enum ErrorCode {
     DOCUMENT_VERSION_IN_PROGRESS(HttpStatus.CONFLICT, "이 문서의 다른 버전을 반영하는 중입니다. 끝난 뒤 다시 시도해 주세요."),
     DOCUMENT_VERSION_NOT_RETRYABLE(HttpStatus.CONFLICT, "다시 반영할 수 없는 버전입니다. 실패한 버전 중 현재 버전보다 새 버전만 다시 반영할 수 있습니다."),
 
+    // ---- 행사 (EVE-03~10, ADM-05) ----
+    EVENT_NOT_FOUND(HttpStatus.NOT_FOUND, "행사를 찾을 수 없습니다."),
+    DUPLICATE_EVENT(HttpStatus.CONFLICT, "행사명·시작일·장소가 같은 행사가 이미 있습니다. 그래도 등록하려면 force=true 로 다시 요청해 주세요."),
+    EVENT_COLLECTION_RUNNING(HttpStatus.CONFLICT, "행사 수집이 이미 진행 중입니다. 끝난 뒤 다시 시도해 주세요."),
+
     // ---- 이메일 인증 (M-01 가입 인증 코드, NTF-09) ----
     EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해 주세요."),
     EMAIL_ALREADY_VERIFIED(HttpStatus.CONFLICT, "이미 인증한 이메일입니다."),

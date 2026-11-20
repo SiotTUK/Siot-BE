@@ -11,6 +11,7 @@ final class EventTestFixtures {
 
     static final String GGC_URL = "https://ggc.test/open/json/playongoing";
     static final String TOURAPI_URL = "https://tour.test/searchFestival2";
+    static final String TOURAPI_DETAIL_URL = "https://tour.test/detailCommon2";
     static final String FESTIVAL_URL = "https://festival.test/tn_pubr_public_cltur_fstvl_api";
 
     private EventTestFixtures() {
@@ -19,7 +20,7 @@ final class EventTestFixtures {
     static EventProperties props(String apiKey, int ggcMaxPages) {
         return new EventProperties(apiKey, Duration.ofSeconds(5), Duration.ZERO,
                 new EventProperties.Ggc(GGC_URL, 100, ggcMaxPages),
-                new EventProperties.TourApi(TOURAPI_URL, 1000, 5, 365, "41", "390"),
+                new EventProperties.TourApi(TOURAPI_URL, 1000, 5, 365, "41", "390", TOURAPI_DETAIL_URL),
                 new EventProperties.Festival(FESTIVAL_URL, 1000, 5, "경기도 시흥시"));
     }
 

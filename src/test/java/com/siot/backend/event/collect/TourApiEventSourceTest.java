@@ -8,6 +8,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.time.LocalDate;
 
+import static com.siot.backend.event.collect.EventTestFixtures.TOURAPI_DETAIL_URL;
 import static com.siot.backend.event.collect.EventTestFixtures.TOURAPI_URL;
 import static com.siot.backend.event.collect.EventTestFixtures.props;
 import static com.siot.backend.event.collect.EventTestFixtures.resource;
@@ -16,15 +17,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-/** EVE-01 TourAPI searchFestival2: 실제 응답 샘플에서 시흥 3건 + 서울 금천구 시흥동 1건 + 다른 지역 26건 */
+/**
+ * EVE-01 TourAPI searchFestival2: 실제 응답 샘플에서 시흥 3건 + 서울 금천구 시흥동 1건 + 다른 지역 26건.
+ * 저장할 행사마다 detailCommon2 로 원문 링크·설명을 받는다 (갯골축제는 고정 응답, MOIM 은 서버 오류)
+ */
 class TourApiEventSourceTest {
 
     private static final LocalDate TODAY = LocalDate.of(2026, 9, 1);
 
     private final RestClient.Builder builder = RestClient.builder();
-    private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+    private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).ignoreExpectOrder(true).build();
 
     private TourApiEventSource source(String apiKey) {
         return new TourApiEventSource(builder.build(), props(apiKey, 10), JsonMapper.builder().build());
@@ -41,6 +46,7 @@ class TourApiEventSourceTest {
                 .andExpect(queryParam("_type", "json"))
                 .andExpect(queryParam("pageNo", "1"))
                 .andRespond(withSuccess(resource("tourapi-searchFestival2-sample.json"), MediaType.APPLICATION_JSON));
+        expectDetails();
 
         FetchResult result = source("test-key").fetch(TODAY);
 
@@ -56,6 +62,39 @@ class TourApiEventSourceTest {
         assertThat(festival.regionCode()).isEqualTo(EventRegion.SIHEUNG);
         assertThat(festival.venue()).contains("시흥시");
         assertThat(festival.externalId()).isNotBlank();
+    }
+
+    /** 갯골축제: homepage 의 a 태그에서 URL 만, overview 의 br 은 줄바꿈. MOIM: 상세 조회가 실패해도 목록 값으로 저장 */
+    @Test
+    void fillsSourceUrlAndDescriptionFromDetailAndKeepsEventWhenDetailFails() {
+        server.expect(requestTo(startsWith(TOURAPI_URL + "?")))
+                .andRespond(withSuccess(resource("tourapi-searchFestival2-sample.json"), MediaType.APPLICATION_JSON));
+        expectDetails();
+
+        FetchResult result = source("test-key").fetch(TODAY);
+
+        server.verify();
+        CollectedEvent festival = result.events().stream()
+                .filter(event -> event.externalId().equals("142197")).findFirst().orElseThrow();
+        assertThat(festival.sourceUrl()).isEqualTo("https://www.siheung.go.kr/gaetgol/main.do?menu=1&tab=2");
+        assertThat(festival.description()).isEqualTo("시흥갯골축제는 내만갯골과 소금창고가 있는 시흥갯골생태공원에서 열리는 축제이다.\n\n"
+                + "갯골 생태 체험, 공연 & 전시가 열린다.\n가족과 함께 즐길 수 있다.");
+        CollectedEvent moim = result.events().stream()
+                .filter(event -> event.externalId().equals("2833186")).findFirst().orElseThrow();
+        assertThat(moim.title()).isEqualTo("MOIM International");
+        assertThat(moim.sourceUrl()).isNull();
+        assertThat(moim.description()).isNull();
+    }
+
+    /** 저장할 시흥 행사 2건의 상세 요청 (순서 무관하게 받도록 서버는 ignoreExpectOrder) */
+    private void expectDetails() {
+        server.expect(requestTo(startsWith(TOURAPI_DETAIL_URL + "?")))
+                .andExpect(queryParam("contentId", "142197"))
+                .andExpect(queryParam("serviceKey", "test-key"))
+                .andRespond(withSuccess(resource("tourapi-detailCommon2-sample.json"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(startsWith(TOURAPI_DETAIL_URL + "?")))
+                .andExpect(queryParam("contentId", "2833186"))
+                .andRespond(withServerError());
     }
 
     /** 키 문자에 +, /, = 가 있어도 한 번만 인코딩해서 보낸다 (공공데이터포털 Decoding 키) */

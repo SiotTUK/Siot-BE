@@ -14,6 +14,8 @@ public interface EventTranslationRepository extends JpaRepository<EventTranslati
 
     List<EventTranslation> findByEventIdInAndLanguage(Collection<Long> eventIds, String language);
 
+    List<EventTranslation> findByEventIdInAndLanguageIn(Collection<Long> eventIds, Collection<String> languages);
+
     default Optional<EventTranslation> findOriginal(Long eventId) {
         return findById(new EventTranslationId("ko", eventId));
     }
