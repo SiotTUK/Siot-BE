@@ -32,4 +32,10 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
             WHERE LOCATE(:email, u.email) > 0 AND u.role = :role
             ORDER BY u.createdAt DESC, u.id DESC""")
     Page<AppUser> searchForAdmin(@Param("email") String email, @Param("role") Role role, Pageable pageable);
+
+    @Query("SELECT u FROM AppUser u WHERE u.stayExpiry IS NOT NULL AND u.stayExpiry >= :startDate AND u.stayExpiry <= :endDate")
+    java.util.List<AppUser> findImpendingStayUsers(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    @Query("SELECT u FROM AppUser u WHERE u.entryDate IS NOT NULL AND u.entryDate >= :startDate AND u.entryDate <= :endDate")
+    java.util.List<AppUser> findByEntryDateBetween(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
 }

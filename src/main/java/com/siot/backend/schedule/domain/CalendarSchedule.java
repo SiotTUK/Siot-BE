@@ -55,4 +55,28 @@ public class CalendarSchedule {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    public static CalendarSchedule create(Long guideId, String kind, LocalDate startsOn, LocalDate endsOn,
+                                          String targetDescription, String sourceUrl, boolean active, Long createdBy) {
+        CalendarSchedule schedule = new CalendarSchedule();
+        schedule.guideId = guideId;
+        schedule.kind = kind;
+        schedule.startsOn = startsOn;
+        schedule.endsOn = endsOn;
+        schedule.targetDescription = targetDescription;
+        schedule.sourceUrl = sourceUrl;
+        schedule.active = active;
+        schedule.createdBy = createdBy;
+        return schedule;
+    }
+
+    public void update(LocalDate startsOn, LocalDate endsOn, String targetDescription,
+                       String sourceUrl, boolean active, Long updatedBy) {
+        this.startsOn = startsOn;
+        this.endsOn = endsOn;
+        this.targetDescription = targetDescription;
+        this.sourceUrl = sourceUrl;
+        this.active = active;
+        this.updatedBy = updatedBy;
+    }
 }

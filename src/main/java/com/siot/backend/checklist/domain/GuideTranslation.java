@@ -65,6 +65,16 @@ public class GuideTranslation {
         return translation;
     }
 
+    public static GuideTranslation create(Long guideId, String language, String title, String summary,
+                                          String content, String badge, String place, List<String> docs,
+                                          String fee, String law, String penalty, String sourceName) {
+        GuideTranslation translation = new GuideTranslation();
+        translation.guideId = guideId;
+        translation.language = language;
+        translation.update(title, summary, content, badge, place, docs, fee, law, penalty, sourceName);
+        return translation;
+    }
+
     /** 관리자 저장: 보낸 값으로 모두 바꾼다 (빈 값은 지움) */
     public void update(String title, String summary, String content, String badge, String place,
                        List<String> docs, String fee, String law, String penalty, String sourceName) {

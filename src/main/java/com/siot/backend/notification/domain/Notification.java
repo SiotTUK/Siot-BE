@@ -90,4 +90,52 @@ public class Notification {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
+
+    public static Notification create(Long userId, String kind, Long eventId, Long guideId,
+                                      Long scheduleId, Long documentVersionId, String sourceKey,
+                                      Integer sourceRevision, OffsetDateTime scheduledAt,
+                                      String locale, String title, String body,
+                                      EmailDeliveryStatus emailStatus) {
+        Notification notification = new Notification();
+        notification.userId = userId;
+        notification.kind = kind;
+        notification.eventId = eventId;
+        notification.guideId = guideId;
+        notification.scheduleId = scheduleId;
+        notification.documentVersionId = documentVersionId;
+        notification.sourceKey = sourceKey;
+        notification.sourceRevision = sourceRevision;
+        notification.scheduledAt = scheduledAt;
+        notification.locale = locale != null ? locale : "ko";
+        notification.title = title;
+        notification.body = body;
+        notification.emailStatus = emailStatus;
+        return notification;
+    }
+
+    public void markRead() {
+        this.readAt = OffsetDateTime.now();
+    }
+
+    public void markDelivered() {
+        this.status = "SENT";
+        this.deliveredAt = OffsetDateTime.now();
+    }
+
+    public void recordDeliveryFailure(String error) {
+        this.attempts += 1;
+        this.lastError = error;
+        this.status = "FAILED";
+    }
+
+    public void recordEmailSuccess() {
+        this.emailStatus = EmailDeliveryStatus.SENT;
+        this.emailSentAt = OffsetDateTime.now();
+    }
+
+    public void recordEmailFailure(String error) {
+        this.emailAttempts += 1;
+        this.emailLastError = error;
+        this.emailStatus = EmailDeliveryStatus.FAILED;
+    }
 }

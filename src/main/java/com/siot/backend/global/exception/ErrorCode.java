@@ -56,7 +56,14 @@ public enum ErrorCode {
     CHAT_CONVERSATION_NOT_FOUND(HttpStatus.NOT_FOUND, "대화를 찾을 수 없습니다."),
     CHAT_QUESTION_LENGTH(HttpStatus.BAD_REQUEST, "질문은 1~1000자로 입력해 주세요."),
     CHAT_MESSAGE_NOT_FOUND(HttpStatus.NOT_FOUND, "메시지를 찾을 수 없습니다."),
-    CHAT_FEEDBACK_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "챗봇 답변만 평가할 수 있습니다.");
+    CHAT_FEEDBACK_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "챗봇 답변만 평가할 수 있습니다."),
+
+    // ---- 생활정보 · 체크리스트 · 알림 · 신고 (역할 A) ----
+    CONTENT_REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "오류 신고를 찾을 수 없습니다."),
+    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "알림을 찾을 수 없습니다."),
+    SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "일정을 찾을 수 없습니다."),
+    LIFE_CHANGE_NOT_FOUND(HttpStatus.NOT_FOUND, "생활 변화 기록을 찾을 수 없습니다."),
+    INVALID_LIFE_CHANGE_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 생활 변화 코드입니다.");
 
     private final HttpStatus status;
     private final String message;

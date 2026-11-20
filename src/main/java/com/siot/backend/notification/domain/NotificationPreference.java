@@ -32,4 +32,18 @@ public class NotificationPreference {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    public static NotificationPreference of(String kind, Long userId, boolean enabled, int leadDays) {
+        NotificationPreference preference = new NotificationPreference();
+        preference.kind = kind;
+        preference.userId = userId;
+        preference.enabled = enabled;
+        preference.leadDays = leadDays;
+        return preference;
+    }
+
+    public void update(Boolean enabled, Integer leadDays) {
+        if (enabled != null) this.enabled = enabled;
+        if (leadDays != null) this.leadDays = leadDays;
+    }
 }

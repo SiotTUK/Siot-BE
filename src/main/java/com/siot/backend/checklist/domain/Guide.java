@@ -97,4 +97,16 @@ public class Guide {
     public boolean isDeleted() {
         return deletedAt != null;
     }
+
+    public static Guide create(String code, String kind, ItemType itemType, String category, int sortOrder, String lifeChangeCode, boolean faq) {
+        Guide guide = new Guide();
+        guide.code = code;
+        guide.kind = kind;
+        guide.itemType = itemType != null ? itemType : ItemType.REQUIRED;
+        guide.category = category;
+        guide.sortOrder = sortOrder;
+        guide.lifeChangeCode = lifeChangeCode;
+        guide.faq = faq;
+        return guide;
+    }
 }

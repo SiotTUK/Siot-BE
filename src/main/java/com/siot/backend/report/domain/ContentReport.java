@@ -64,4 +64,27 @@ public class ContentReport {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    public static ContentReport create(Long reporterUserId, Long eventId, Long guideId,
+                                       String targetTitleSnapshot, String quotedText,
+                                       String language, String reason, String description) {
+        ContentReport report = new ContentReport();
+        report.reporterUserId = reporterUserId;
+        report.eventId = eventId;
+        report.guideId = guideId;
+        report.targetTitleSnapshot = targetTitleSnapshot;
+        report.quotedText = quotedText;
+        report.language = language != null ? language : "ko";
+        report.reason = reason;
+        report.description = description;
+        report.status = "RECEIVED";
+        return report;
+    }
+
+    public void process(String status, String adminMemo, Long adminUserId, OffsetDateTime now) {
+        this.status = status;
+        this.adminMemo = adminMemo;
+        this.processedBy = adminUserId;
+        this.processedAt = now;
+    }
 }
