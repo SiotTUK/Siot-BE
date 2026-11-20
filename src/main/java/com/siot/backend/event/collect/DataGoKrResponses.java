@@ -10,7 +10,8 @@ import java.util.Set;
 
 /**
  * 공공데이터포털 응답 공통 처리 (TourAPI, 표준데이터).
- * 정상: {"response": {"header": {"resultCode": ...}, "body": {"items": ..., "totalCount": ...}}}.
+ * 정상: {"response": {"header": {"resultCode": ...}, "body": {"items": ..., "totalCount": ...}}} (TourAPI) 또는
+ * response 없이 header·body 가 최상위 {"header": ..., "body": ...} (표준데이터). 둘 다 읽는다.
  * 키 오류 등은 {"OpenAPI_ServiceResponse": {"cmmMsgHeader": {"errMsg": ...}}} 이나 XML 로 온다.
  */
 final class DataGoKrResponses {
@@ -38,7 +39,8 @@ final class DataGoKrResponses {
             throw new EventSourceException(name + ": " + serviceError.path("errMsg").asString("")
                     + " " + serviceError.path("returnAuthMsg").asString(""));
         }
-        JsonNode header = root.path("response").path("header");
+        JsonNode envelope = root.has("response") ? root.path("response") : root;
+        JsonNode header = envelope.path("header");
         String code = header.path("resultCode").asString("");
         if (NO_DATA_CODES.contains(code)) {
             return null;
@@ -46,7 +48,7 @@ final class DataGoKrResponses {
         if (!OK_CODES.contains(code)) {
             throw new EventSourceException(name + ": resultCode=" + code + " " + header.path("resultMsg").asString(""));
         }
-        JsonNode body = root.path("response").path("body");
+        JsonNode body = envelope.path("body");
         if (!body.isObject()) {
             throw new EventSourceException(name + ": unexpected response (no body)");
         }
@@ -66,16 +68,32 @@ final class DataGoKrResponses {
         return result;
     }
 
+    /** body 의 totalCount. 없거나 숫자가 아니면 -1 */
     static int totalCount(JsonNode body) {
         JsonNode total = body.path("totalCount");
         if (total.isNumber()) {
             return total.asInt();
         }
-        try {
-            return Integer.parseInt(total.asString("0").strip());
-        } catch (NumberFormatException e) {
-            return 0;
+        if (!total.isString()) {
+            return -1;
         }
+        try {
+            return Integer.parseInt(total.asString().strip());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * 다음 페이지를 부를지. totalCount 가 있으면 지금까지 넘긴 건수(page × pageSize)가 그보다 적을 때,
+     * 없으면 이번 페이지가 꽉 찼을 때(받은 건수 >= pageSize).
+     */
+    static boolean hasNextPage(JsonNode body, int page, int pageSize, int itemCount) {
+        int total = totalCount(body);
+        if (total >= 0) {
+            return (long) page * pageSize < total;
+        }
+        return itemCount >= pageSize;
     }
 
     static String text(JsonNode item, String key) {

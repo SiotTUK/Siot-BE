@@ -68,7 +68,7 @@ public class TourApiEventSource implements EventSource {
                     events.add(withDetail(event, api));
                 }
             }
-            if ((long) page * api.pageSize() >= DataGoKrResponses.totalCount(body)) {
+            if (!DataGoKrResponses.hasNextPage(body, page, api.pageSize(), items.size())) {
                 break;
             }
         }

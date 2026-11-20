@@ -9,6 +9,8 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * 전국문화축제표준데이터 Open API (공공데이터포털, 키: EVENT_API_KEY).
@@ -18,10 +20,19 @@ import java.util.List;
  * <ul>
  *     <li>시흥만: 도로명 또는 지번 주소가 "경기도 시흥시"로 시작</li>
  *     <li>원본 ID 가 없어 external_id = 축제명 + "|" + 시작일</li>
+ *     <li>장소(opar)·내용(fstvlCo)은 여러 개를 "+" 로 이어 보낸다 → ", " 로 바꿔 저장</li>
+ *     <li>홈페이지는 "www.…" 처럼 http 없이 오기도 한다 → https:// 를 붙인다. 주소 꼴이 아니면 버린다</li>
+ *     <li>응답은 response 없이 header·body 가 최상위로 온다 ({@link DataGoKrResponses})</li>
  * </ul>
  */
 @Slf4j
 public class FestivalStandardEventSource implements EventSource {
+
+    /** opar·fstvlCo 의 항목 구분자 "+" (앞뒤 공백 포함) */
+    private static final Pattern PLUS = Pattern.compile("\\s*\\+\\s*");
+    /** 스킴 없는 웹 주소 ("www.instagram.com/sgfestival", "siheung.go.kr") */
+    private static final Pattern BARE_HOST = Pattern.compile(
+            "^[\\p{L}\\p{N}-]+(\\.[\\p{L}\\p{N}-]+)+(:\\d+)?([/?#]\\S*)?$");
 
     private final RestClient restClient;
     private final EventProperties props;
@@ -62,7 +73,7 @@ public class FestivalStandardEventSource implements EventSource {
                     events.add(event);
                 }
             }
-            if ((long) page * api.pageSize() >= DataGoKrResponses.totalCount(body)) {
+            if (!DataGoKrResponses.hasNextPage(body, page, api.pageSize(), items.size())) {
                 break;
             }
         }
@@ -99,9 +110,35 @@ public class FestivalStandardEventSource implements EventSource {
             return null;
         }
         return new CollectedEvent(title + "|" + startsOn, title, startsOn, endsOn, null, null, null,
-                EventTexts.clean(DataGoKrResponses.text(item, "homepageUrl")),
-                EventTexts.clean(DataGoKrResponses.text(item, "opar")),
-                EventTexts.clean(DataGoKrResponses.text(item, "fstvlCo")), EventRegion.SIHEUNG);
+                homepage(DataGoKrResponses.text(item, "homepageUrl")),
+                joinItems(DataGoKrResponses.text(item, "opar")),
+                joinItems(DataGoKrResponses.text(item, "fstvlCo")), EventRegion.SIHEUNG);
+    }
+
+    /** "금남로+충장로" → "금남로, 충장로". 빈 항목은 뺀다 */
+    static String joinItems(String text) {
+        String cleaned = EventTexts.clean(text);
+        if (cleaned == null) {
+            return null;
+        }
+        String joined = String.join(", ", PLUS.splitAsStream(cleaned).filter(part -> !part.isBlank()).toList());
+        return joined.isEmpty() ? null : joined;
+    }
+
+    /** http(s):// 가 있으면 그대로, "www.…" 처럼 없으면 https:// 를 붙인다. 웹 주소 꼴이 아니면 null */
+    static String homepage(String text) {
+        String cleaned = EventTexts.clean(text);
+        if (cleaned == null) {
+            return null;
+        }
+        String lower = cleaned.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("http://") || lower.startsWith("https://")) {
+            return cleaned;
+        }
+        if (lower.startsWith("//")) {
+            return "https:" + cleaned;
+        }
+        return BARE_HOST.matcher(cleaned).matches() ? "https://" + cleaned : null;
     }
 
     private static boolean startsWith(String address, String prefix) {
