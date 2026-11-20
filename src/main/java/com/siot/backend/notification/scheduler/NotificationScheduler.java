@@ -3,10 +3,13 @@ package com.siot.backend.notification.scheduler;
 import com.siot.backend.checklist.domain.ChecklistProgress;
 import com.siot.backend.checklist.domain.Guide;
 import com.siot.backend.checklist.domain.GuideTranslation;
+import com.siot.backend.checklist.domain.MemberLifeChange;
 import com.siot.backend.checklist.domain.ProgressStatus;
+import com.siot.backend.checklist.domain.ResidenceChangeReport;
 import com.siot.backend.checklist.domain.StayExtension;
 import com.siot.backend.checklist.repository.ChecklistProgressRepository;
 import com.siot.backend.checklist.repository.GuideRepository;
+import com.siot.backend.checklist.repository.MemberLifeChangeRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.domain.Residence;
@@ -29,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
@@ -46,12 +50,15 @@ public class NotificationScheduler {
     private final NotificationDispatcher notificationDispatcher;
     private final GuideRepository guideRepository;
     private final ChecklistProgressRepository checklistProgressRepository;
+    private final MemberLifeChangeRepository memberLifeChangeRepository;
     /** 한국 시간 (ClockConfig) */
     private final Clock clock;
 
     private static final List<Integer> STAY_EXPIRY_LEAD_DAYS = List.of(120, 60, 30, 14, 7, 1);
     /** NTF-08: 외국인등록 마감 D-7, D-1 */
     private static final List<Integer> REGISTRATION_LEAD_DAYS = List.of(7, 1);
+    /** NTF-08: 체류지 변경 신고 마감 D-7, D-1 */
+    private static final List<Integer> RESIDENCE_REPORT_LEAD_DAYS = List.of(7, 1);
     /** NTF-01: 납부 마감 D-7, D-1 (납부 시작일 당일 알림은 따로 보낸다) */
     private static final List<Integer> TAX_LEAD_DAYS = List.of(7, 1);
 
@@ -67,6 +74,7 @@ public class NotificationScheduler {
         generateStayExpiryNotifications();
         generateStayExtensionStartNotifications();
         generateRegistrationNotifications();
+        generateResidenceReportNotifications();
         generateTaxNotifications();
         notificationDispatcher.dispatchPendingNotifications();
         log.info("Daily notification scheduled job finished.");
@@ -206,6 +214,61 @@ public class NotificationScheduler {
     }
 
     /**
+     * 체류지 변경 신고 마감 알림 (NTF-08, CHK-02, D-7·D-1).
+     * 이사(생활 변화 LC-01)를 등록한 회원에게, 체류지 변경 신고(이사일 + 15일) 또는
+     * F-4 거소 이전 신고(이사일 + 14일) 마감 전에 알린다. 그 회차를 완료·해당 없음으로 표시했으면 제외한다.
+     */
+    @Transactional
+    public void generateResidenceReportNotifications() {
+        LocalDate today = LocalDate.now(clock);
+
+        for (int leadDays : RESIDENCE_REPORT_LEAD_DAYS) {
+            LocalDate targetDeadline = today.plusDays(leadDays);
+            List<MemberLifeChange> moves = memberLifeChangeRepository.findByLifeChangeCodeAndBaseDateBetween(
+                    ResidenceChangeReport.LIFE_CHANGE_CODE,
+                    ResidenceChangeReport.earliestMoveDateFor(targetDeadline),
+                    ResidenceChangeReport.latestMoveDateFor(targetDeadline));
+
+            for (MemberLifeChange move : moves) {
+                AppUser user = appUserRepository.findById(move.getUserId()).orElse(null);
+                if (user == null) {
+                    continue;
+                }
+                String reportCode = ResidenceChangeReport.reportCodeFor(user.hasResidence(Residence.F4));
+                LocalDate deadline = ResidenceChangeReport.deadline(reportCode, move.getBaseDate());
+                if (!deadline.equals(targetDeadline)) {
+                    continue; // 범위에는 걸렸지만 이 회원의 기한(14일/15일)과 다름
+                }
+                if (isPreferenceDisabled(user.getId(), CHECKLIST_DEADLINE_PREFERENCE)) {
+                    continue;
+                }
+                Guide guide = guideRepository.findByCode(reportCode).orElse(null);
+                String periodKey = move.getBaseDate().toString(); // 생활 변화 할 일의 회차 키 = 기준일
+                if (guide != null && isChecklistClosed(user.getId(), guide.getId(), periodKey)) {
+                    continue;
+                }
+
+                String sourceKey = String.format("residence_report:%d:%s:%d", user.getId(), move.getBaseDate(), leadDays);
+                if (notificationRepository.existsByUserIdAndSourceKey(user.getId(), sourceKey)) {
+                    continue;
+                }
+
+                boolean overseasKorean = ResidenceChangeReport.OVERSEAS_KOREAN_REPORT_CODE.equals(reportCode);
+                String reportName = overseasKorean ? "거소 이전 신고" : "체류지 변경 신고";
+                String title = String.format("%s 마감 D-%d 안내", reportName, leadDays);
+                String body = String.format("이사일(%s)부터 %d일 이내인 %s 마감일(%s)까지 %d일 남았습니다. "
+                                + "새 주소지 주민센터나 출입국·외국인관서, 하이코리아에서 신고해주세요.",
+                        move.getBaseDate(), ChronoUnit.DAYS.between(move.getBaseDate(), deadline), reportName, deadline, leadDays);
+                EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
+
+                notificationRepository.save(Notification.create(
+                        user.getId(), "RESIDENCE_REPORT", null, guide != null ? guide.getId() : null, null, null,
+                        sourceKey, 1, OffsetDateTime.now(clock), user.getLanguage(), title, body, emailStatus));
+            }
+        }
+    }
+
+    /**
      * 지방세 정기 납부 알림 (NTF-01): 납부 시작일, 납부 마감 D-7·D-1 (자동차세, 재산세, 주민세 등)
      */
     @Transactional
@@ -271,8 +334,13 @@ public class NotificationScheduler {
 
     /** 완료(DONE) 또는 해당 없음(NOT_APPLICABLE)으로 표시한 1회성 항목이면 true */
     private boolean isChecklistClosed(Long userId, Long guideId) {
+        return isChecklistClosed(userId, guideId, ChecklistProgress.ONCE);
+    }
+
+    /** 그 회차(periodKey)를 완료 또는 해당 없음으로 표시했으면 true */
+    private boolean isChecklistClosed(Long userId, Long guideId, String periodKey) {
         return checklistProgressRepository
-                .findByUserIdAndGuideIdAndPeriodKey(userId, guideId, ChecklistProgress.ONCE)
+                .findByUserIdAndGuideIdAndPeriodKey(userId, guideId, periodKey)
                 .map(p -> p.getStatus() == ProgressStatus.DONE || p.getStatus() == ProgressStatus.NOT_APPLICABLE)
                 .orElse(false);
     }

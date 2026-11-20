@@ -243,8 +243,9 @@ public class ChecklistService {
             return false; // 등록되지 않은 생활 변화는 표시 안 함
         }
 
-        if ("LC-01-1".equals(code)) return !res.contains(Residence.F4);
-        if ("LC-01-2".equals(code)) return res.contains(Residence.F4);
+        if (ResidenceChangeReport.isReportCode(code)) {
+            return code.equals(ResidenceChangeReport.reportCodeFor(res.contains(Residence.F4)));
+        }
         if ("LC-01-3".equals(code)) return res.contains(Residence.CAR);
         if ("LC-01-4".equals(code)) return res.contains(Residence.KIDS);
         if ("LC-01-5".equals(code)) return true;
@@ -301,7 +302,7 @@ public class ChecklistService {
             String periodKey = baseDate.toString();
 
             LocalDate deadline = null;
-            if ("LC-01-1".equals(code) || "LC-01-2".equals(code)) deadline = baseDate.plusDays(14);
+            if (ResidenceChangeReport.isReportCode(code)) deadline = ResidenceChangeReport.deadline(code, baseDate);
             else if ("LC-01-3".equals(code)) deadline = baseDate.plusDays(30);
             else if ("LC-02-2".equals(code)) deadline = baseDate.plusDays(15);
             else if ("LC-04-1".equals(code)) deadline = baseDate.plusDays(15);

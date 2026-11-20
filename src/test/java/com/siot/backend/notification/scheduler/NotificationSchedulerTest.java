@@ -7,6 +7,11 @@ import com.siot.backend.checklist.domain.ProgressStatus;
 import com.siot.backend.checklist.repository.ChecklistProgressRepository;
 import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
+import com.siot.backend.checklist.repository.MemberLifeChangeRepository;
+import com.siot.backend.checklist.domain.MemberLifeChange;
+import com.siot.backend.member.domain.Purpose;
+import com.siot.backend.member.domain.Residence;
+import java.util.Set;
 import com.siot.backend.global.config.ClockConfig;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.domain.UserType;
@@ -67,6 +72,8 @@ class NotificationSchedulerTest {
     private GuideRepository guideRepository;
     @Mock
     private ChecklistProgressRepository checklistProgressRepository;
+    @Mock
+    private MemberLifeChangeRepository memberLifeChangeRepository;
 
     private NotificationScheduler notificationScheduler;
 
@@ -75,7 +82,7 @@ class NotificationSchedulerTest {
         Clock clock = Clock.fixed(ZonedDateTime.of(TODAY.atTime(9, 0), ClockConfig.KST).toInstant(), ClockConfig.KST);
         notificationScheduler = new NotificationScheduler(appUserRepository, notificationRepository, preferenceRepository,
                 calendarScheduleRepository, guideTranslationRepository, notificationDispatcher,
-                guideRepository, checklistProgressRepository, clock);
+                guideRepository, checklistProgressRepository, memberLifeChangeRepository, clock);
         lenient().when(notificationRepository.existsByUserIdAndSourceKey(anyLong(), anyString())).thenReturn(false);
         lenient().when(preferenceRepository.findByKindAndUserId(anyString(), anyLong())).thenReturn(Optional.empty());
     }
@@ -193,6 +200,89 @@ class NotificationSchedulerTest {
                 .willReturn(Optional.of(NotificationPreference.of("CHECKLIST_DEADLINE", USER_ID, false, 7)));
 
         notificationScheduler.generateRegistrationNotifications();
+
+        verify(notificationRepository, never()).save(any());
+    }
+
+    // ---- NTF-08 체류지 변경 신고 ----
+
+    private static final Long LC0101_GUIDE_ID = 201L;
+    private static final Long LC0102_GUIDE_ID = 202L;
+
+    /** 이사 등록 회원. moveDate 를 이사일로, f4 면 F-4 거소신고자 */
+    private AppUser mover(LocalDate moveDate, boolean f4) {
+        AppUser user = user();
+        user.updateOnboarding(UserType.LIVING, TODAY.minusYears(1), Purpose.WORK,
+                f4 ? Set.of(Residence.F4) : Set.of(), null);
+        given(memberLifeChangeRepository.findByLifeChangeCodeAndBaseDateBetween(eq("LC-01"), any(), any()))
+                .willAnswer(inv -> {
+                    LocalDate from = inv.getArgument(1);
+                    LocalDate to = inv.getArgument(2);
+                    return !moveDate.isBefore(from) && !moveDate.isAfter(to)
+                            ? List.of(MemberLifeChange.of(USER_ID, "LC-01", moveDate)) : List.of();
+                });
+        lenient().when(appUserRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        Guide lc0101 = Guide.create("LC-01-1", "LIFE_CHANGE_TASK", ItemType.REQUIRED, "IMMIGRATION", 1, "LC-01", false);
+        ReflectionTestUtils.setField(lc0101, "id", LC0101_GUIDE_ID);
+        Guide lc0102 = Guide.create("LC-01-2", "LIFE_CHANGE_TASK", ItemType.REQUIRED, "IMMIGRATION", 2, "LC-01", false);
+        ReflectionTestUtils.setField(lc0102, "id", LC0102_GUIDE_ID);
+        lenient().when(guideRepository.findByCode("LC-01-1")).thenReturn(Optional.of(lc0101));
+        lenient().when(guideRepository.findByCode("LC-01-2")).thenReturn(Optional.of(lc0102));
+        return user;
+    }
+
+    @Test
+    @DisplayName("체류지 변경 신고: 이사일 + 15일 마감의 D-7 에 알림, 항목으로 연결")
+    void residenceReport_d7() {
+        LocalDate moveDate = TODAY.minusDays(8); // 마감 = 이사일 + 15 = 오늘 + 7
+        mover(moveDate, false);
+        given(checklistProgressRepository.findByUserIdAndGuideIdAndPeriodKey(USER_ID, LC0101_GUIDE_ID, moveDate.toString()))
+                .willReturn(Optional.empty());
+
+        notificationScheduler.generateResidenceReportNotifications();
+
+        Notification saved = savedNotification();
+        assertThat(saved.getKind()).isEqualTo("RESIDENCE_REPORT");
+        assertThat(saved.getTitle()).isEqualTo("체류지 변경 신고 마감 D-7 안내");
+        assertThat(saved.getGuideId()).isEqualTo(LC0101_GUIDE_ID);
+        verify(preferenceRepository).findByKindAndUserId("CHECKLIST_DEADLINE", USER_ID);
+    }
+
+    @Test
+    @DisplayName("F-4 거소 이전 신고는 이사일 + 14일 마감으로 D-1 알림")
+    void residenceReport_overseasKorean_d1() {
+        LocalDate moveDate = TODAY.minusDays(13); // 마감 = 이사일 + 14 = 오늘 + 1
+        mover(moveDate, true);
+        given(checklistProgressRepository.findByUserIdAndGuideIdAndPeriodKey(USER_ID, LC0102_GUIDE_ID, moveDate.toString()))
+                .willReturn(Optional.empty());
+
+        notificationScheduler.generateResidenceReportNotifications();
+
+        Notification saved = savedNotification();
+        assertThat(saved.getTitle()).isEqualTo("거소 이전 신고 마감 D-1 안내");
+        assertThat(saved.getGuideId()).isEqualTo(LC0102_GUIDE_ID);
+    }
+
+    @Test
+    @DisplayName("기한이 다른 사람(일반 15일)의 이사일이 범위에 걸려도 14일 기준으로는 보내지 않는다")
+    void residenceReport_wrongDeadlineSkipped() {
+        // 이사일 + 14 = 오늘 + 1 이지만 일반 회원이라 마감은 오늘 + 2 → D-1·D-7 어디에도 해당 없음
+        mover(TODAY.minusDays(13), false);
+
+        notificationScheduler.generateResidenceReportNotifications();
+
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("체크리스트에서 그 이사 회차의 신고를 완료했으면 보내지 않는다")
+    void residenceReport_done_skips() {
+        LocalDate moveDate = TODAY.minusDays(8);
+        mover(moveDate, false);
+        given(checklistProgressRepository.findByUserIdAndGuideIdAndPeriodKey(USER_ID, LC0101_GUIDE_ID, moveDate.toString()))
+                .willReturn(Optional.of(ChecklistProgress.of(USER_ID, LC0101_GUIDE_ID, moveDate.toString(), ProgressStatus.DONE)));
+
+        notificationScheduler.generateResidenceReportNotifications();
 
         verify(notificationRepository, never()).save(any());
     }
