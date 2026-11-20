@@ -43,6 +43,7 @@ public class ChecklistService {
     private final AppUserRepository appUserRepository;
 
     private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
+    private static final String STAY_EXTENSION_CODE = "CL-05";
 
     /**
      * 회원의 온보딩 답과 생활 변화를 바탕으로 맞춤 체크리스트 및 진행률 계산
@@ -136,6 +137,9 @@ public class ChecklistService {
             // 조건별 문구 (CL-04 등)
             List<String> variantBodies = getVariantBodies(guide, targetLang, user.effectivePurpose());
 
+            // CL-05 체류기간 연장: 마감일 = 체류 만료일 (CAL-04)
+            boolean isStayExtension = STAY_EXTENSION_CODE.equals(guide.getCode());
+
             boolean hasNoticeChanged = guide.getNoticeChangedAt() != null &&
                     guide.getNoticeChangedAt().isAfter(OffsetDateTime.now().minusDays(14));
 
@@ -163,7 +167,9 @@ public class ChecklistService {
                     isCompleted,
                     periodKey,
                     guide.getNoticeChangedAt(),
-                    hasNoticeChanged
+                    hasNoticeChanged,
+                    isStayExtension ? StayExtension.applyStartDate(deadline) : null,
+                    isStayExtension && StayExtension.isHighlighted(deadline, today)
             ));
         }
 
@@ -265,7 +271,7 @@ public class ChecklistService {
             return new PeriodAndDeadline(ChecklistProgress.ONCE, deadline);
         }
 
-        if ("CL-05".equals(code)) {
+        if (STAY_EXTENSION_CODE.equals(code)) {
             return new PeriodAndDeadline(ChecklistProgress.ONCE, user.getStayExpiry());
         }
 

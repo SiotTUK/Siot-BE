@@ -10,7 +10,7 @@ public record ScheduleResponse(
         Long scheduleId,
         @Schema(description = "관련 가이드 항목 ID")
         Long guideId,
-        @Schema(description = "일정 종류 (TAX, STAY, EVENT 등)", example = "TAX")
+        @Schema(description = "일정 종류 (TAX, TAX_CAR, TAX_PROPERTY, STAY_EXPIRY, STAY_EXTENSION_START 등)", example = "TAX")
         String kind,
         @Schema(description = "일정 제목", example = "주민세 개인분 납부")
         String title,
@@ -23,6 +23,14 @@ public record ScheduleResponse(
         @Schema(description = "출처 링크")
         String sourceUrl,
         @Schema(description = "개인 맞춤 일정 여부 (체류만료 등)")
-        boolean personal
+        boolean personal,
+        @Schema(description = "강조 표시 여부. 체류 만료 30일 전부터 STAY_EXPIRY·STAY_EXTENSION_START 가 true (CAL-04)")
+        boolean highlighted
 ) {
+
+    /** 강조하지 않는 일정 */
+    public ScheduleResponse(Long scheduleId, Long guideId, String kind, String title, LocalDate startsOn, LocalDate endsOn,
+                            String targetDescription, String sourceUrl, boolean personal) {
+        this(scheduleId, guideId, kind, title, startsOn, endsOn, targetDescription, sourceUrl, personal, false);
+    }
 }

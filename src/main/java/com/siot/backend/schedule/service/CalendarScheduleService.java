@@ -1,6 +1,8 @@
 package com.siot.backend.schedule.service;
 
 import com.siot.backend.checklist.domain.GuideTranslation;
+import com.siot.backend.checklist.domain.StayExtension;
+import com.siot.backend.global.config.ClockConfig;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.domain.Residence;
@@ -67,18 +69,37 @@ public class CalendarScheduleService {
         if (userId != null) {
             appUserRepository.findById(userId).ifPresent(user -> {
                 LocalDate expiry = user.getStayExpiry();
-                if (expiry != null && !expiry.isBefore(start) && !expiry.isAfter(end)) {
-                    result.add(new ScheduleResponse(
-                            null,
-                            null,
-                            "STAY_EXPIRY",
-                            "체류기간 만료일",
-                            expiry,
-                            expiry,
-                            "체류기간 만료 4개월 전부터 연장 신청이 가능합니다.",
-                            "https://www.hikorea.go.kr",
-                            true
-                    ));
+                if (expiry != null) {
+                    boolean highlighted = StayExtension.isHighlighted(expiry, LocalDate.now(ClockConfig.KST));
+                    LocalDate applyStart = StayExtension.applyStartDate(expiry);
+                    if (!applyStart.isBefore(start) && !applyStart.isAfter(end)) {
+                        result.add(new ScheduleResponse(
+                                null,
+                                null,
+                                "STAY_EXTENSION_START",
+                                "체류기간 연장 신청 시작일",
+                                applyStart,
+                                applyStart,
+                                "오늘부터 체류 만료일(" + expiry + ")까지 체류기간 연장을 신청할 수 있습니다.",
+                                "https://www.hikorea.go.kr",
+                                true,
+                                highlighted
+                        ));
+                    }
+                    if (!expiry.isBefore(start) && !expiry.isAfter(end)) {
+                        result.add(new ScheduleResponse(
+                                null,
+                                null,
+                                "STAY_EXPIRY",
+                                "체류기간 만료일",
+                                expiry,
+                                expiry,
+                                "체류기간 연장 신청은 " + applyStart + "부터 가능합니다.",
+                                "https://www.hikorea.go.kr",
+                                true,
+                                highlighted
+                        ));
+                    }
                 }
 
                 // 자동차세 (6월, 12월)

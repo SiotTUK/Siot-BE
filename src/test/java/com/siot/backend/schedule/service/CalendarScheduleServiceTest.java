@@ -80,4 +80,48 @@ class CalendarScheduleServiceTest {
         boolean hasCarTax = responses.stream().anyMatch(r -> "TAX_CAR".equals(r.kind()));
         assertThat(hasCarTax).isTrue();
     }
+
+    @Test
+    @DisplayName("연장 신청 시작일(만료일 − 4개월)이 든 달에 STAY_EXTENSION_START 일정을 보여 준다 (CAL-04)")
+    void getMonthlySchedules_stayExtensionStart() {
+        // given: 2099-10-31 만료 → 신청 시작 2099-06-30 (먼 미래라 강조 아님)
+        Long userId = 1L;
+        AppUser user = AppUser.create("test@siot.kr", "hash");
+        user.updateOnboarding(UserType.LIVING, LocalDate.of(2025, 1, 1), Purpose.WORK, Set.of(), LocalDate.of(2099, 10, 31));
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+        given(calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(any(), any())).willReturn(List.of());
+
+        // when
+        List<ScheduleResponse> june = calendarScheduleService.getMonthlySchedules(userId, 2099, 6, "ko");
+        List<ScheduleResponse> october = calendarScheduleService.getMonthlySchedules(userId, 2099, 10, "ko");
+
+        // then
+        assertThat(june).singleElement().satisfies(r -> {
+            assertThat(r.kind()).isEqualTo("STAY_EXTENSION_START");
+            assertThat(r.startsOn()).isEqualTo(LocalDate.of(2099, 6, 30));
+            assertThat(r.personal()).isTrue();
+            assertThat(r.highlighted()).isFalse();
+        });
+        assertThat(october).singleElement().satisfies(r -> {
+            assertThat(r.kind()).isEqualTo("STAY_EXPIRY");
+            assertThat(r.targetDescription()).contains("2099-06-30");
+        });
+    }
+
+    @Test
+    @DisplayName("만료 30일 안이면 체류 만료 일정을 강조한다 (CAL-04)")
+    void getMonthlySchedules_stayExpiryHighlighted() {
+        Long userId = 1L;
+        LocalDate expiry = LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).plusDays(10);
+        AppUser user = AppUser.create("test@siot.kr", "hash");
+        user.updateOnboarding(UserType.LIVING, LocalDate.of(2025, 1, 1), Purpose.WORK, Set.of(), expiry);
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+        given(calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(any(), any())).willReturn(List.of());
+
+        List<ScheduleResponse> responses = calendarScheduleService.getMonthlySchedules(
+                userId, expiry.getYear(), expiry.getMonthValue(), "ko");
+
+        assertThat(responses).filteredOn(r -> "STAY_EXPIRY".equals(r.kind()))
+                .singleElement().satisfies(r -> assertThat(r.highlighted()).isTrue());
+    }
 }

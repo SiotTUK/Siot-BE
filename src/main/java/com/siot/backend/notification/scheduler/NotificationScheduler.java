@@ -4,6 +4,7 @@ import com.siot.backend.checklist.domain.ChecklistProgress;
 import com.siot.backend.checklist.domain.Guide;
 import com.siot.backend.checklist.domain.GuideTranslation;
 import com.siot.backend.checklist.domain.ProgressStatus;
+import com.siot.backend.checklist.domain.StayExtension;
 import com.siot.backend.checklist.repository.ChecklistProgressRepository;
 import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
@@ -52,8 +53,6 @@ public class NotificationScheduler {
     private static final List<Integer> REGISTRATION_LEAD_DAYS = List.of(7, 1);
     private static final List<Integer> TAX_LEAD_DAYS = List.of(7, 1);
 
-    /** CHK-10: 연장 신청 시작일 = 체류 만료일 − 4개월 */
-    static final int STAY_EXTENSION_APPLY_MONTHS = 4;
     static final String REGISTRATION_GUIDE_CODE = "CL-01";
     static final String CHECKLIST_DEADLINE_PREFERENCE = "CHECKLIST_DEADLINE";
 
@@ -123,12 +122,12 @@ public class NotificationScheduler {
     @Transactional
     public void generateStayExtensionStartNotifications() {
         LocalDate today = LocalDate.now(clock);
-        LocalDate from = today.plusMonths(STAY_EXTENSION_APPLY_MONTHS);
+        LocalDate from = today.plusMonths(StayExtension.APPLY_MONTHS_BEFORE_EXPIRY);
         List<AppUser> users = appUserRepository.findImpendingStayUsers(from, from.plusDays(3));
 
         for (AppUser user : users) {
             LocalDate expiry = user.getStayExpiry();
-            if (expiry == null || !expiry.minusMonths(STAY_EXTENSION_APPLY_MONTHS).equals(today)) {
+            if (expiry == null || !today.equals(StayExtension.applyStartDate(expiry))) {
                 continue;
             }
             if (isPreferenceDisabled(user.getId(), "STAY_EXPIRY")) {
