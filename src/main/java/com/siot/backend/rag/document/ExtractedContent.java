@@ -1,0 +1,56 @@
+package com.siot.backend.rag.document;
+
+import java.util.List;
+
+/**
+ * PDF 추출 결과.
+ *
+ * @param blocks    읽는 순서대로의 텍스트·표
+ * @param pageCount 전체 쪽 수
+ * @param source    TAGGED(구조 트리) / PLAIN(화면 위치 순서)
+ * @param coverage  구조 트리 글자 수 ÷ 화면 위치 방식 글자 수 (공백 제외). PLAIN 이면 확인한 값 또는 1
+ */
+public record ExtractedContent(List<ContentBlock> blocks, int pageCount, Source source, double coverage) {
+
+    public enum Source {
+        /** 태그 PDF 구조 트리 (머리말·꼬리말 Artifact 제외, 표는 행 단위) */
+        TAGGED,
+        /** PDFTextStripper + PageNoiseFilter */
+        PLAIN
+    }
+
+    /** 텍스트가 하나도 없음 (스캔 이미지 PDF 등) */
+    public boolean isEmpty() {
+        return nonSpaceLength(blocks) == 0;
+    }
+
+    static int nonSpaceLength(List<ContentBlock> blocks) {
+        int length = 0;
+        for (ContentBlock block : blocks) {
+            switch (block) {
+                case ContentBlock.TextLine line -> length += nonSpaceLength(line.text());
+                case ContentBlock.TableBlock table -> {
+                    for (ContentBlock.TableRow row : table.rows()) {
+                        for (ContentBlock.TableField field : row.fields()) {
+                            length += nonSpaceLength(field.value());
+                        }
+                    }
+                    for (String column : table.columns()) {
+                        length += nonSpaceLength(column);
+                    }
+                }
+            }
+        }
+        return length;
+    }
+
+    static int nonSpaceLength(String text) {
+        int length = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (!Character.isWhitespace(text.charAt(i))) {
+                length++;
+            }
+        }
+        return length;
+    }
+}

@@ -52,6 +52,9 @@ dependencies {
     // 챗봇 (CB-13): LangChain4j + Gemini (답변 생성·질문 임베딩)
     implementation 'dev.langchain4j:langchain4j-google-ai-gemini:1.22.0'
 
+    // 문서 적재 (ADM-04): PDF 쪽별 텍스트 추출
+    implementation 'org.apache.pdfbox:pdfbox:3.0.8'
+
     // Lombok / Config metadata
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
