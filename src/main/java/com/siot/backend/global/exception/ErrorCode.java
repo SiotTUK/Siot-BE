@@ -53,6 +53,16 @@ public enum ErrorCode {
     DUPLICATE_EVENT(HttpStatus.CONFLICT, "행사명·시작일·장소가 같은 행사가 이미 있습니다. 그래도 등록하려면 force=true 로 다시 요청해 주세요."),
     EVENT_COLLECTION_RUNNING(HttpStatus.CONFLICT, "행사 수집이 이미 진행 중입니다. 끝난 뒤 다시 시도해 주세요."),
 
+    // ---- 고지서 사진 번역 (RUL-07) ----
+    BILL_CONSENT_REQUIRED(HttpStatus.BAD_REQUEST, "사진을 외부 AI(Google Gemini)로 보내는 데 동의해야 번역할 수 있습니다."),
+    BILL_FILE_INVALID(HttpStatus.BAD_REQUEST, "JPG, PNG, PDF 파일만 올릴 수 있습니다."),
+    BILL_FILE_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "파일이 너무 큽니다. 10MB 이하로 올려 주세요."),
+    BILL_TRANSLATION_TOO_FREQUENT(HttpStatus.TOO_MANY_REQUESTS, "고지서 번역 요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요."),
+    BILL_TRANSLATION_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "고지서 번역 횟수를 모두 사용했습니다. 1시간 뒤에 다시 시도해 주세요."),
+
+    // ---- AI 공통 ----
+    AI_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "지금은 AI 기능을 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."),
+
     // ---- 이메일 인증 (M-01 가입 인증 코드, NTF-09) ----
     EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해 주세요."),
     EMAIL_ALREADY_VERIFIED(HttpStatus.CONFLICT, "이미 인증한 이메일입니다."),
