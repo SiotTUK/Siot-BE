@@ -16,6 +16,7 @@ import com.siot.backend.notification.domain.NotificationPreference;
 import com.siot.backend.notification.repository.NotificationPreferenceRepository;
 import com.siot.backend.notification.repository.NotificationRepository;
 import com.siot.backend.notification.service.NotificationDispatcher;
+import com.siot.backend.schedule.domain.CalendarSchedule;
 import com.siot.backend.schedule.repository.CalendarScheduleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -192,6 +193,64 @@ class NotificationSchedulerTest {
                 .willReturn(Optional.of(NotificationPreference.of("CHECKLIST_DEADLINE", USER_ID, false, 7)));
 
         notificationScheduler.generateRegistrationNotifications();
+
+        verify(notificationRepository, never()).save(any());
+    }
+
+    /** 주민세 개인분 일정 (자동차·주택 조건 없음) */
+    private static CalendarSchedule residentTax(LocalDate startsOn, LocalDate endsOn) {
+        CalendarSchedule schedule = CalendarSchedule.create(null, "TAX_RESIDENT", startsOn, endsOn,
+                "주민세 개인분", "https://www.wetax.go.kr", true, null);
+        ReflectionTestUtils.setField(schedule, "id", 10L);
+        return schedule;
+    }
+
+    private void noTaxSchedulesExcept(Runnable stubs) {
+        lenient().when(calendarScheduleRepository.findImpendingSchedules(any(), any())).thenReturn(List.of());
+        lenient().when(calendarScheduleRepository.findByEndsOnAndActiveTrue(any())).thenReturn(List.of());
+        stubs.run();
+    }
+
+    @Test
+    @DisplayName("세금 납부 시작일 당일에 알림")
+    void tax_onStartDate() {
+        CalendarSchedule schedule = residentTax(TODAY, TODAY.plusDays(15));
+        noTaxSchedulesExcept(() -> given(calendarScheduleRepository.findImpendingSchedules(TODAY, TODAY)).willReturn(List.of(schedule)));
+        given(appUserRepository.findAll()).willReturn(List.of(user()));
+
+        notificationScheduler.generateTaxNotifications();
+
+        Notification saved = savedNotification();
+        assertThat(saved.getKind()).isEqualTo("TAX");
+        assertThat(saved.getTitle()).contains("오늘부터 납부 기간");
+        assertThat(saved.getSourceKey()).isEqualTo("tax:start:10:1");
+    }
+
+    @Test
+    @DisplayName("세금 납부 마감 D-7, D-1 에 알림 (시작일 D-n 이 아니라 마감일 기준)")
+    void tax_beforeDueDate() {
+        CalendarSchedule dueIn7 = residentTax(TODAY.minusDays(8), TODAY.plusDays(7));
+        noTaxSchedulesExcept(() -> given(calendarScheduleRepository.findByEndsOnAndActiveTrue(TODAY.plusDays(7))).willReturn(List.of(dueIn7)));
+        given(appUserRepository.findAll()).willReturn(List.of(user()));
+
+        notificationScheduler.generateTaxNotifications();
+
+        Notification saved = savedNotification();
+        assertThat(saved.getTitle()).contains("납부 마감 D-7");
+        assertThat(saved.getSourceKey()).isEqualTo("tax:due:7:10:1");
+        verify(calendarScheduleRepository).findByEndsOnAndActiveTrue(TODAY.plusDays(1));
+        verify(calendarScheduleRepository, never()).findImpendingSchedules(TODAY.plusDays(7), TODAY.plusDays(7));
+    }
+
+    @Test
+    @DisplayName("자동차세는 자동차가 있는 회원에게만 보낸다")
+    void tax_carOnlyForCarOwners() {
+        CalendarSchedule carTax = CalendarSchedule.create(null, "TAX_CAR", TODAY, TODAY.plusDays(14), "자동차세", null, true, null);
+        ReflectionTestUtils.setField(carTax, "id", 11L);
+        noTaxSchedulesExcept(() -> given(calendarScheduleRepository.findImpendingSchedules(TODAY, TODAY)).willReturn(List.of(carTax)));
+        given(appUserRepository.findAll()).willReturn(List.of(user())); // 자동차 없음
+
+        notificationScheduler.generateTaxNotifications();
 
         verify(notificationRepository, never()).save(any());
     }

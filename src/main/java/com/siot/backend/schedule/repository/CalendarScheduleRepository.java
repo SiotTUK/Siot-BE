@@ -16,4 +16,7 @@ public interface CalendarScheduleRepository extends JpaRepository<CalendarSchedu
 
     @Query("SELECT cs FROM CalendarSchedule cs WHERE cs.active = true AND cs.startsOn >= :startDate AND cs.startsOn <= :endDate")
     List<CalendarSchedule> findImpendingSchedules(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+
+    /** 납부 마감일이 그날인 일정 (NTF-01 마감 D-7·D-1) */
+    List<CalendarSchedule> findByEndsOnAndActiveTrue(LocalDate endsOn);
 }

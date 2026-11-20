@@ -31,6 +31,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 @Slf4j
 @Component
@@ -51,6 +52,7 @@ public class NotificationScheduler {
     private static final List<Integer> STAY_EXPIRY_LEAD_DAYS = List.of(120, 60, 30, 14, 7, 1);
     /** NTF-08: 외국인등록 마감 D-7, D-1 */
     private static final List<Integer> REGISTRATION_LEAD_DAYS = List.of(7, 1);
+    /** NTF-01: 납부 마감 D-7, D-1 (납부 시작일 당일 알림은 따로 보낸다) */
     private static final List<Integer> TAX_LEAD_DAYS = List.of(7, 1);
 
     static final String REGISTRATION_GUIDE_CODE = "CL-01";
@@ -204,69 +206,66 @@ public class NotificationScheduler {
     }
 
     /**
-     * 지방세 정기 납부 일정 알림 생성 (자동차세, 재산세, 주민세 등)
+     * 지방세 정기 납부 알림 (NTF-01): 납부 시작일, 납부 마감 D-7·D-1 (자동차세, 재산세, 주민세 등)
      */
     @Transactional
     public void generateTaxNotifications() {
         LocalDate today = LocalDate.now(clock);
 
+        // 납부 시작일 (당일)
+        for (CalendarSchedule schedule : calendarScheduleRepository.findImpendingSchedules(today, today)) {
+            notifyTaxSchedule(schedule, "start",
+                    title -> String.format("[%s] 오늘부터 납부 기간입니다", title),
+                    title -> String.format("%s 납부 기간(%s ~ %s)이 오늘 시작됐습니다. 위택스(wetax.go.kr) 또는 금융기관에서 기한 내 납부해주세요.",
+                            title, schedule.getStartsOn(), schedule.getEndsOn()));
+        }
+
+        // 납부 마감 D-7, D-1
         for (int leadDays : TAX_LEAD_DAYS) {
-            LocalDate targetStartDate = today.plusDays(leadDays);
-            List<CalendarSchedule> schedules = calendarScheduleRepository.findImpendingSchedules(targetStartDate, targetStartDate);
-
-            for (CalendarSchedule schedule : schedules) {
-                List<AppUser> allUsers = appUserRepository.findAll();
-
-                for (AppUser user : allUsers) {
-                    if (isPreferenceDisabled(user.getId(), "TAX")) {
-                        continue;
-                    }
-
-                    // 대상 사용자 필터링
-                    String scheduleKind = schedule.getKind() != null ? schedule.getKind().toUpperCase() : "";
-                    if (scheduleKind.contains("CAR") && !user.hasResidence(Residence.CAR)) {
-                        continue;
-                    }
-                    if (scheduleKind.contains("PROPERTY") && !user.hasResidence(Residence.HOUSE)) {
-                        continue;
-                    }
-
-                    String sourceKey = String.format("tax:%d:%d:%d", schedule.getId(), user.getId(), leadDays);
-                    if (notificationRepository.existsByUserIdAndSourceKey(user.getId(), sourceKey)) {
-                        continue;
-                    }
-
-                    String scheduleTitle = schedule.getKind();
-                    if (schedule.getGuideId() != null) {
-                        scheduleTitle = guideTranslationRepository
-                                .findByGuideIdAndLanguage(schedule.getGuideId(), user.getLanguage())
-                                .map(GuideTranslation::getTitle)
-                                .orElse(schedule.getKind());
-                    }
-
-                    String title = String.format("[%s] 납부 시작 D-%d 안내", scheduleTitle, leadDays);
-                    String body = String.format("%s 납부 기간(%s ~ %s)이 곧 시작됩니다. 위택스(wetax.go.kr) 또는 금융기관에서 기한 내 납부해주세요.",
-                            scheduleTitle, schedule.getStartsOn(), schedule.getEndsOn());
-                    EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
-
-                    Notification notification = Notification.create(
-                            user.getId(),
-                            "TAX",
-                            null,
-                            null,
-                            schedule.getId(),
-                            null,
-                            sourceKey,
-                            1,
-                            OffsetDateTime.now(),
-                            user.getLanguage(),
-                            title,
-                            body,
-                            emailStatus
-                    );
-                    notificationRepository.save(notification);
-                }
+            for (CalendarSchedule schedule : calendarScheduleRepository.findByEndsOnAndActiveTrue(today.plusDays(leadDays))) {
+                notifyTaxSchedule(schedule, "due:" + leadDays,
+                        title -> String.format("[%s] 납부 마감 D-%d 안내", title, leadDays),
+                        title -> String.format("%s 납부 마감일(%s)까지 %d일 남았습니다. 위택스(wetax.go.kr) 또는 금융기관에서 기한 내 납부해주세요.",
+                                title, schedule.getEndsOn(), leadDays));
             }
+        }
+    }
+
+    /** 납부 대상 회원에게 세금 알림을 한 번씩 만든다. sourceKeyPart 로 시작일·마감 D-n 알림을 구분한다 */
+    private void notifyTaxSchedule(CalendarSchedule schedule, String sourceKeyPart,
+                                   Function<String, String> titleOf, Function<String, String> bodyOf) {
+        String scheduleKind = schedule.getKind() != null ? schedule.getKind().toUpperCase() : "";
+
+        for (AppUser user : appUserRepository.findAll()) {
+            if (isPreferenceDisabled(user.getId(), "TAX")) {
+                continue;
+            }
+            // 대상 사용자 필터링
+            if (scheduleKind.contains("CAR") && !user.hasResidence(Residence.CAR)) {
+                continue;
+            }
+            if (scheduleKind.contains("PROPERTY") && !user.hasResidence(Residence.HOUSE)) {
+                continue;
+            }
+
+            String sourceKey = String.format("tax:%s:%d:%d", sourceKeyPart, schedule.getId(), user.getId());
+            if (notificationRepository.existsByUserIdAndSourceKey(user.getId(), sourceKey)) {
+                continue;
+            }
+
+            String scheduleTitle = schedule.getKind();
+            if (schedule.getGuideId() != null) {
+                scheduleTitle = guideTranslationRepository
+                        .findByGuideIdAndLanguage(schedule.getGuideId(), user.getLanguage())
+                        .map(GuideTranslation::getTitle)
+                        .orElse(schedule.getKind());
+            }
+            EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
+
+            notificationRepository.save(Notification.create(
+                    user.getId(), "TAX", null, null, schedule.getId(), null, sourceKey, 1,
+                    OffsetDateTime.now(clock), user.getLanguage(),
+                    titleOf.apply(scheduleTitle), bodyOf.apply(scheduleTitle), emailStatus));
         }
     }
 
