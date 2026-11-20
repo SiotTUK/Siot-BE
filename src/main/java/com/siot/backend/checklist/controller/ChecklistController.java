@@ -69,6 +69,7 @@ public class ChecklistController {
 
     @Operation(summary = "생활 변화 등록 또는 기준일 수정",
             description = "동일한 생활 변화를 다시 등록하면 기존 항목의 기준일(baseDate)만 변경됩니다.")
+    @ApiErrorCodes({ErrorCode.INVALID_LIFE_CHANGE_CODE})
     @PutMapping("/life-changes/{code}")
     public ResponseEntity<ApiResponse<LifeChangeResponse>> registerLifeChange(
             @AuthenticationPrincipal MemberPrincipal principal,
@@ -82,7 +83,7 @@ public class ChecklistController {
 
     @Operation(summary = "생활 변화 삭제", description = "생활 변화를 삭제하면 관련된 생활 변화 할 일도 체크리스트에서 제외됩니다.")
     @SuccessStatus(value = 204, description = "삭제 완료")
-    @ApiErrorCodes({ErrorCode.LIFE_CHANGE_NOT_FOUND})
+    @ApiErrorCodes({ErrorCode.INVALID_LIFE_CHANGE_CODE, ErrorCode.LIFE_CHANGE_NOT_FOUND})
     @DeleteMapping("/life-changes/{code}")
     public ResponseEntity<Void> deleteLifeChange(
             @AuthenticationPrincipal MemberPrincipal principal,
