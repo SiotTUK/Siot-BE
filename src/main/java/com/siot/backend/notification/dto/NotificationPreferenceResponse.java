@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "알림 수신 설정 응답")
 public record NotificationPreferenceResponse(
-        @Schema(description = "알림 종류 (STAY_EXPIRY, TAX, EVENT, NOTICE_CHANGED 등)", example = "STAY_EXPIRY")
+        @Schema(description = "알림 종류 (STAY_EXPIRY, CHECKLIST_DEADLINE, TAX, EVENT, NOTICE_CHANGED)", example = "STAY_EXPIRY")
         String kind,
         @Schema(description = "알림 수신 여부", example = "true")
         boolean enabled,

@@ -1,6 +1,11 @@
 package com.siot.backend.notification.scheduler;
 
+import com.siot.backend.checklist.domain.ChecklistProgress;
+import com.siot.backend.checklist.domain.Guide;
 import com.siot.backend.checklist.domain.GuideTranslation;
+import com.siot.backend.checklist.domain.ProgressStatus;
+import com.siot.backend.checklist.repository.ChecklistProgressRepository;
+import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.domain.Residence;
@@ -20,9 +25,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -35,10 +42,20 @@ public class NotificationScheduler {
     private final CalendarScheduleRepository calendarScheduleRepository;
     private final GuideTranslationRepository guideTranslationRepository;
     private final NotificationDispatcher notificationDispatcher;
+    private final GuideRepository guideRepository;
+    private final ChecklistProgressRepository checklistProgressRepository;
+    /** 한국 시간 (ClockConfig) */
+    private final Clock clock;
 
     private static final List<Integer> STAY_EXPIRY_LEAD_DAYS = List.of(120, 60, 30, 14, 7, 1);
-    private static final List<Integer> REGISTRATION_LEAD_DAYS = List.of(30, 14, 7, 1);
+    /** NTF-08: 외국인등록 마감 D-7, D-1 */
+    private static final List<Integer> REGISTRATION_LEAD_DAYS = List.of(7, 1);
     private static final List<Integer> TAX_LEAD_DAYS = List.of(7, 1);
+
+    /** CHK-10: 연장 신청 시작일 = 체류 만료일 − 4개월 */
+    static final int STAY_EXTENSION_APPLY_MONTHS = 4;
+    static final String REGISTRATION_GUIDE_CODE = "CL-01";
+    static final String CHECKLIST_DEADLINE_PREFERENCE = "CHECKLIST_DEADLINE";
 
     /**
      * 매일 오전 9시: 체류기간 만료, 외국인등록, 정기 세금 납부 기한 도래 알림 생성 및 발송
@@ -47,6 +64,7 @@ public class NotificationScheduler {
     public void runDailyNotificationJob() {
         log.info("Starting daily notification scheduled job...");
         generateStayExpiryNotifications();
+        generateStayExtensionStartNotifications();
         generateRegistrationNotifications();
         generateTaxNotifications();
         notificationDispatcher.dispatchPendingNotifications();
@@ -58,7 +76,7 @@ public class NotificationScheduler {
      */
     @Transactional
     public void generateStayExpiryNotifications() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
 
         for (int leadDays : STAY_EXPIRY_LEAD_DAYS) {
             LocalDate targetDate = today.plusDays(leadDays);
@@ -99,11 +117,47 @@ public class NotificationScheduler {
     }
 
     /**
-     * 신규 입국자 90일 이내 외국인등록 기한 알림 생성 (CL-01, D-30, 14, 7, 1)
+     * 체류기간 연장 신청 시작일 알림 (NTF-01). 신청 시작일 = 만료일 − 4개월 (CHK-10).
+     * 그달에 같은 날짜가 없으면 말일이므로 (예: 6/30 만료 → 2/28), 만료일이 오늘+4개월 ~ +3일인 회원을 찾아 다시 계산해 거른다.
+     */
+    @Transactional
+    public void generateStayExtensionStartNotifications() {
+        LocalDate today = LocalDate.now(clock);
+        LocalDate from = today.plusMonths(STAY_EXTENSION_APPLY_MONTHS);
+        List<AppUser> users = appUserRepository.findImpendingStayUsers(from, from.plusDays(3));
+
+        for (AppUser user : users) {
+            LocalDate expiry = user.getStayExpiry();
+            if (expiry == null || !expiry.minusMonths(STAY_EXTENSION_APPLY_MONTHS).equals(today)) {
+                continue;
+            }
+            if (isPreferenceDisabled(user.getId(), "STAY_EXPIRY")) {
+                continue;
+            }
+
+            String sourceKey = String.format("stay_extension_start:%d:%s", user.getId(), expiry);
+            if (notificationRepository.existsByUserIdAndSourceKey(user.getId(), sourceKey)) {
+                continue;
+            }
+
+            String title = "체류기간 연장 신청 시작 안내";
+            String body = String.format("오늘부터 체류기간 연장 허가를 신청할 수 있습니다 (체류 만료일 %s). "
+                    + "하이코리아(hikorea.go.kr)에서 방문 예약 또는 전자민원으로 신청하세요.", expiry);
+            EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
+
+            notificationRepository.save(Notification.create(
+                    user.getId(), "STAY_EXPIRY", null, null, null, null, sourceKey, 1,
+                    OffsetDateTime.now(clock), user.getLanguage(), title, body, emailStatus));
+        }
+    }
+
+    /**
+     * 외국인등록 마감 알림 (NTF-08, CL-01, D-7·D-1). 체크리스트에서 완료·해당 없음으로 표시한 회원은 제외한다.
      */
     @Transactional
     public void generateRegistrationNotifications() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
+        Optional<Long> registrationGuideId = guideRepository.findByCode(REGISTRATION_GUIDE_CODE).map(Guide::getId);
 
         for (int leadDays : REGISTRATION_LEAD_DAYS) {
             LocalDate targetEntryDate = today.minusDays(90 - leadDays);
@@ -113,7 +167,10 @@ public class NotificationScheduler {
                 if (user.getUserType() != UserType.NEW) {
                     continue;
                 }
-                if (isPreferenceDisabled(user.getId(), "STAY_EXPIRY")) {
+                if (isPreferenceDisabled(user.getId(), CHECKLIST_DEADLINE_PREFERENCE)) {
+                    continue;
+                }
+                if (registrationGuideId.isPresent() && isChecklistClosed(user.getId(), registrationGuideId.get())) {
                     continue;
                 }
 
@@ -152,7 +209,7 @@ public class NotificationScheduler {
      */
     @Transactional
     public void generateTaxNotifications() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
 
         for (int leadDays : TAX_LEAD_DAYS) {
             LocalDate targetStartDate = today.plusDays(leadDays);
@@ -212,6 +269,14 @@ public class NotificationScheduler {
                 }
             }
         }
+    }
+
+    /** 완료(DONE) 또는 해당 없음(NOT_APPLICABLE)으로 표시한 1회성 항목이면 true */
+    private boolean isChecklistClosed(Long userId, Long guideId) {
+        return checklistProgressRepository
+                .findByUserIdAndGuideIdAndPeriodKey(userId, guideId, ChecklistProgress.ONCE)
+                .map(p -> p.getStatus() == ProgressStatus.DONE || p.getStatus() == ProgressStatus.NOT_APPLICABLE)
+                .orElse(false);
     }
 
     private boolean isPreferenceDisabled(Long userId, String kind) {

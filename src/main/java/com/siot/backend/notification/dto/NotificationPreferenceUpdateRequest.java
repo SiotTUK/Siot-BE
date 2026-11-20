@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 @Schema(description = "알림 수신 설정 변경 요청")
 public record NotificationPreferenceUpdateRequest(
         @NotBlank
-        @Schema(description = "알림 종류 (STAY_EXPIRY, TAX, EVENT, NOTICE_CHANGED 등)", example = "STAY_EXPIRY")
+        @Schema(description = "알림 종류 (STAY_EXPIRY, CHECKLIST_DEADLINE, TAX, EVENT, NOTICE_CHANGED)", example = "STAY_EXPIRY")
         String kind,
 
         @NotNull
