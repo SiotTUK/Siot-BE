@@ -1,12 +1,11 @@
 {
-  "response": {
-    "header": {
-      "resultCode": "00",
-      "resultMsg": "NORMAL SERVICE.",
-      "type": "json"
-    },
-    "body": {
-      "items": [
+  "header": {
+    "resultCode": "00",
+    "resultMsg": "NORMAL SERVICE."
+  },
+  "body": {
+    "items": {
+      "item": [
         {
           "fstvlNm": "제21회 시흥갯골축제",
           "opar": "시흥갯골생태공원",
@@ -45,10 +44,10 @@
         },
         {
           "fstvlNm": "오이도 축제",
-          "opar": "오이도 일원",
+          "opar": "오이도 빨강등대+오이도 선사유적공원",
           "fstvlStartDate": "2026-10-24",
           "fstvlEndDate": "2026-10-25",
-          "fstvlCo": "축제시작일자 및 종료일자는 예정으로 일정이 변경될수 있습니다. 시대표 관광지 오이도 관광활성화를 위한 축제",
+          "fstvlCo": "오이도 해양 체험+불꽃놀이+먹거리 장터",
           "mnnst": "경기도 시흥시",
           "auspcInstt": "경기도 시흥시",
           "suprtInstt": "",
@@ -132,11 +131,26 @@
           "latitude": "37.38979433",
           "longitude": "126.7812607",
           "referenceDate": "2026-08-07"
+        },
+        {
+          "fstvlNm": "광주 추억의 충장축제",
+          "opar": "금남로+충장로+5.18민주광장+예술의거리 일원",
+          "fstvlStartDate": "2026-10-07",
+          "fstvlEndDate": "2026-10-11",
+          "fstvlCo": "충장 꿈나무 축제+젊음의 행진+K-뷰티&한복쇼",
+          "mnnstNm": "광주광역시 동구",
+          "phoneNumber": "062-608-4672",
+          "homepageUrl": "http://recollection.kr/",
+          "rdnmadr": "전남광주통합특별시 동구 금남로 220",
+          "lnmadr": "전남광주통합특별시 동구 금남로5가 1",
+          "latitude": "35.14",
+          "longitude": "126.91",
+          "referenceDate": "2026-09-16"
         }
-      ],
-      "totalCount": "7",
-      "numOfRows": "1000",
-      "pageNo": "1"
-    }
+      ]
+    },
+    "totalCount": "8",
+    "numOfRows": "1000",
+    "pageNo": "1"
   }
 }
