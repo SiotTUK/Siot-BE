@@ -174,6 +174,14 @@ class BillTranslationIntegrationTest {
                 .andExpect(jsonPath("$.code").value("AI_UNAVAILABLE"));
     }
 
+    /** application.yml 기본값: 전용 모델은 비어 있어 채팅 모델을 쓰고, 제한 시간은 45초 */
+    @Test
+    void billModelDefaultsToChatModel(@Autowired com.siot.backend.translation.config.TranslationProperties properties,
+                                      @Autowired com.siot.backend.rag.config.GeminiProperties gemini) {
+        assertThat(properties.billModelOr(gemini.chatModel())).isEqualTo(gemini.chatModel());
+        assertThat(properties.billTimeout()).isEqualTo(java.time.Duration.ofSeconds(45));
+    }
+
     /** multipart 한도(30MB)를 넘은 요청: 고지서 경로면 고지서 문구, 나머지는 문서 문구 */
     @Test
     void multipartLimitUsesBillCodeOnBillPath() {

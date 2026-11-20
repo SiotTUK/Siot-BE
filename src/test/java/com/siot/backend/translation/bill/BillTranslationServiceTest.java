@@ -53,7 +53,7 @@ class BillTranslationServiceTest {
     private final AppUserRepository userRepository = mock(AppUserRepository.class);
     private final GuideRepository guideRepository = mock(GuideRepository.class);
     private final GuideTranslationRepository guideTranslationRepository = mock(GuideTranslationRepository.class);
-    private final TranslationProperties properties = new TranslationProperties(DataSize.ofMegabytes(10), Duration.ZERO,
+    private final TranslationProperties properties = new TranslationProperties(null, Duration.ofSeconds(45), DataSize.ofMegabytes(10), Duration.ZERO,
             new TranslationProperties.RateLimit(10, Duration.ofHours(1), Duration.ofSeconds(2)));
     private final BillTranslationService service = new BillTranslationService(billReader, rateLimiter, properties,
             userRepository, guideRepository, guideTranslationRepository, CLOCK);

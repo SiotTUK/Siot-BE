@@ -92,7 +92,8 @@ class BillReaderLiveTest {
     }
 
     private static BillTranslationService service(GeminiProperties props) {
-        TranslationProperties translationProps = new TranslationProperties(DataSize.ofMegabytes(10),
+        TranslationProperties translationProps = new TranslationProperties(System.getenv("GEMINI_BILL_MODEL"),
+                Duration.ofSeconds(60), DataSize.ofMegabytes(10),
                 Duration.ofSeconds(5), new TranslationProperties.RateLimit(100, Duration.ofHours(1), Duration.ofMillis(1)));
         BillReader reader = new TranslationConfig().billReader(props, translationProps, JsonMapper.builder().build());
         RequestRateLimiter limiter = mock(RequestRateLimiter.class);

@@ -50,7 +50,10 @@ public class TranslationConfig {
         return new GeminiTranslator(model, jsonMapper);
     }
 
-    /** RUL-07 고지서 사진 읽기. 429·503 재시도는 GeminiBillReader 가 한 번만 한다 (모델 자체 재시도 없음) */
+    /**
+     * RUL-07 고지서 사진 읽기. 모델·제한 시간은 siot.translation.bill-model·bill-timeout (모델이 비어 있으면 채팅 모델).
+     * 429·503 재시도는 GeminiBillReader 가 한 번만 한다 (모델 자체 재시도 없음)
+     */
     @Bean
     public BillReader billReader(GeminiProperties props, TranslationProperties translationProps,
                                  JsonMapper jsonMapper) {
@@ -61,9 +64,9 @@ public class TranslationConfig {
         }
         GoogleAiGeminiChatModel model = GoogleAiGeminiChatModel.builder()
                 .apiKey(props.apiKey())
-                .modelName(props.chatModel())
+                .modelName(translationProps.billModelOr(props.chatModel()))
                 .temperature(0.0)
-                .timeout(props.timeout())
+                .timeout(translationProps.billTimeout())
                 .maxRetries(0)
                 .logRequests(false)
                 .logResponses(false)
