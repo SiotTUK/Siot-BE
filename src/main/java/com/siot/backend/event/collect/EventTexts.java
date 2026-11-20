@@ -25,7 +25,77 @@ public final class EventTexts {
     private static final Pattern TIME_RANGE = Pattern.compile(
             "^\\s*(\\d{1,2}):(\\d{2})\\s*[~∼〜\\-–]\\s*(\\d{1,2}):(\\d{2})(?!\\d)");
 
+    /** 줄을 바꾸는 태그 (<br>, </p>, </div>) */
+    private static final Pattern LINE_BREAK_TAG = Pattern.compile("(?i)<br\\s*/?>|</p\\s*>|</div\\s*>");
+    private static final Pattern TAG = Pattern.compile("<[^>]*>");
+    private static final Pattern HREF = Pattern.compile("(?i)href\\s*=\\s*[\"']?([^\"'\\s>]+)");
+    private static final Pattern HTTP_URL = Pattern.compile("(?i)https?://[^\\s\"'<>]+");
+    private static final Pattern WWW_URL = Pattern.compile("(?i)(?<![\\w./])www\\.[^\\s\"'<>]+");
+
     private EventTexts() {
+    }
+
+    /**
+     * HTML 조각을 글로 바꾼다 (TourAPI overview). &lt;br&gt; 은 줄바꿈, 다른 태그는 공백, 줄마다 공백을 다듬고 빈 줄은 하나까지.
+     *
+     * @return 비면 null
+     */
+    public static String htmlToText(String html) {
+        if (html == null) {
+            return null;
+        }
+        String text = LINE_BREAK_TAG.matcher(html.replace("\r\n", "\n")).replaceAll("\n");
+        text = unescapeHtml(TAG.matcher(text).replaceAll(" "));
+        StringBuilder result = new StringBuilder();
+        boolean blank = false;
+        for (String line : text.split("\n", -1)) {
+            String cleaned = clean(line);
+            if (cleaned == null) {
+                blank = !result.isEmpty();
+                continue;
+            }
+            if (!result.isEmpty()) {
+                result.append(blank ? "\n\n" : "\n");
+            }
+            result.append(cleaned);
+            blank = false;
+        }
+        return result.isEmpty() ? null : result.toString();
+    }
+
+    /**
+     * 첫 링크 (TourAPI homepage): {@code <a href="...">} 면 href, 아니면 글 안의 http(s)://, 그것도 없으면 www.로 시작하는 주소.
+     *
+     * @return 없으면 null
+     */
+    public static String firstUrl(String html) {
+        if (html == null || html.isBlank()) {
+            return null;
+        }
+        Matcher href = HREF.matcher(html);
+        while (href.find()) {
+            String url = unescapeHtml(href.group(1)).strip();
+            if (url.regionMatches(true, 0, "http://", 0, 7) || url.regionMatches(true, 0, "https://", 0, 8)) {
+                return url;
+            }
+        }
+        String text = unescapeHtml(TAG.matcher(html).replaceAll(" "));
+        Matcher http = HTTP_URL.matcher(text);
+        if (http.find()) {
+            return http.group();
+        }
+        Matcher www = WWW_URL.matcher(text);
+        return www.find() ? "http://" + www.group() : null;
+    }
+
+    private static String unescapeHtml(String text) {
+        return text.replace("&nbsp;", " ")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&#039;", "'")
+                .replace("&amp;", "&");
     }
 
     /** 앞뒤 공백을 빼고 겹친 공백을 하나로. 비면 null */

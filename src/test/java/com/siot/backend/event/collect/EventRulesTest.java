@@ -32,6 +32,30 @@ class EventRulesTest {
         assertThat(EventTexts.times(null)).containsExactly(null, null);
     }
 
+    /** TourAPI detailCommon2 homepage: a 태그·글 속 링크·www 주소 */
+    @Test
+    void extractsFirstUrlFromHomepageHtml() {
+        assertThat(EventTexts.firstUrl("<a href=\"http://www.siheung.go.kr\" target=\"_blank\">시흥시</a>"))
+                .isEqualTo("http://www.siheung.go.kr");
+        assertThat(EventTexts.firstUrl("<a href='https://a.test/x?a=1&amp;b=2'>a.test</a>"))
+                .isEqualTo("https://a.test/x?a=1&b=2");
+        assertThat(EventTexts.firstUrl("홈페이지 https://b.test/path 참고")).isEqualTo("https://b.test/path");
+        assertThat(EventTexts.firstUrl("www.c.test")).isEqualTo("http://www.c.test");
+        assertThat(EventTexts.firstUrl("<a href=\"#\">없음</a>")).isNull();
+        assertThat(EventTexts.firstUrl("")).isNull();
+        assertThat(EventTexts.firstUrl(null)).isNull();
+    }
+
+    /** TourAPI detailCommon2 overview: br 은 줄바꿈, 다른 태그는 지우고, 빈 줄은 하나까지 */
+    @Test
+    void convertsOverviewHtmlToText() {
+        assertThat(EventTexts.htmlToText("첫 줄<br>둘째 줄<br/><br />셋째 &amp; <b>굵게</b>"))
+                .isEqualTo("첫 줄\n둘째 줄\n\n셋째 & 굵게");
+        assertThat(EventTexts.htmlToText("<p>문단</p><p>  다음   문단 </p>")).isEqualTo("문단\n다음 문단");
+        assertThat(EventTexts.htmlToText("<br><br>")).isNull();
+        assertThat(EventTexts.htmlToText(null)).isNull();
+    }
+
     @Test
     void normalizesNamesForCrossSourceDuplicates() {
         assertThat(EventNames.normalize("제21회 시흥갯골축제")).isEqualTo(EventNames.normalize("시흥갯골축제"));

@@ -126,6 +126,8 @@ siot:
       # 시흥시 법정동 코드 (경기 41, 시흥 390)
       region-code: "41"
       district-code: "390"
+      # 행사마다 원문 링크(homepage)·설명(overview)을 한 번 더 받는다. 실패하면 그 행사는 목록 값만으로 저장
+      detail-url: https://apis.data.go.kr/B551011/KorService2/detailCommon2
     festival:
       base-url: https://api.data.go.kr/openapi/tn_pubr_public_cltur_fstvl_api
       page-size: 1000

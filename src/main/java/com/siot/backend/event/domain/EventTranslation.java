@@ -5,6 +5,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.Objects;
+
 @Getter
 @Entity
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -104,6 +106,34 @@ public class EventTranslation {
             venue = newVenue;
         }
         sourceRevision = revision;
+    }
+
+    /** 관리자가 원문(ko) 제목을 고친다 (EVE-08). 잠가서 수집이 덮어쓰지 않게 한다 */
+    public boolean editTitle(String value, boolean lock) {
+        titleLocked |= lock;
+        if (Objects.equals(title, value)) {
+            return false;
+        }
+        title = value;
+        return true;
+    }
+
+    public boolean editDescription(String value, boolean lock) {
+        descriptionLocked |= lock;
+        if (Objects.equals(description, value)) {
+            return false;
+        }
+        description = value;
+        return true;
+    }
+
+    public boolean editVenue(String value, boolean lock) {
+        venueLocked |= lock;
+        if (Objects.equals(venue, value)) {
+            return false;
+        }
+        venue = value;
+        return true;
     }
 
     public void markSourceRevision(int revision) {

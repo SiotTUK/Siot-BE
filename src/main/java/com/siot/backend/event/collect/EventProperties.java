@@ -46,10 +46,11 @@ public record EventProperties(
      * @param lookbackDays 요청 eventStartDate = 오늘 - lookbackDays (진행 중인 축제가 빠지지 않게). 저장은 종료일 >= 오늘만
      * @param regionCode   법정동 시도 코드 (경기 41)
      * @param districtCode 법정동 시군구 코드 (시흥 390)
+     * @param detailUrl    공통정보조회 detailCommon2 (원문 링크 homepage·설명 overview). 행사마다 한 번 부른다
      */
     public record TourApi(@NotBlank String baseUrl, @Positive int pageSize, @Positive int maxPages,
                           @PositiveOrZero int lookbackDays, @NotBlank String regionCode,
-                          @NotBlank String districtCode) {
+                          @NotBlank String districtCode, @NotBlank String detailUrl) {
     }
 
     /**

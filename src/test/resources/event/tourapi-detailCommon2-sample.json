@@ -1,0 +1,47 @@
+{
+ "response": {
+  "header": {
+   "resultCode": "0000",
+   "resultMsg": "OK"
+  },
+  "body": {
+   "items": {
+    "item": [
+     {
+      "contentid": "142197",
+      "contenttypeid": "15",
+      "title": "시흥갯골축제",
+      "createdtime": "20070813090000",
+      "modifiedtime": "20260915103639",
+      "tel": "031-310-2916, 2919~2920",
+      "telname": "시흥시청 문화예술과",
+      "homepage": "<a href=\"https://www.siheung.go.kr/gaetgol/main.do?menu=1&amp;tab=2\" target=\"_blank\" title=\"새창 : 시흥갯골축제 홈페이지로 이동\">www.siheung.go.kr/gaetgol</a>",
+      "firstimage": "https://tong.visitkorea.or.kr/cms/resource/09/3528809_image2_1.jpg",
+      "firstimage2": "https://tong.visitkorea.or.kr/cms/resource/09/3528809_image3_1.jpg",
+      "cpyrhtDivCd": "Type3",
+      "areacode": "",
+      "sigungucode": "",
+      "lDongRegnCd": "41",
+      "lDongSignguCd": "390",
+      "lclsSystm1": "EV",
+      "lclsSystm2": "EV01",
+      "lclsSystm3": "EV010100",
+      "cat1": "",
+      "cat2": "",
+      "cat3": "",
+      "addr1": "경기도 시흥시 동서로 287 (장곡동)",
+      "addr2": "",
+      "zipcode": "14971",
+      "mapx": "126.7812405855",
+      "mapy": "37.3897711469",
+      "mlevel": "6",
+      "overview": "시흥갯골축제는 내만갯골과 소금창고가 있는 시흥갯골생태공원에서 열리는 축제이다.<br>\n<br />갯골 생태 체험, 공연 &amp; 전시가 열린다.<BR/>  가족과 함께   즐길 수 있다."
+     }
+    ]
+   },
+   "numOfRows": 1,
+   "pageNo": 1,
+   "totalCount": 1
+  }
+ }
+}

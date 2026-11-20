@@ -64,21 +64,12 @@ public class EventTranslationUpdater {
         int translated = 0;
         boolean first = true;
         for (Long eventId : ids) {
-            Optional<Original> original = transactionTemplate.execute(status -> readOriginal(eventId));
-            if (original == null || original.isEmpty()) {
-                continue;
-            }
             try {
                 if (!first) {
                     sleeper.sleep(pause);
                 }
                 first = false;
-                Map<String, String> titles = translateAll(original.get().title());
-                Map<String, String> descriptions = translateAll(original.get().description());
-                Map<String, String> venues = translateAll(original.get().venue());
-                Boolean saved = transactionTemplate.execute(status ->
-                        save(eventId, original.get().revision(), titles, descriptions, venues));
-                if (Boolean.TRUE.equals(saved)) {
+                if (translate(eventId)) {
                     translated++;
                 }
             } catch (AiUnavailableException e) {
@@ -91,6 +82,26 @@ public class EventTranslationUpdater {
             }
         }
         return translated;
+    }
+
+    /**
+     * 행사 하나의 en/zh/vi 번역을 지금 원문(ko)으로 만든다 (수집 주기, 관리자 등록 직후).
+     * 트랜잭션 안에서 부르지 않는다 (Gemini 호출 동안 연결을 잡지 않게).
+     *
+     * @return 저장했으면 true. 행사·원문이 없거나 번역하는 동안 원문이 바뀌었으면 false
+     * @throws AiUnavailableException 번역 실패 (source_revision 은 그대로라 다음 주기에 다시 한다)
+     */
+    public boolean translate(Long eventId) {
+        Optional<Original> original = transactionTemplate.execute(status -> readOriginal(eventId));
+        if (original == null || original.isEmpty()) {
+            return false;
+        }
+        Map<String, String> titles = translateAll(original.get().title());
+        Map<String, String> descriptions = translateAll(original.get().description());
+        Map<String, String> venues = translateAll(original.get().venue());
+        Boolean saved = transactionTemplate.execute(status ->
+                save(eventId, original.get().revision(), titles, descriptions, venues));
+        return Boolean.TRUE.equals(saved);
     }
 
     private Optional<Original> readOriginal(Long eventId) {
