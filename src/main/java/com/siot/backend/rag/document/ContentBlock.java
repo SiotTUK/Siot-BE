@@ -13,8 +13,20 @@ public sealed interface ContentBlock permits ContentBlock.TextLine, ContentBlock
      *
      * @param page         PDF 뷰어 기준 쪽 번호 (1부터)
      * @param newParagraph 새 문단의 시작 (태그 PDF 의 문단 경계, 태그 없는 PDF 의 빈 줄 뒤)
+     * @param fontSize     줄의 글자 크기 (pt, 글자 수 가중 평균). 0 이면 모름 (태그 PDF 등)
+     * @param bold         줄 글자의 절반 이상이 굵은 글꼴
+     * @param fullWidth    쪽의 오른쪽 끝까지 찬 줄 (태그 없는 PDF 에서만, 문장이 다음 줄로 이어짐)
      */
-    record TextLine(String text, int page, boolean newParagraph) implements ContentBlock {
+    record TextLine(String text, int page, boolean newParagraph, float fontSize, boolean bold, boolean fullWidth)
+            implements ContentBlock {
+
+        public TextLine(String text, int page, boolean newParagraph) {
+            this(text, page, newParagraph, 0, false, false);
+        }
+
+        public TextLine(String text, int page, boolean newParagraph, float fontSize, boolean bold) {
+            this(text, page, newParagraph, fontSize, bold, false);
+        }
     }
 
     /**

@@ -73,6 +73,68 @@ class PageNoiseFilterTest {
                 assertThat(page.text()).contains("※ 자세한 내용은 1345"));
     }
 
+    /** 05: 절 제목 옆의 "󰁾 목차" 링크는 쪽 중간에도 있고, 화면 순서로 읽으면 아이콘과 글자가 떨어지기도 한다 */
+    @Test
+    void removesIconLinksAnywhereButKeepsIconBullets() {
+        String tocIcon = "󰁾"; // U+F007E
+        // 02: 같은 아이콘(U+F000)이 여러 제목 앞에 기호로 쓰인다
+        List<String> iconTitles = List.of("외국인 기술자 소득세 감면", "외국인 교사 소득세 면제", "자녀세액공제 금액 확대",
+                "해외 우수인재 소득세 감면", "소득공제 적용 여부");
+        List<PageText> pages = new ArrayList<>();
+        for (int i = 1; i <= 10; i++) {
+            String link = i == 3
+                    ? tocIcon + " ②외교통 상부 추천서 ③대사관의 협조공문 또는 목차 고유번호증"   // 아이콘과 글자가 떨어짐
+                    : tocIcon + " 목차 " + i + ". 무사증 입국자 체류자격 변경허가";
+            pages.add(new PageText(i, "첫 줄 " + "가".repeat(i) + "\n본문 " + i + "번 내용입니다.\n" + link
+                    + "\n " + iconTitles.get(i % 5) + "\n둘째 본문 " + i + "번입니다.\n마지막 줄 " + "다".repeat(i)));
+        }
+
+        List<PageText> cleaned = PageNoiseFilter.clean(pages);
+
+        assertThat(cleaned).allSatisfy(page -> assertThat(page.text()).doesNotContain(tocIcon, "목차"));
+        assertThat(cleaned.get(0).text()).contains("1. 무사증 입국자 체류자격 변경허가");
+        assertThat(cleaned.get(2).text()).contains("③대사관의 협조공문 또는 고유번호증");
+        // 여러 제목 앞에 기호로 쓰인 아이콘은 남는다
+        assertThat(cleaned.get(0).text()).contains(" 외국인 교사 소득세 면제");
+        assertThat(cleaned.get(4).text()).contains(" 외국인 기술자 소득세 감면");
+    }
+
+    /** 줄이 많은 쪽은 위·아래 3줄을 보고, 전체 쪽의 30% 이상에 나오면 머리말·꼬리말 (03 "28 비자 내비게이터") */
+    @Test
+    void removesFooterRepeatedOnThirtyPercentOfPagesWithinThreeEdgeLines() {
+        List<PageText> pages = new ArrayList<>();
+        for (int i = 1; i <= 10; i++) {
+            StringBuilder text = new StringBuilder();
+            for (int line = 1; line <= 6; line++) {
+                text.append(i).append("쪽 ").append(line).append("번째 본문 ").append("가".repeat(line)).append('\n');
+            }
+            if (i % 3 == 0) {
+                text.append(i * 2).append(" 비자 내비게이터\n");   // 꼬리말 (쪽 번호와 붙음)
+            }
+            text.append("끝 줄 ").append("나".repeat(i)).append('\n').append("- ").append(i).append(" -");
+            pages.add(new PageText(i, text.toString()));
+        }
+
+        List<PageText> cleaned = PageNoiseFilter.clean(pages);
+
+        assertThat(cleaned).allSatisfy(page -> assertThat(page.text()).doesNotContain("비자 내비게이터", " -"));
+        assertThat(cleaned.get(2).text()).contains("3쪽 6번째 본문", "끝 줄");
+    }
+
+    /** 태그 PDF 는 구조 트리에서 꺼낸 줄을 반복 머리말·꼬리말과 비교한다 (숫자는 무시) */
+    @Test
+    void matchesTaggedLinesAgainstRepeatedLines() {
+        List<PageText> pages = new ArrayList<>();
+        for (int i = 1; i <= 4; i++) {
+            pages.add(new PageText(i, "본문 " + "가".repeat(i) + " 내용입니다.\n둘째 줄 " + "나".repeat(i) + "\n" + (i + 26) + " 비자 내비게이터"));
+        }
+        var repeated = PageNoiseFilter.repeatedLines(pages);
+
+        assertThat(PageNoiseFilter.isRepeatedLine("비자 내비게이터", repeated)).isTrue();
+        assertThat(PageNoiseFilter.isRepeatedLine("28 비자 내비게이터", repeated)).isTrue();
+        assertThat(PageNoiseFilter.isRepeatedLine("비자 내비게이터란 무엇인가", repeated)).isFalse();
+    }
+
     @Test
     void shortDocumentKeepsHeaderButDropsPageNumber() {
         List<PageText> pages = List.of(

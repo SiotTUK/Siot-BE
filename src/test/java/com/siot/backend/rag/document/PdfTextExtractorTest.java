@@ -13,6 +13,24 @@ class PdfTextExtractorTest {
     private final PdfTextExtractor extractor = new PdfTextExtractor();
 
     @Test
+    void detectsBoldFontsByName() {
+        assertThat(PdfTextExtractor.isBold(new org.apache.pdfbox.pdmodel.font.PDType1Font(
+                org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName.HELVETICA_BOLD))).isTrue();
+        assertThat(PdfTextExtractor.isBold(new org.apache.pdfbox.pdmodel.font.PDType1Font(
+                org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName.HELVETICA))).isFalse();
+    }
+
+    @Test
+    void recordsFontSizePerLine() throws IOException {
+        byte[] pdf = TestPdfs.create(List.of(List.of("1. Alien Registration", "Register within 90 days.")));
+
+        PageText page = extractor.extract(pdf).getFirst();
+
+        assertThat(page.styles().get("Register within 90 days.").fontSize()).isEqualTo(10f);
+        assertThat(page.styles().get("Register within 90 days.").bold()).isFalse();
+    }
+
+    @Test
     void extractsTextPerPageWithoutHeaderFooterAndPageNumber() throws IOException {
         byte[] pdf = TestPdfs.create(List.of(
                 List.of("Siheung Living Guide 2026", "", "Alien registration is required within 90 days.", "", "- 1 -"),

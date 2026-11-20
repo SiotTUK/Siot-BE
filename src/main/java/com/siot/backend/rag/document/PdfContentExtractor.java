@@ -54,7 +54,9 @@ public class PdfContentExtractor {
                 int contentLength = ExtractedContent.nonSpaceLength(toBlocks(raw)) - tagged.artifactLength();
                 double coverage = contentLength <= 0 ? (taggedLength > 0 ? 1 : 0) : (double) taggedLength / contentLength;
                 if (taggedLength > 0 && coverage >= MIN_TAGGED_COVERAGE) {
-                    return new ExtractedContent(withoutPages(tagged.blocks(), excludedPages), pageCount, Source.TAGGED,
+                    // 구조 트리에 Artifact 로 표시되지 않은 머리말·꼬리말 ("28 비자 내비게이터")
+                    List<ContentBlock> blocks = withoutRepeatedLines(tagged.blocks(), PageNoiseFilter.repeatedLines(raw));
+                    return new ExtractedContent(withoutPages(blocks, excludedPages), pageCount, Source.TAGGED,
                             coverage);
                 }
                 log.info("Tagged PDF structure covers only {}% of the text, using plain extraction",
@@ -91,18 +93,36 @@ public class PdfContentExtractor {
         return kept;
     }
 
-    /** 쪽 텍스트를 줄 단위로. 빈 줄 다음 줄이 새 문단 */
+    /** 반복 머리말·꼬리말과 같은 줄을 뺀다 (표는 그대로) */
+    static List<ContentBlock> withoutRepeatedLines(List<ContentBlock> blocks, Set<String> repeated) {
+        if (repeated.isEmpty()) {
+            return blocks;
+        }
+        List<ContentBlock> kept = new ArrayList<>(blocks.size());
+        for (ContentBlock block : blocks) {
+            if (block instanceof TextLine line && PageNoiseFilter.isRepeatedLine(line.text(), repeated)) {
+                continue;
+            }
+            kept.add(block);
+        }
+        return kept;
+    }
+
+    /** 쪽 텍스트를 줄 단위로. 빈 줄 다음 줄이 새 문단. 줄 모양(글자 크기·굵기)을 알면 함께 싣는다 */
     public static List<ContentBlock> toBlocks(List<PageText> pages) {
         List<ContentBlock> blocks = new ArrayList<>();
         boolean blank = true;
         for (PageText page : pages) {
             for (String raw : page.text().split("\n")) {
-                String text = raw.replace(' ', ' ').strip();
+                String text = PdfTextExtractor.styleKey(raw);
                 if (text.isEmpty()) {
                     blank = true;
                     continue;
                 }
-                blocks.add(new TextLine(text, page.page(), blank));
+                PageText.LineStyle style = page.styles().get(text);
+                blocks.add(style == null
+                        ? new TextLine(text, page.page(), blank)
+                        : new TextLine(text, page.page(), blank, style.fontSize(), style.bold(), style.fullWidth()));
                 blank = false;
             }
         }

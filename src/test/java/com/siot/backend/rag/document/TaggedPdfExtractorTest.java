@@ -153,7 +153,7 @@ class TaggedPdfExtractorTest {
         assertThat(extractor.extract(tagged, Set.of(2)).blocks())
                 .containsExactly(new TextLine("CONTENTS", 1, true));
         assertThat(extractor.extract(plain, Set.of(1)).blocks())
-                .containsExactly(new TextLine("Register within 90 days.", 2, false));
+                .containsExactly(new TextLine("Register within 90 days.", 2, false, 10, false));
     }
 
     @Test
@@ -190,8 +190,9 @@ class TaggedPdfExtractorTest {
         ExtractedContent content = extractor.extract(pdf);
 
         assertThat(content.source()).isEqualTo(Source.PLAIN);
+        // 태그 없는 PDF 는 줄마다 글자 크기·굵기를 함께 싣는다 (TestPdfs 는 Helvetica 10pt)
         assertThat(content.blocks()).containsExactly(
-                new TextLine("1. Alien Registration", 1, true),
-                new TextLine("Register within 90 days.", 1, false));
+                new TextLine("1. Alien Registration", 1, true, 10, false),
+                new TextLine("Register within 90 days.", 1, false, 10, false));
     }
 }
