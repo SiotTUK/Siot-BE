@@ -5,6 +5,7 @@ import com.siot.backend.checklist.dto.ChecklistItemResponse;
 import com.siot.backend.checklist.dto.ChecklistProgressUpdateRequest;
 import com.siot.backend.checklist.dto.ChecklistSummaryResponse;
 import com.siot.backend.checklist.repository.*;
+import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.domain.Purpose;
 import com.siot.backend.member.domain.Residence;
@@ -43,6 +44,8 @@ class ChecklistServiceTest {
     private MemberLifeChangeRepository lifeChangeRepository;
     @Mock
     private AppUserRepository appUserRepository;
+    @Mock
+    private GuideDocumentReferenceRepository guideDocumentReferenceRepository;
 
     @InjectMocks
     private ChecklistService checklistService;
@@ -73,6 +76,7 @@ class ChecklistServiceTest {
         ChecklistProgress progressCl01 = ChecklistProgress.of(userId, cl01.getId(), "", ProgressStatus.DONE);
         given(progressRepository.findByUserId(userId)).willReturn(List.of(progressCl01));
         given(lifeChangeRepository.findByUserId(userId)).willReturn(Collections.emptyList());
+        given(guideDocumentReferenceRepository.findByGuideIdIn(anyCollection())).willReturn(Collections.emptyList());
 
         // when
         ChecklistSummaryResponse summary = checklistService.getMyChecklist(userId, "ko");
@@ -114,5 +118,40 @@ class ChecklistServiceTest {
 
         // then
         verify(progressRepository).save(any(ChecklistProgress.class));
+    }
+
+    @Test
+    @DisplayName("CHK-08 외국인등록 마감 D-30 이내 임박 시 경고 플래그 및 경고 문구 노출 검증")
+    void getMyChecklist_warning_on_d30() {
+        // given
+        Long userId = 1L;
+        AppUser user = AppUser.create("user@siot.kr", "hash");
+        // 입국 후 70일 경과 -> 90일 만료까지 D-20 (D-30 이내)
+        user.updateOnboarding(UserType.NEW, LocalDate.now().minusDays(70), Purpose.WORK, Set.of(Residence.CAR), LocalDate.now().plusMonths(6));
+
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+
+        Guide cl01 = Guide.create("CL-01", "CHECKLIST", ItemType.REQUIRED, "기초 행정", 1, null, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(cl01, "id", 1L);
+
+        given(guideRepository.findByKindOrderBySortOrderAsc("CHECKLIST")).willReturn(List.of(cl01));
+        given(guideRepository.findByKindOrderBySortOrderAsc("LIFE_CHANGE_TASK")).willReturn(Collections.emptyList());
+        given(guideTranslationRepository.findByGuideIdInAndLanguage(anyCollection(), eq("ko"))).willReturn(List.of(
+                GuideTranslation.create(cl01.getId(), "ko", "외국인등록", "요약", "본문", "90일", "출입국", List.of(), null, null, null, null)
+        ));
+        given(progressRepository.findByUserId(userId)).willReturn(Collections.emptyList());
+        given(lifeChangeRepository.findByUserId(userId)).willReturn(Collections.emptyList());
+        given(guideDocumentReferenceRepository.findByGuideIdIn(anyCollection())).willReturn(Collections.emptyList());
+
+        // when
+        ChecklistSummaryResponse summary = checklistService.getMyChecklist(userId, "ko");
+
+        // then
+        assertThat(summary.items()).hasSize(1);
+        ChecklistItemResponse item = summary.items().get(0);
+        assertThat(item.code()).isEqualTo("CL-01");
+        assertThat(item.dDay()).isLessThanOrEqualTo(30L);
+        assertThat(item.warning()).isTrue();
+        assertThat(item.warningMessage()).contains("외국인등록");
     }
 }

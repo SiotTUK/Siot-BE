@@ -2,6 +2,12 @@ package com.siot.backend.notification.scheduler;
 
 import com.siot.backend.checklist.domain.GuideTranslation;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
+import com.siot.backend.event.domain.Event;
+import com.siot.backend.event.domain.EventSubscription;
+import com.siot.backend.event.domain.EventTranslation;
+import com.siot.backend.event.repository.EventRepository;
+import com.siot.backend.event.repository.EventSubscriptionRepository;
+import com.siot.backend.event.repository.EventTranslationRepository;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.domain.Residence;
 import com.siot.backend.member.domain.UserType;
@@ -34,6 +40,9 @@ public class NotificationScheduler {
     private final NotificationPreferenceRepository preferenceRepository;
     private final CalendarScheduleRepository calendarScheduleRepository;
     private final GuideTranslationRepository guideTranslationRepository;
+    private final EventRepository eventRepository;
+    private final EventSubscriptionRepository eventSubscriptionRepository;
+    private final EventTranslationRepository eventTranslationRepository;
     private final NotificationDispatcher notificationDispatcher;
 
     private static final List<Integer> STAY_EXPIRY_LEAD_DAYS = List.of(120, 60, 30, 14, 7, 1);
@@ -41,7 +50,7 @@ public class NotificationScheduler {
     private static final List<Integer> TAX_LEAD_DAYS = List.of(7, 1);
 
     /**
-     * 매일 오전 9시: 체류기간 만료, 외국인등록, 정기 세금 납부 기한 도래 알림 생성 및 발송
+     * 매일 오전 9시: 체류기간 만료, 외국인등록, 정기 세금 납부, 관심 행사 시작 기한 도래 알림 생성 및 발송
      */
     @Scheduled(cron = "0 0 9 * * *", zone = "Asia/Seoul")
     public void runDailyNotificationJob() {
@@ -49,6 +58,7 @@ public class NotificationScheduler {
         generateStayExpiryNotifications();
         generateRegistrationNotifications();
         generateTaxNotifications();
+        generateEventNotifications();
         notificationDispatcher.dispatchPendingNotifications();
         log.info("Daily notification scheduled job finished.");
     }
@@ -199,6 +209,69 @@ public class NotificationScheduler {
                             null,
                             null,
                             schedule.getId(),
+                            null,
+                            sourceKey,
+                            1,
+                            OffsetDateTime.now(),
+                            user.getLanguage(),
+                            title,
+                            body,
+                            emailStatus
+                    );
+                    notificationRepository.save(notification);
+                }
+            }
+        }
+    }
+
+    /**
+     * 행사 시작 사전 알림 생성 (NTF-02, EVE-06, D-7, D-1)
+     */
+    @Transactional
+    public void generateEventNotifications() {
+        LocalDate today = LocalDate.now();
+        List<Integer> eventLeadDays = List.of(7, 1);
+
+        for (int leadDays : eventLeadDays) {
+            LocalDate targetDate = today.plusDays(leadDays);
+            List<Event> upcomingEvents = eventRepository.findUpcomingEventsOnDate(targetDate);
+
+            for (Event event : upcomingEvents) {
+                List<EventSubscription> subs = eventSubscriptionRepository.findByEventIdAndEnabledTrue(event.getId());
+
+                for (EventSubscription sub : subs) {
+                    Long userId = sub.getUserId();
+                    if (isPreferenceDisabled(userId, "EVENT")) {
+                        continue;
+                    }
+
+                    String sourceKey = String.format("event:%d:%d:%d", event.getId(), userId, leadDays);
+                    if (notificationRepository.existsByUserIdAndSourceKey(userId, sourceKey)) {
+                        continue;
+                    }
+
+                    AppUser user = appUserRepository.findById(userId).orElse(null);
+                    if (user == null) continue;
+
+                    String titleText = "시흥시 문화행사";
+                    EventTranslation tr = eventTranslationRepository.findByEventIdAndLanguage(event.getId(), user.getLanguage())
+                            .or(() -> eventTranslationRepository.findByEventIdAndLanguage(event.getId(), "ko"))
+                            .orElse(null);
+                    if (tr != null) {
+                        titleText = tr.getTitle();
+                    }
+
+                    String title = String.format("[%s] 행사 시작 D-%d 안내", titleText, leadDays);
+                    String body = String.format("관심 등록하신 행사 '%s'가 %d일 후(%s)에 시작됩니다. 일정과 장소를 확인하세요.",
+                            titleText, leadDays, event.getStartsOn());
+                    EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
+
+                    Notification notification = Notification.create(
+                            userId,
+                            "EVENT",
+                            event.getId(),
+                            null,
+                            null,
                             null,
                             sourceKey,
                             1,

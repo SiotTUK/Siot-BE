@@ -3,6 +3,7 @@ package com.siot.backend.schedule.controller;
 import com.siot.backend.auth.security.MemberPrincipal;
 import com.siot.backend.global.common.ApiResponse;
 import com.siot.backend.schedule.dto.ScheduleResponse;
+import com.siot.backend.schedule.dto.TaxDetailResponse;
 import com.siot.backend.schedule.service.CalendarScheduleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -55,5 +56,28 @@ public class CalendarScheduleController {
         int targetYear = year != null ? year : LocalDate.now(SEOUL_ZONE).getYear();
         List<ScheduleResponse> response = calendarScheduleService.getYearlySchedules(targetYear, language);
         return ResponseEntity.ok(ApiResponse.of(response));
+    }
+
+    @Operation(summary = "CAL-03 세금 상세 안내 목록 조회", description = "자동차세, 재산세, 주민세 등 지방세 상세 납부 안내 목록을 조회합니다.")
+    @GetMapping("/taxes")
+    public ResponseEntity<ApiResponse<List<TaxDetailResponse>>> getTaxSchedules(
+            @Parameter(description = "언어 (ko/en/zh/vi). 생략 시 ko") @RequestParam(required = false) String language) {
+        return ResponseEntity.ok(ApiResponse.of(calendarScheduleService.getTaxSchedules(language)));
+    }
+
+    @Operation(summary = "CAL-03 세금 단건 상세 안내 조회", description = "특정 세금 일정의 과세 기준, 납부 기간, 세율, 가산세, 납부 링크 등 상세 정보를 조회합니다.")
+    @GetMapping("/taxes/{scheduleId}")
+    public ResponseEntity<ApiResponse<TaxDetailResponse>> getTaxDetail(
+            @Parameter(description = "일정 ID") @PathVariable Long scheduleId,
+            @Parameter(description = "언어 (ko/en/zh/vi). 생략 시 ko") @RequestParam(required = false) String language) {
+        return ResponseEntity.ok(ApiResponse.of(calendarScheduleService.getTaxDetail(scheduleId, language)));
+    }
+
+    @Operation(summary = "CAL-03 일정/세금 단건 상세 조회")
+    @GetMapping("/{scheduleId}")
+    public ResponseEntity<ApiResponse<TaxDetailResponse>> getScheduleDetail(
+            @Parameter(description = "일정 ID") @PathVariable Long scheduleId,
+            @Parameter(description = "언어 (ko/en/zh/vi). 생략 시 ko") @RequestParam(required = false) String language) {
+        return ResponseEntity.ok(ApiResponse.of(calendarScheduleService.getTaxDetail(scheduleId, language)));
     }
 }

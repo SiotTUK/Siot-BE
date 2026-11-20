@@ -16,6 +16,8 @@ import com.siot.backend.member.domain.Purpose;
 import com.siot.backend.member.domain.Residence;
 import com.siot.backend.member.domain.UserType;
 import com.siot.backend.member.repository.AppUserRepository;
+import com.siot.backend.rag.domain.GuideDocumentReference;
+import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +43,7 @@ public class ChecklistService {
     private final ChecklistProgressRepository checklistProgressRepository;
     private final MemberLifeChangeRepository memberLifeChangeRepository;
     private final AppUserRepository appUserRepository;
+    private final GuideDocumentReferenceRepository guideDocumentReferenceRepository;
 
     private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
 
@@ -82,6 +85,10 @@ public class ChecklistService {
         Map<Long, GuideTranslation> koTranslationMap = "ko".equals(targetLang) ? translationMap :
                 guideTranslationRepository.findByGuideIdInAndLanguage(guideIds, "ko").stream()
                         .collect(Collectors.toMap(GuideTranslation::getGuideId, t -> t, (t1, t2) -> t1));
+
+        // CHK-06 출처 안내책자 쪽수 조회
+        Map<Long, GuideDocumentReference> docRefMap = guideDocumentReferenceRepository.findByGuideIdIn(guideIds).stream()
+                .collect(Collectors.toMap(GuideDocumentReference::getGuideId, ref -> ref, (r1, r2) -> r1));
 
         List<ChecklistItemResponse> items = new ArrayList<>();
 
@@ -130,6 +137,37 @@ public class ChecklistService {
                 }
             }
 
+            // CHK-08 경고 표시 (외국인등록 D-30, 체류지 변경 D-7, 기한 초과 등)
+            boolean warning = false;
+            String warningMessage = null;
+            String code = guide.getCode();
+
+            if ("OVERDUE".equals(status)) {
+                warning = true;
+                warningMessage = "마감 기한이 초과되었습니다. 즉시 확인 후 조치하세요.";
+            } else if ("CL-01".equals(code) || "CL-02".equals(code)) {
+                if (dDay != null && dDay <= 30) {
+                    warning = true;
+                    warningMessage = "외국인등록 기한이 30일 이내로 임박했습니다. 기한 초과 시 과태료 및 불이익이 발생합니다.";
+                }
+            } else if ("LC-01-1".equals(code)) {
+                if (dDay != null && dDay <= 7) {
+                    warning = true;
+                    warningMessage = "체류지 변경 신고 마감(전입 후 15일 이내) 기한이 7일 이내로 임박했습니다. 기한 초과 시 과태료가 부과됩니다.";
+                }
+            }
+
+            // CHK-06 쪽수
+            GuideDocumentReference docRef = docRefMap.get(guide.getId());
+            Integer pageStart = docRef != null ? docRef.getPageStart() : null;
+            Integer pageEnd = docRef != null ? docRef.getPageEnd() : null;
+            String sourcePages = null;
+            if (pageStart != null) {
+                sourcePages = (pageEnd != null && !pageEnd.equals(pageStart))
+                        ? String.format("p.%d~%d", pageStart, pageEnd)
+                        : String.format("p.%d", pageStart);
+            }
+
             // 번역본 매핑
             GuideTranslation tr = translationMap.getOrDefault(guide.getId(), koTranslationMap.get(guide.getId()));
 
@@ -163,7 +201,12 @@ public class ChecklistService {
                     isCompleted,
                     periodKey,
                     guide.getNoticeChangedAt(),
-                    hasNoticeChanged
+                    hasNoticeChanged,
+                    warning,
+                    warningMessage,
+                    pageStart,
+                    pageEnd,
+                    sourcePages
             ));
         }
 

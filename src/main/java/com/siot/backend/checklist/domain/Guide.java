@@ -98,6 +98,22 @@ public class Guide {
         return deletedAt != null;
     }
 
+    public void softDelete(Long adminId, OffsetDateTime now) {
+        this.deletedAt = now;
+        this.updatedBy = adminId;
+        this.updatedAt = now;
+    }
+
+    public void updateRule(String category, int sortOrder, boolean faq, String contact, String sourceUrl, Long adminId, OffsetDateTime now) {
+        if (category != null) this.category = category;
+        this.sortOrder = sortOrder;
+        this.faq = faq;
+        if (contact != null) this.contact = contact;
+        if (sourceUrl != null) this.sourceUrl = sourceUrl;
+        this.updatedBy = adminId;
+        this.updatedAt = now;
+    }
+
     public static Guide create(String code, String kind, ItemType itemType, String category, int sortOrder, String lifeChangeCode, boolean faq) {
         Guide guide = new Guide();
         guide.code = code;

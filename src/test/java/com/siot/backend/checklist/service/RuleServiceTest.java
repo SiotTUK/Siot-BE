@@ -6,6 +6,7 @@ import com.siot.backend.checklist.domain.ItemType;
 import com.siot.backend.checklist.dto.RuleResponse;
 import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
+import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,8 @@ class RuleServiceTest {
     private GuideRepository guideRepository;
     @Mock
     private GuideTranslationRepository guideTranslationRepository;
+    @Mock
+    private GuideDocumentReferenceRepository guideDocumentReferenceRepository;
 
     @InjectMocks
     private RuleService ruleService;

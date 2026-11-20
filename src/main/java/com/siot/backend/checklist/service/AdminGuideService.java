@@ -9,6 +9,9 @@ import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.notification.service.NotificationService;
+import com.siot.backend.rag.domain.GuideDocumentReference;
+import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +30,8 @@ public class AdminGuideService {
 
     private final GuideRepository guideRepository;
     private final GuideTranslationRepository translationRepository;
+    private final GuideDocumentReferenceRepository guideDocumentReferenceRepository;
+    private final NotificationService notificationService;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -57,6 +62,9 @@ public class AdminGuideService {
                 blankToNull(request.sourceName()));
         translation = translationRepository.save(translation);
         guide.recordEdit(adminId, request.noticeChanged(), OffsetDateTime.now(clock));
+        if (request.noticeChanged()) {
+            notificationService.createNoticeChangedNotifications(guide);
+        }
         return toResponse(guide, translation);
     }
 
@@ -77,11 +85,24 @@ public class AdminGuideService {
         return value == null || value.isBlank() ? null : value.strip();
     }
 
-    private static GuideTranslationResponse toResponse(Guide guide, GuideTranslation t) {
+    private GuideTranslationResponse toResponse(Guide guide, GuideTranslation t) {
+        GuideDocumentReference docRef = guideDocumentReferenceRepository
+                .findFirstByGuideIdOrderByCreatedAtDesc(guide.getId())
+                .orElse(null);
+        Integer pageStart = docRef != null ? docRef.getPageStart() : null;
+        Integer pageEnd = docRef != null ? docRef.getPageEnd() : null;
+        String sourcePages = null;
+        if (pageStart != null) {
+            sourcePages = (pageEnd != null && !pageEnd.equals(pageStart))
+                    ? String.format("p.%d~%d", pageStart, pageEnd)
+                    : String.format("p.%d", pageStart);
+        }
+
         return new GuideTranslationResponse(guide.getCode(), t.getLanguage(), t.getTitle(), t.getSummary(),
                 t.getContent(), t.getBadge(), t.getPlace(),
                 // 준비물이 없는 행은 DB 값이 NULL 이다
                 t.getDocs() == null ? List.of() : List.copyOf(t.getDocs()), t.getFee(), t.getLaw(),
-                t.getPenalty(), t.getSourceName(), guide.getNoticeChangedAt(), guide.getUpdatedAt());
+                t.getPenalty(), t.getSourceName(), guide.getNoticeChangedAt(), guide.getUpdatedAt(),
+                pageStart, pageEnd, sourcePages);
     }
 }

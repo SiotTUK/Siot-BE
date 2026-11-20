@@ -1,12 +1,19 @@
 package com.siot.backend.schedule.service;
 
+import com.siot.backend.checklist.domain.Guide;
 import com.siot.backend.checklist.domain.GuideTranslation;
+import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
+import com.siot.backend.global.exception.BusinessException;
+import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.domain.Residence;
 import com.siot.backend.member.repository.AppUserRepository;
+import com.siot.backend.rag.domain.GuideDocumentReference;
+import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
 import com.siot.backend.schedule.domain.CalendarSchedule;
 import com.siot.backend.schedule.dto.ScheduleResponse;
+import com.siot.backend.schedule.dto.TaxDetailResponse;
 import com.siot.backend.schedule.repository.CalendarScheduleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -15,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -28,6 +36,8 @@ public class CalendarScheduleService {
 
     private final CalendarScheduleRepository calendarScheduleRepository;
     private final GuideTranslationRepository guideTranslationRepository;
+    private final GuideRepository guideRepository;
+    private final GuideDocumentReferenceRepository guideDocumentReferenceRepository;
     private final AppUserRepository appUserRepository;
 
     public List<ScheduleResponse> getMonthlySchedules(Long userId, int year, int month, String language) {
@@ -123,5 +133,86 @@ public class CalendarScheduleService {
 
     public List<ScheduleResponse> getYearlySchedules(int year, String language) {
         return getMonthlySchedules(null, year, 1, language);
+    }
+
+    /**
+     * CAL-03 세금 상세 일정 및 납부 안내 전용 조회
+     */
+    public TaxDetailResponse getTaxDetail(Long scheduleId, String language) {
+        CalendarSchedule cs = calendarScheduleRepository.findById(scheduleId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SCHEDULE_NOT_FOUND));
+
+        String targetLang = (language != null && !language.isBlank()) ? language : "ko";
+        String title = cs.getKind();
+        String summary = null;
+        String content = null;
+        String place = null;
+        List<String> docs = Collections.emptyList();
+        String fee = null;
+        String law = null;
+        String penalty = null;
+        String contact = null;
+        String sourcePages = null;
+
+        if (cs.getGuideId() != null) {
+            GuideTranslation tr = guideTranslationRepository.findByGuideIdAndLanguage(cs.getGuideId(), targetLang)
+                    .or(() -> guideTranslationRepository.findByGuideIdAndLanguage(cs.getGuideId(), "ko"))
+                    .orElse(null);
+
+            if (tr != null) {
+                title = tr.getTitle();
+                summary = tr.getSummary();
+                content = tr.getContent();
+                place = tr.getPlace();
+                docs = tr.getDocs() != null ? tr.getDocs() : Collections.emptyList();
+                fee = tr.getFee();
+                law = tr.getLaw();
+                penalty = tr.getPenalty();
+            }
+
+            guideRepository.findById(cs.getGuideId()).ifPresent(g -> {
+                // 문의처
+            });
+
+            GuideDocumentReference docRef = guideDocumentReferenceRepository
+                    .findFirstByGuideIdOrderByCreatedAtDesc(cs.getGuideId())
+                    .orElse(null);
+            if (docRef != null && docRef.getPageStart() != null) {
+                sourcePages = (docRef.getPageEnd() != null && !docRef.getPageEnd().equals(docRef.getPageStart()))
+                        ? String.format("p.%d~%d", docRef.getPageStart(), docRef.getPageEnd())
+                        : String.format("p.%d", docRef.getPageStart());
+            }
+        }
+
+        return new TaxDetailResponse(
+                cs.getId(),
+                cs.getGuideId(),
+                cs.getKind(),
+                title,
+                cs.getStartsOn(),
+                cs.getEndsOn(),
+                cs.getTargetDescription(),
+                cs.getSourceUrl(),
+                summary,
+                content,
+                place,
+                docs,
+                fee,
+                law,
+                penalty,
+                contact,
+                sourcePages
+        );
+    }
+
+    /**
+     * CAL-03 전체 세금 상세 목록 조회
+     */
+    public List<TaxDetailResponse> getTaxSchedules(String language) {
+        List<CalendarSchedule> schedules = calendarScheduleRepository.findByActiveTrueOrderByStartsOnAsc();
+        return schedules.stream()
+                .filter(s -> s.getKind() != null && s.getKind().toUpperCase().contains("TAX"))
+                .map(s -> getTaxDetail(s.getId(), language))
+                .toList();
     }
 }

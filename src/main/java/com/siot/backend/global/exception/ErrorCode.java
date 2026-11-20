@@ -59,6 +59,7 @@ public enum ErrorCode {
     CHAT_FEEDBACK_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "챗봇 답변만 평가할 수 있습니다."),
 
     // ---- 생활정보 · 체크리스트 · 알림 · 신고 (역할 A) ----
+    EVENT_NOT_FOUND(HttpStatus.NOT_FOUND, "행사를 찾을 수 없습니다."),
     CONTENT_REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "오류 신고를 찾을 수 없습니다."),
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "알림을 찾을 수 없습니다."),
     SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "일정을 찾을 수 없습니다."),

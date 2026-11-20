@@ -7,6 +7,8 @@ import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.rag.domain.GuideDocumentReference;
+import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +26,7 @@ public class RuleService {
 
     private final GuideRepository guideRepository;
     private final GuideTranslationRepository guideTranslationRepository;
+    private final GuideDocumentReferenceRepository guideDocumentReferenceRepository;
 
     public List<RuleResponse> getFaqTop5(String language) {
         String targetLang = language != null && !language.isBlank() ? language : "ko";
@@ -63,6 +66,18 @@ public class RuleService {
                 .or(() -> guideTranslationRepository.findByGuideIdAndLanguage(guide.getId(), "ko"))
                 .orElse(null);
 
+        GuideDocumentReference docRef = guideDocumentReferenceRepository
+                .findFirstByGuideIdOrderByCreatedAtDesc(guide.getId())
+                .orElse(null);
+        Integer pageStart = docRef != null ? docRef.getPageStart() : null;
+        Integer pageEnd = docRef != null ? docRef.getPageEnd() : null;
+        String sourcePages = null;
+        if (pageStart != null) {
+            sourcePages = (pageEnd != null && !pageEnd.equals(pageStart))
+                    ? String.format("p.%d~%d", pageStart, pageEnd)
+                    : String.format("p.%d", pageStart);
+        }
+
         return new RuleResponse(
                 guide.getCode(),
                 guide.getCategory(),
@@ -80,7 +95,10 @@ public class RuleService {
                 tr != null ? tr.getSourceName() : null,
                 guide.getSortOrder(),
                 guide.isFaq(),
-                guide.getNoticeChangedAt()
+                guide.getNoticeChangedAt(),
+                pageStart,
+                pageEnd,
+                sourcePages
         );
     }
 }

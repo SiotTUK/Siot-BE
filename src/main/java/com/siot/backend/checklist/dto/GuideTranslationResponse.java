@@ -24,6 +24,10 @@ public record GuideTranslationResponse(
         @Schema(description = "안 하면 받는 불이익", nullable = true) String penalty,
         @Schema(description = "출처 이름", nullable = true) String sourceName,
         @Schema(description = "실제 안내 내용이 바뀐 시각 (NTF-07). null = 등록 후 바뀐 적 없음", nullable = true) OffsetDateTime noticeChangedAt,
-        @Schema(description = "마지막 수정 시각 (CHK-06, 단순 수정 포함)") OffsetDateTime updatedAt
+        @Schema(description = "마지막 수정 시각 (CHK-06, 단순 수정 포함)") OffsetDateTime updatedAt,
+        // CHK-06 출처 쪽수
+        @Schema(description = "CHK-06 출처 안내책자 시작 쪽수", example = "12", nullable = true) Integer pageStart,
+        @Schema(description = "CHK-06 출처 안내책자 종료 쪽수", example = "14", nullable = true) Integer pageEnd,
+        @Schema(description = "CHK-06 출처 쪽수 표기", example = "p.12~14", nullable = true) String sourcePages
 ) {
 }

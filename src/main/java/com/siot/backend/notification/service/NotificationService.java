@@ -3,6 +3,12 @@ package com.siot.backend.notification.service;
 import com.siot.backend.global.common.PageResponse;
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.checklist.domain.Guide;
+import com.siot.backend.checklist.domain.GuideTranslation;
+import com.siot.backend.checklist.repository.GuideTranslationRepository;
+import com.siot.backend.member.domain.AppUser;
+import com.siot.backend.member.repository.AppUserRepository;
+import com.siot.backend.notification.domain.EmailDeliveryStatus;
 import com.siot.backend.notification.domain.Notification;
 import com.siot.backend.notification.domain.NotificationPreference;
 import com.siot.backend.notification.dto.NotificationPreferenceResponse;
@@ -26,6 +32,8 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final NotificationPreferenceRepository preferenceRepository;
+    private final AppUserRepository appUserRepository;
+    private final GuideTranslationRepository guideTranslationRepository;
 
     private static final List<String> DEFAULT_KINDS = List.of("STAY_EXPIRY", "TAX", "EVENT", "NOTICE_CHANGED");
 
@@ -112,5 +120,66 @@ public class NotificationService {
                 ));
 
         return NotificationPreferenceResponse.from(preference);
+    }
+
+    /**
+     * NTF-07: 안내 내용 변경 알림 발송 (대상 회원에게 인앱/이메일 알림 생성)
+     */
+    @Transactional
+    public void createNoticeChangedNotifications(Guide guide) {
+        if (guide == null || guide.getNoticeChangedAt() == null) {
+            return;
+        }
+
+        List<AppUser> allUsers = appUserRepository.findAll();
+
+        for (AppUser user : allUsers) {
+            if (isPreferenceDisabled(user.getId(), "NOTICE_CHANGED")) {
+                continue;
+            }
+
+            // 변경 시점마다 1회 발송되도록 타임스탬프 결합
+            String sourceKey = String.format("notice_changed:%d:%d:%d",
+                    guide.getId(), user.getId(), guide.getNoticeChangedAt().toEpochSecond());
+
+            if (notificationRepository.existsByUserIdAndSourceKey(user.getId(), sourceKey)) {
+                continue;
+            }
+
+            String titleText = guide.getCode();
+            GuideTranslation tr = guideTranslationRepository.findByGuideIdAndLanguage(guide.getId(), user.getLanguage())
+                    .or(() -> guideTranslationRepository.findByGuideIdAndLanguage(guide.getId(), "ko"))
+                    .orElse(null);
+            if (tr != null) {
+                titleText = tr.getTitle();
+            }
+
+            String title = String.format("[안내 내용 변경] %s", titleText);
+            String body = String.format("'%s'의 중요 안내 내용(준비물, 수수료, 신청 기한 등)이 변경되었습니다. 변경된 최신 정보를 확인해 주세요.", titleText);
+            EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
+
+            Notification notification = Notification.create(
+                    user.getId(),
+                    "NOTICE_CHANGED",
+                    null,
+                    guide.getId(),
+                    null,
+                    null,
+                    sourceKey,
+                    1,
+                    OffsetDateTime.now(),
+                    user.getLanguage(),
+                    title,
+                    body,
+                    emailStatus
+            );
+            notificationRepository.save(notification);
+        }
+    }
+
+    private boolean isPreferenceDisabled(Long userId, String kind) {
+        return preferenceRepository.findByKindAndUserId(kind, userId)
+                .map(pref -> !pref.isEnabled())
+                .orElse(false);
     }
 }

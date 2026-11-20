@@ -56,6 +56,20 @@ public record ChecklistItemResponse(
         @Schema(description = "NTF-07 실제 안내 내용 변경 시각")
         OffsetDateTime noticeChangedAt,
         @Schema(description = "최근 안내 내용 변경 여부 (14일 이내)")
-        boolean hasNoticeChanged
+        boolean hasNoticeChanged,
+
+        // CHK-08 경고 표시 (외국인등록 D-30, 체류지 변경 D-7, 기한 지남 등)
+        @Schema(description = "CHK-08 경고 표시 여부 (외국인등록 D-30, 체류지 변경 D-7, 기한 초과 등)", example = "true")
+        boolean warning,
+        @Schema(description = "CHK-08 경고 문구", example = "외국인등록 기한이 30일 이내로 임박했습니다. 기한 초과 시 과태료가 부과됩니다.")
+        String warningMessage,
+
+        // CHK-06 출처 쪽수
+        @Schema(description = "CHK-06 출처 안내책자 시작 쪽수", example = "12")
+        Integer pageStart,
+        @Schema(description = "CHK-06 출처 안내책자 종료 쪽수", example = "14")
+        Integer pageEnd,
+        @Schema(description = "CHK-06 출처 쪽수 표기", example = "p.12~14")
+        String sourcePages
 ) {
 }

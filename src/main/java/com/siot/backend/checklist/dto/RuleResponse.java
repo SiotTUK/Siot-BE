@@ -40,6 +40,14 @@ public record RuleResponse(
         @Schema(description = "자주 묻는 질문(FAQ) 여부")
         boolean faq,
         @Schema(description = "안내 내용 변경 시각")
-        OffsetDateTime noticeChangedAt
+        OffsetDateTime noticeChangedAt,
+
+        // CHK-06 출처 쪽수
+        @Schema(description = "CHK-06 출처 안내책자 시작 쪽수", example = "20")
+        Integer pageStart,
+        @Schema(description = "CHK-06 출처 안내책자 종료 쪽수", example = "22")
+        Integer pageEnd,
+        @Schema(description = "CHK-06 출처 쪽수 표기", example = "p.20~22")
+        String sourcePages
 ) {
 }
