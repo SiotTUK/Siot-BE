@@ -98,16 +98,19 @@ class DocumentLiveTest {
         }
         IntSummaryStatistics lengths = chunks.stream().mapToInt(chunk -> chunk.content().length()).summaryStatistics();
         long over = chunks.stream().filter(chunk -> chunk.content().length() > DocumentChunker.MAX).count();
-        long small = chunks.stream().filter(chunk -> chunk.content().length() < 200).count();
+        // 본문(제목 줄 제외) 길이 기준
+        long small = chunks.stream().filter(chunk -> chunk.body().length() < DocumentChunker.MIN_BODY).count();
         long structured = chunks.stream().filter(Chunk::structuredTable).count();
         long guessed = chunks.stream().filter(chunk -> chunk.tableLike() && !chunk.structuredTable()).count();
         long titles = chunks.stream().map(Chunk::title).distinct().count();
-        long titled = chunks.stream().filter(chunk -> chunk.title() != null && !chunk.title().equals(documentName)).count();
+        // 제목이 문서 이름이 아니고, 마지막 제목이 제목 조건(길이·줄 끝·서식 칸·조문 인용·목차)을 통과한 조각만
+        long titled = chunks.stream().filter(chunk -> chunk.title() != null && !chunk.title().equals(documentName)
+                && DocumentChunker.isPlausibleTitle(lastTitle(chunk.title()))).count();
         out.append("length: min ").append(lengths.getMin())
                 .append(" / avg ").append(Math.round(lengths.getAverage()))
                 .append(" / max ").append(lengths.getMax()).append('\n')
                 .append("over ").append(DocumentChunker.MAX).append(": ").append(over)
-                .append(", under 200: ").append(small)
+                .append(", body under ").append(DocumentChunker.MIN_BODY).append(": ").append(small)
                 .append(", [표]: ").append(structured)
                 .append(", [표?]: ").append(guessed)
                 .append(", titled: ").append(titled).append('/').append(chunks.size())
@@ -207,11 +210,19 @@ class DocumentLiveTest {
         }
     }
 
+    /** "상위 &gt; 하위" 의 마지막 제목 */
+    private static String lastTitle(String title) {
+        int index = title.lastIndexOf(" > ");
+        return index < 0 ? title : title.substring(index + 3);
+    }
+
     private static String cut(String text, int max) {
         if (text == null) {
             return "";
         }
-        return text.length() <= max ? text : text.substring(0, max - 1) + "…";
+        // 글꼴 아이콘(U+F0000 이상)은 두 char 이므로 code point 단위로 자른다
+        return text.codePointCount(0, text.length()) <= max ? text
+                : text.substring(0, text.offsetByCodePoints(0, max - 1)) + "…";
     }
 
     private static String envOrDefault(String name, String defaultValue) {
