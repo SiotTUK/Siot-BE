@@ -106,6 +106,31 @@ siot:
     embedding-batch-pause: 2s
     embedding-retry-wait: 60s
     embedding-max-retries: 2
+  # 행사 수집 (EVE-01·EVE-02, EventProperties). 매일 siot.scheduling.event-collect-cron 에 출처별로 수집한다
+  event:
+    # 공공데이터포털 키: TourAPI·전국문화축제표준데이터. 비어 있으면 두 출처는 FAILED 로 기록 (지지씨는 키 없이 동작)
+    api-key: ${EVENT_API_KEY:}
+    http-timeout: 30s
+    # 번역(Gemini) 호출 사이 간격. 실패하면 남은 행사는 다음 주기에 다시 번역한다
+    translation-pause: 1s
+    ggc:
+      base-url: https://ggc.ggcf.kr/open/json/playongoing
+      per-page: 100
+      max-pages: 10
+    tourapi:
+      base-url: https://apis.data.go.kr/B551011/KorService2/searchFestival2
+      page-size: 1000
+      max-pages: 5
+      # eventStartDate = 오늘 - 365일 (진행 중인 축제가 빠지지 않게). 저장은 종료일 >= 오늘만
+      lookback-days: 365
+      # 시흥시 법정동 코드 (경기 41, 시흥 390)
+      region-code: "41"
+      district-code: "390"
+    festival:
+      base-url: https://api.data.go.kr/openapi/tn_pubr_public_cltur_fstvl_api
+      page-size: 1000
+      max-pages: 5
+      address-prefix: 경기도 시흥시
   mail:
     # Gmail SMTP 는 로그인한 계정(또는 등록된 별칭) 주소로만 발신할 수 있다
     from: ${MAIL_FROM}
