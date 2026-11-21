@@ -62,9 +62,12 @@ services:
       NOTIFICATION_DISPATCH_INTERVAL: ${NOTIFICATION_DISPATCH_INTERVAL:-1m}
       # ADM-01: 관리자로 지정할 이메일 (쉼표 구분)
       SIOT_ADMIN_EMAILS: ${SIOT_ADMIN_EMAILS:-}
-      # Gemini (챗봇·번역·문서 적재). 비어 있으면 챗봇은 안내 문구로만 응답하고 번역·적재는 실패한다
+      # Gemini (챗봇·번역·문서 적재). GEMINI_PROJECT_ID 가 있으면 Vertex AI(VM 서비스 계정), 없으면 GEMINI_API_KEY.
+      # 둘 다 비어 있으면 챗봇은 안내 문구로만 응답하고 번역·적재는 실패한다
+      GEMINI_PROJECT_ID: ${GEMINI_PROJECT_ID:-}
+      GEMINI_LOCATION: ${GEMINI_LOCATION:-global}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-2.5-flash}
+      GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-3.1-flash-lite}
       # RUL-07 고지서 사진 번역 전용 모델 (비우면 GEMINI_CHAT_MODEL)·1회 호출 제한 시간
       GEMINI_BILL_MODEL: ${GEMINI_BILL_MODEL:-}
       GEMINI_BILL_TIMEOUT: ${GEMINI_BILL_TIMEOUT:-45s}

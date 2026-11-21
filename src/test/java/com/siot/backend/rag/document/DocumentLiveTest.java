@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *     <li>LIVE_DOCUMENT_NAME: 문서 이름 (첫 제목 전 조각의 첫 줄, 임베딩 title). 기본은 파일 이름</li>
  *     <li>LIVE_EMBED_LIMIT: 실제로 임베딩할 조각 수 (무료 한도 절약, 기본 20, 0 이면 임베딩 안 함)</li>
  *     <li>LIVE_EXCLUDE_PAGES: 적재에서 뺄 쪽 (예: "1-7", "1-3,5")</li>
- *     <li>GEMINI_API_KEY: .env 또는 환경 변수</li>
+ *     <li>GEMINI_PROJECT_ID(Vertex AI, ADC 필요, GEMINI_LOCATION 기본 global) 또는 GEMINI_API_KEY: .env 또는 환경 변수</li>
  * </ul>
  * 조각 전체와 표 목록은 build/live/chunks.txt 에 저장한다. 태그 PDF 의 표 조각은 [표], 표로 보이는 줄이 있는 조각은 [표?].
  */
@@ -186,10 +186,14 @@ class DocumentLiveTest {
     }
 
     private static void embed(List<Chunk> chunks, String title) throws IOException {
-        String apiKey = readDotEnv(Path.of(".env")).getOrDefault("GEMINI_API_KEY", System.getenv("GEMINI_API_KEY"));
-        assertThat(apiKey).as("GEMINI_API_KEY in .env").isNotBlank();
+        Map<String, String> env = readDotEnv(Path.of(".env"));
         // application.yml 의 siot.gemini.*, siot.document.* 기본값과 같게 둔다
-        GeminiProperties gemini = new GeminiProperties(apiKey, "unused", "gemini-embedding-001", 768, 0.2, Duration.ofSeconds(20));
+        GeminiProperties gemini = new GeminiProperties(
+                env.getOrDefault("GEMINI_API_KEY", System.getenv("GEMINI_API_KEY")),
+                env.getOrDefault("GEMINI_PROJECT_ID", System.getenv("GEMINI_PROJECT_ID")),
+                env.getOrDefault("GEMINI_LOCATION", "global"),
+                "unused", "gemini-embedding-001", 768, 0.2, Duration.ofSeconds(20));
+        assertThat(gemini.configured()).as("GEMINI_PROJECT_ID or GEMINI_API_KEY in .env").isTrue();
         DocumentEmbedder embedder = new DocumentAiConfig().documentEmbedder(gemini);
         BatchEmbedder batchEmbedder = new BatchEmbedder(embedder,
                 new DocumentProperties("unused", 100, Duration.ofSeconds(2), Duration.ofSeconds(60), 2),

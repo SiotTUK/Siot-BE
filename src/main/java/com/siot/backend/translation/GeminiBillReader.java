@@ -5,6 +5,7 @@ import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
+import com.google.genai.errors.ApiException;
 import dev.langchain4j.exception.HttpException;
 import dev.langchain4j.exception.InternalServerException;
 import dev.langchain4j.exception.RateLimitException;
@@ -273,6 +274,10 @@ public class GeminiBillReader implements BillReader {
             if (cause instanceof HttpException http) {
                 return http.statusCode() == 429 || http.statusCode() == 503;
             }
+            // google-genai SDK 는 5xx 를 InternalServerException(ApiException) 으로 감싼다
+            if (cause instanceof ApiException api) {
+                return api.code() == 429 || api.code() == 503;
+            }
         }
         return false;
     }
@@ -281,6 +286,9 @@ public class GeminiBillReader implements BillReader {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             if (cause instanceof HttpException http) {
                 return String.valueOf(http.statusCode());
+            }
+            if (cause instanceof ApiException api) {
+                return String.valueOf(api.code());
             }
             if (cause instanceof RateLimitException) {
                 return "429";

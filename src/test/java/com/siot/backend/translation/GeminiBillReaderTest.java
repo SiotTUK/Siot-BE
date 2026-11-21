@@ -5,6 +5,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.AuthenticationException;
+import com.google.genai.errors.ApiException;
 import dev.langchain4j.exception.HttpException;
 import dev.langchain4j.exception.InternalServerException;
 import dev.langchain4j.exception.RateLimitException;
@@ -105,6 +106,17 @@ class GeminiBillReaderTest {
     void retriesOnceOnRateLimitThenSucceeds() {
         when(model.chat(any(ChatRequest.class)))
                 .thenThrow(new RateLimitException("quota"))
+                .thenReturn(reply(BILL_JSON));
+
+        assertThat(reader.read(IMAGE, "image/jpeg", "en").amount()).isEqualTo(123450L);
+        verify(model, times(2)).chat(any(ChatRequest.class));
+    }
+
+    /** google-genai SDK(Vertex AI) 는 5xx 를 InternalServerException(ApiException) 으로 던진다 */
+    @Test
+    void retriesOnceOnVertex503ThenSucceeds() {
+        when(model.chat(any(ChatRequest.class)))
+                .thenThrow(new InternalServerException(new ApiException(503, "UNAVAILABLE", "overloaded")))
                 .thenReturn(reply(BILL_JSON));
 
         assertThat(reader.read(IMAGE, "image/jpeg", "en").amount()).isEqualTo(123450L);

@@ -3,6 +3,7 @@ package com.siot.backend.rag.document;
 import com.siot.backend.rag.ai.AiUnavailableException;
 import com.siot.backend.rag.ai.DocumentEmbedder;
 import com.siot.backend.rag.config.DocumentProperties;
+import com.google.genai.errors.ApiException;
 import dev.langchain4j.exception.HttpException;
 import dev.langchain4j.exception.InternalServerException;
 import dev.langchain4j.exception.RateLimitException;
@@ -79,6 +80,10 @@ public class BatchEmbedder {
             if (cause instanceof HttpException http) {
                 return http.statusCode() == 429 || http.statusCode() == 503;
             }
+            // google-genai SDK 는 5xx 를 InternalServerException(ApiException) 으로 감싼다
+            if (cause instanceof ApiException api) {
+                return api.code() == 429 || api.code() == 503;
+            }
         }
         return false;
     }
@@ -87,6 +92,9 @@ public class BatchEmbedder {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             if (cause instanceof HttpException http) {
                 return String.valueOf(http.statusCode());
+            }
+            if (cause instanceof ApiException api) {
+                return String.valueOf(api.code());
             }
         }
         return error.getCause() == null ? "unknown" : error.getCause().getClass().getSimpleName();

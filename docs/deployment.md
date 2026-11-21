@@ -20,7 +20,7 @@
 | 이미지 저장소 | Artifact Registry `asia-northeast3-docker.pkg.dev/siot-514601/siot` | CI가 push, VM이 pull (VM 서비스 계정에 읽기 권한) |
 | 메일 | Gmail SMTP (`smtp.gmail.com:587`) | 팀 공용 Gmail 계정 + 앱 비밀번호 |
 | 파일 저장소 | Cloud Storage (GCS) | PDF·안내문 원본. 기존 아키텍처의 Amazon S3를 대체 |
-| AI | Gemini API | |
+| AI | Gemini (Vertex AI, VM 서비스 계정으로 인증) | |
 
 ## 2. CI/CD 파이프라인 (`.github/workflows/backend-ci.yml`)
 
@@ -71,8 +71,10 @@ SWAGGER_ENABLED=false         # 지금은 임시로 true
 # 관리자로 지정할 이메일 (쉼표 구분)
 SIOT_ADMIN_EMAILS=<관리자 이메일>
 
-# 챗봇 (Google AI Studio API 키, 비우면 챗봇은 안내 문구로만 응답)
-GEMINI_API_KEY=<Gemini API 키>
+# Gemini (챗봇·번역·문서 적재). Vertex AI 를 VM 서비스 계정(ADC)으로 호출한다. 서비스 계정에 Vertex AI 사용 권한 필요
+# 비우면 GEMINI_API_KEY(AI Studio) 를 쓰고, 둘 다 비면 챗봇은 안내 문구로만 응답
+GEMINI_PROJECT_ID=siot-514601
+GEMINI_CHAT_MODEL=gemini-3.1-flash-lite
 BACKEND_IMAGE=asia-northeast3-docker.pkg.dev/siot-514601/siot/siot-backend:<배포할 태그>   # CI 가 배포 때마다 바꿈
 
 # 메일 (Gmail SMTP)
@@ -91,7 +93,7 @@ FRONTEND_BASE_URL=https://<서비스 도메인>
 - `prod` 프로필: 세션 쿠키 `Secure`, health 상세 정보 비공개, 프록시 헤더(`X-Forwarded-*`) 처리.
 - HTTPS 종료는 앞단 Nginx(프론트엔드 측)에서 처리합니다.
 - **`MAIL_HOST` 를 넣지 않으면 개발용 `mailpit` 으로 보내려다 실패합니다.** 운영에서는 반드시 Gmail 값을 넣습니다. (`mailpit` 은 `dev` 프로필에서만 실행)
-- Gemini API 키, Cloud Storage 버킷 등은 해당 기능 구현 시 추가합니다.
+- Cloud Storage 버킷 등은 해당 기능 구현 시 추가합니다.
 
 ## 5. Cloud Storage (구현 시 참고)
 

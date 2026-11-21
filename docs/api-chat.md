@@ -48,7 +48,7 @@ POST /api/chat/conversations/12/messages
 |---|---|---|
 | `ANSWERED` | 검색된 자료를 근거로 답변 (CB-13) | 답변 + 출처 (`sources`) |
 | `NO_EVIDENCE` | 관련 자료를 찾지 못함 (CB-12). 답을 지어내지 않고 문의처(☎1345 등)를 안내하는 문구가 `content` 에 들어 있음 | 그대로 표시, 출처 없음 |
-| `ERROR` | Gemini 호출 실패·키 미설정 (CB-02). 문의처 안내 문구가 `content` 에 들어 있음 | 그대로 표시 + 관련 페이지 링크(`relatedPages`) + 다시 시도 버튼 |
+| `ERROR` | Gemini 호출 실패·설정 없음 (CB-02). 문의처 안내 문구가 `content` 에 들어 있음 | 그대로 표시 + 관련 페이지 링크(`relatedPages`) + 다시 시도 버튼 |
 
 `NO_EVIDENCE`·`ERROR` 도 HTTP 200 입니다 (대화 기록에 남음).
 
@@ -176,7 +176,7 @@ GET /api/chat/suggestions?language=en
 2. **이어지는 질문 (CB-07)**: 같은 대화에 앞선 질문이 있으면 최근 3턴을 보고 질문을 검색용 독립 질문으로 바꿉니다. 예: "그거 온라인으로도 돼요?" → "외국인등록은 온라인으로도 신청할 수 있나요?". 첫 질문은 바꾸지 않고, 바꾸기에 실패하면 직전 질문을 앞에 붙여 검색합니다. 저장되는 질문은 사용자가 쓴 그대로입니다.
 3. **검색 (CB-14)**: 질문을 `gemini-embedding-001`(768차원, RETRIEVAL_QUERY)로 임베딩해 `document_chunk` 에서 코사인 거리로 가까운 조각 `top-k`(기본 5)개를 찾습니다. 사용 중인 문서(`document.is_active`)의 현재 버전(`document_version.is_current`) 중 반영이 끝난(`processing_status = 'COMPLETED'`) 버전의 조각만 대상입니다.
 4. **근거 판단 (CB-12)**: 관련도(1 − 코사인 거리)가 `min-relevance`(기본 0.6) 이상인 조각만 근거로 씁니다. 하나도 없으면 Gemini 를 호출하지 않고 `NO_EVIDENCE`.
-5. **답변 (CB-13)**: 근거 조각과 최근 3턴(질문 + 근거로 답한 답변)을 Gemini(`gemini-2.5-flash`)에 넘겨 답변합니다. 앞 대화는 무엇을 가리키는지 이해하는 데만 쓰고, 사실은 근거 조각에서만 가져오게 합니다. 근거에 답이 없으면 모델이 `NO_ANSWER` 를 돌려주고, 이것도 `NO_EVIDENCE` 로 처리합니다. 답변 언어는 질문 언어, 판별이 안 되면 대화 언어입니다.
+5. **답변 (CB-13)**: 근거 조각과 최근 3턴(질문 + 근거로 답한 답변)을 Gemini(`gemini-3.1-flash-lite`)에 넘겨 답변합니다. 앞 대화는 무엇을 가리키는지 이해하는 데만 쓰고, 사실은 근거 조각에서만 가져오게 합니다. 근거에 답이 없으면 모델이 `NO_ANSWER` 를 돌려주고, 이것도 `NO_EVIDENCE` 로 처리합니다. 답변 언어는 질문 언어, 판별이 안 되면 대화 언어입니다.
 6. **저장**: 답변과 근거(최대 3개, `chat_message_source`)를 저장합니다.
 
 Gemini 호출 중에는 DB 트랜잭션을 잡지 않습니다.
@@ -185,8 +185,10 @@ Gemini 호출 중에는 DB 트랜잭션을 잡지 않습니다.
 
 | 환경변수 | 설명 | 기본값 |
 |---|---|---|
-| `GEMINI_API_KEY` | Google AI Studio API 키. 비우면 모든 질문이 `ERROR` 안내로 응답 (앱은 정상 기동) | - |
-| `GEMINI_CHAT_MODEL` | 답변 모델 | `gemini-2.5-flash` |
+| `GEMINI_PROJECT_ID` | Vertex AI 프로젝트 ID. 있으면 우선 사용 (인증은 ADC: VM 서비스 계정) | - |
+| `GEMINI_LOCATION` | Vertex AI 리전 (gemini-3.x 는 global 만 제공) | `global` |
+| `GEMINI_API_KEY` | Google AI Studio API 키 (`GEMINI_PROJECT_ID` 가 없을 때). 둘 다 비우면 모든 질문이 `ERROR` 안내로 응답 (앱은 정상 기동) | - |
+| `GEMINI_CHAT_MODEL` | 답변 모델 | `gemini-3.1-flash-lite` |
 | `CHATBOT_MIN_RELEVANCE` | 근거 최소 관련도 (0~1) | 0.6 |
 | `CHATBOT_TOP_K` | 검색 조각 수 | 5 |
 | `siot.chatbot.history-turns` | 이어지는 질문에 쓰는 최근 턴 수 (0이면 끔) | 3 |

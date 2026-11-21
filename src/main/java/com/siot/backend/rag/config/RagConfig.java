@@ -7,8 +7,8 @@ import com.siot.backend.rag.ai.GeminiQueryRewriter;
 import com.siot.backend.rag.ai.QueryRewriter;
 import com.siot.backend.rag.ai.QueryEmbedder;
 import com.siot.backend.rag.ai.AiUnavailableException;
-import dev.langchain4j.model.googleai.GoogleAiEmbeddingModel;
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
+import dev.langchain4j.model.google.genai.GoogleGenAiChatModel;
+import dev.langchain4j.model.google.genai.GoogleGenAiEmbeddingModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * 챗봇 AI 연결 (CB-13: LangChain4j + Gemini).
- * API 키가 없으면 호출 시 {@link AiUnavailableException} 을 던지는 구현을 등록한다.
+ * Gemini 설정(Vertex 프로젝트 또는 API 키)이 없으면 호출 시 {@link AiUnavailableException} 을 던지는 구현을 등록한다.
  */
 @Slf4j
 @Configuration
@@ -26,16 +26,15 @@ public class RagConfig {
     @Bean
     public QueryEmbedder queryEmbedder(GeminiProperties props) {
         if (!props.configured()) {
-            log.warn("GEMINI_API_KEY is not set. Chatbot will answer with the 'unavailable' message.");
+            log.warn("Neither GEMINI_PROJECT_ID nor GEMINI_API_KEY is set. Chatbot will answer with the 'unavailable' message.");
             return question -> {
                 throw new AiUnavailableException("Gemini API key is not configured");
             };
         }
-        GoogleAiEmbeddingModel model = GoogleAiEmbeddingModel.builder()
-                .apiKey(props.apiKey())
+        GoogleGenAiEmbeddingModel model = GeminiModels.embedding(props)
                 .modelName(props.embeddingModel())
                 .outputDimensionality(props.embeddingDimension())
-                .taskType(GoogleAiEmbeddingModel.TaskType.RETRIEVAL_QUERY)
+                .taskType(GoogleGenAiEmbeddingModel.TaskTypeEnum.RETRIEVAL_QUERY)
                 .timeout(props.timeout())
                 .maxRetries(1)
                 .build();
@@ -63,9 +62,8 @@ public class RagConfig {
         return new GeminiQueryRewriter(chatModel(props, 0.0));
     }
 
-    private static GoogleAiGeminiChatModel chatModel(GeminiProperties props, double temperature) {
-        return GoogleAiGeminiChatModel.builder()
-                .apiKey(props.apiKey())
+    private static GoogleGenAiChatModel chatModel(GeminiProperties props, double temperature) {
+        return GeminiModels.chat(props)
                 .modelName(props.chatModel())
                 .temperature(temperature)
                 .timeout(props.timeout())

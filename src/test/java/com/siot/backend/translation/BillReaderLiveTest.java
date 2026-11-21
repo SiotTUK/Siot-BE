@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
  * <ul>
  *     <li>LIVE_BILL: 사진·PDF 경로 또는 폴더 (폴더면 안의 jpg·png·pdf 전부). 쉼표로 여러 개. 없으면 건너뜀</li>
  *     <li>LIVE_LANGUAGE: 요약 언어 (기본 en)</li>
- *     <li>GEMINI_API_KEY, GEMINI_CHAT_MODEL: .env 또는 환경 변수</li>
+ *     <li>GEMINI_PROJECT_ID(Vertex AI, ADC 필요) 또는 GEMINI_API_KEY, GEMINI_CHAT_MODEL: .env 또는 환경 변수</li>
  * </ul>
  * 서비스 처리(가림·경고·요약 확인)를 거친 응답 JSON 을 출력하고 build/live/bill-*.json 에 저장한다.
  * 실제 고지서를 쓸 때는 이름·주소·번호를 가리고 찍는다. 결과 파일은 커밋하지 않는다.
@@ -129,13 +129,17 @@ class BillReaderLiveTest {
 
     private static GeminiProperties props() throws IOException {
         Map<String, String> env = readDotEnv(Path.of(".env"));
-        String apiKey = System.getenv("GEMINI_API_KEY") != null ? System.getenv("GEMINI_API_KEY") : env.get("GEMINI_API_KEY");
-        assertThat(apiKey).as("GEMINI_API_KEY in .env or environment").isNotBlank();
-        String chatModel = System.getenv("GEMINI_CHAT_MODEL") != null
-                ? System.getenv("GEMINI_CHAT_MODEL")
-                : env.getOrDefault("GEMINI_CHAT_MODEL", "gemini-2.5-flash");
+        String chatModel = envOr(env, "GEMINI_CHAT_MODEL", "gemini-3.1-flash-lite");
         System.out.println("chat model: " + chatModel);
-        return new GeminiProperties(apiKey, chatModel, "gemini-embedding-001", 768, 0.2, Duration.ofSeconds(60));
+        GeminiProperties props = new GeminiProperties(envOr(env, "GEMINI_API_KEY", null),
+                envOr(env, "GEMINI_PROJECT_ID", null), envOr(env, "GEMINI_LOCATION", "global"),
+                chatModel, "gemini-embedding-001", 768, 0.2, Duration.ofSeconds(60));
+        assertThat(props.configured()).as("GEMINI_PROJECT_ID or GEMINI_API_KEY in .env or environment").isTrue();
+        return props;
+    }
+
+    private static String envOr(Map<String, String> dotEnv, String name, String defaultValue) {
+        return System.getenv(name) != null ? System.getenv(name) : dotEnv.getOrDefault(name, defaultValue);
     }
 
     private static Map<String, String> readDotEnv(Path path) throws IOException {

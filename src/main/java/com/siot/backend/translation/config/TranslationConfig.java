@@ -6,7 +6,8 @@ import com.siot.backend.translation.BillReader;
 import com.siot.backend.translation.GeminiBillReader;
 import com.siot.backend.translation.GeminiTranslator;
 import com.siot.backend.translation.Translator;
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
+import com.siot.backend.rag.config.GeminiModels;
+import dev.langchain4j.model.google.genai.GoogleGenAiChatModel;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,7 +17,7 @@ import java.util.Map;
 
 /**
  * 번역 AI 연결 (COM-02, EVE-02). {@link com.siot.backend.rag.config.RagConfig} 와 같은 방식이다.
- * API 키가 없으면 호출 시 {@link AiUnavailableException} 을 던지는 구현을 등록한다.
+ * Gemini 설정이 없으면 호출 시 {@link AiUnavailableException} 을 던지는 구현을 등록한다.
  */
 @Configuration
 @EnableConfigurationProperties(TranslationProperties.class)
@@ -40,8 +41,7 @@ public class TranslationConfig {
                 }
             };
         }
-        GoogleAiGeminiChatModel model = GoogleAiGeminiChatModel.builder()
-                .apiKey(props.apiKey())
+        GoogleGenAiChatModel model = GeminiModels.chat(props)
                 .modelName(props.chatModel())
                 .temperature(0.0)
                 .timeout(props.timeout())
@@ -62,8 +62,7 @@ public class TranslationConfig {
                 throw new AiUnavailableException("Gemini API key is not configured");
             };
         }
-        GoogleAiGeminiChatModel model = GoogleAiGeminiChatModel.builder()
-                .apiKey(props.apiKey())
+        GoogleGenAiChatModel model = GeminiModels.chat(props)
                 .modelName(translationProps.billModelOr(props.chatModel()))
                 .temperature(0.0)
                 .timeout(translationProps.billTimeout())

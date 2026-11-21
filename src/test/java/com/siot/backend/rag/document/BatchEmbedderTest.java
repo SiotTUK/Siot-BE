@@ -3,6 +3,7 @@ package com.siot.backend.rag.document;
 import com.siot.backend.rag.ai.AiUnavailableException;
 import com.siot.backend.rag.ai.DocumentEmbedder;
 import com.siot.backend.rag.config.DocumentProperties;
+import com.google.genai.errors.ApiException;
 import dev.langchain4j.exception.HttpException;
 import dev.langchain4j.exception.InternalServerException;
 import dev.langchain4j.exception.RateLimitException;
@@ -63,6 +64,25 @@ class BatchEmbedderTest {
 
         assertThat(batchEmbedder.embed(texts(1), "문서")).hasSize(1);
         assertThat(sleeps).containsExactly(RETRY_WAIT, RETRY_WAIT);
+    }
+
+    @Test
+    void waitsAndRetriesOnVertexServiceUnavailable() {
+        when(embedder.embedAll(anyList(), eq("문서")))
+                .thenThrow(unavailable(new InternalServerException(new ApiException(503, "UNAVAILABLE", "busy"))))
+                .thenReturn(vectors(1));
+
+        assertThat(batchEmbedder.embed(texts(1), "문서")).hasSize(1);
+        assertThat(sleeps).containsExactly(RETRY_WAIT);
+    }
+
+    @Test
+    void doesNotRetryVertexInternalError() {
+        when(embedder.embedAll(anyList(), eq("문서")))
+                .thenThrow(unavailable(new InternalServerException(new ApiException(500, "INTERNAL", "boom"))));
+
+        assertThatThrownBy(() -> batchEmbedder.embed(texts(1), "문서")).isInstanceOf(AiUnavailableException.class);
+        verify(embedder, times(1)).embedAll(anyList(), eq("문서"));
     }
 
     @Test
