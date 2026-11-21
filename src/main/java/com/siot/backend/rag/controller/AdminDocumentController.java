@@ -36,7 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /** ADM-02~04, NTF-06: 챗봇 근거 문서(PDF) 등록·교체·정보 관리·반영 상태 (관리자 전용) */
-@Tag(name = "9-4. 관리자: 문서", description = "챗봇 근거 문서(PDF) 등록·교체, 문서 정보, 반영 상태 확인·재실행 (ADM-02~04, NTF-06). 관리자만")
+@Tag(name = "9-4. 관리자: 문서", description = "챗봇 근거 문서(PDF) 등록·교체, 문서 정보, 반영 상태 확인·재실행·재처리 (ADM-02~04, NTF-06). 관리자만")
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
@@ -91,6 +91,20 @@ public class AdminDocumentController {
             @Valid @ModelAttribute DocumentVersionCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.of(documentAdminService.addVersion(principal.getId(), documentId, request)));
+    }
+
+    @Operation(summary = "ADM-04 현재 버전 재처리 (조각 규칙 변경)",
+            description = "현재 버전의 저장된 파일로 새 버전(REPROCESS)을 만들어 다시 반영한다. 파일은 다시 올리지 않는다. "
+                    + "성공하면 새 버전이 현재 버전이 되고, 실패하면 이전 버전을 계속 쓴다. 문서 내용 변경이 아니므로 사용자 알림 대상이 아니다.")
+    @SuccessStatus(value = 202, description = "재처리 요청됨. 반영은 뒤에서 진행")
+    @ApiErrorCodes({ErrorCode.DOCUMENT_NOT_FOUND, ErrorCode.DOCUMENT_VERSION_IN_PROGRESS,
+            ErrorCode.DOCUMENT_CURRENT_VERSION_MISSING})
+    @PostMapping("/documents/{documentId}/reprocess")
+    public ResponseEntity<ApiResponse<DocumentVersionResponse>> reprocess(
+            @AuthenticationPrincipal MemberPrincipal principal,
+            @PathVariable Long documentId) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.of(documentAdminService.reprocess(principal.getId(), documentId)));
     }
 
     @Operation(summary = "ADM-04·NTF-06 버전 목록 (반영 상태)",

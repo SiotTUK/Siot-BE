@@ -285,6 +285,98 @@ class DocumentIngestionIntegrationTest {
     }
 
     @Test
+    void reprocessUsesSameFileAndBecomesCurrent() throws Exception {
+        String name = "Reprocess Guide " + UUID.randomUUID();
+        long documentId = createAndAwait(name);
+
+        mockMvc.perform(post("/api/admin/documents/{id}/reprocess", documentId).cookie(admin).with(csrf()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.versionNo").value(2))
+                .andExpect(jsonPath("$.data.changeType").value("REPROCESS"))
+                .andExpect(jsonPath("$.data.changeSummary").value("조각 규칙 변경으로 재처리"))
+                .andExpect(jsonPath("$.data.originalFilename").value("guide.pdf"))
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.current").value(false));
+        awaitStatus(documentId, 2, "COMPLETED");
+
+        // 파일은 다시 저장하지 않고 같은 저장 키·checksum 을 쓴다
+        Integer distinctFiles = jdbcTemplate.queryForObject(
+                "SELECT count(DISTINCT (file_storage_key, checksum)) FROM document_version WHERE document_id = ?",
+                Integer.class, documentId);
+        assertThat(distinctFiles).isEqualTo(1);
+        assertThat(currentVersionNos(documentId)).containsExactly(2);
+
+        // 검색은 새 버전 조각만, 이전 버전 조각은 지우지 않는다 (CB-17)
+        assertThat(searchedVersionNos(name)).isNotEmpty().containsOnly(2);
+        assertThat(chunkCount(documentId, 1)).isEqualTo(2);
+        assertThat(chunkCount(documentId, 2)).isEqualTo(2);
+
+        // 같은 파일 새 버전 업로드는 계속 막는다
+        mockMvc.perform(multipart("/api/admin/documents/{id}/versions", documentId)
+                        .file(pdf(VERSION_ONE_PDF)).cookie(admin).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_FILE_UNCHANGED"));
+    }
+
+    @Test
+    void failedReprocessKeepsPreviousVersion() throws Exception {
+        String name = "Reprocess Fail Guide " + UUID.randomUUID();
+        long documentId = createAndAwait(name);
+
+        when(documentEmbedder.embedAll(anyList(), anyString()))
+                .thenThrow(new AiUnavailableException("Gemini document embedding failed", new RuntimeException("quota exceeded")));
+        long versionTwo = id(mockMvc.perform(post("/api/admin/documents/{id}/reprocess", documentId)
+                        .cookie(admin).with(csrf()))
+                .andExpect(status().isAccepted()).andReturn(), "$.data.versionId");
+        awaitStatus(documentId, 2, "FAILED");
+
+        assertThat(currentVersionNos(documentId)).containsExactly(1);
+        assertThat(searchedVersionNos(name)).isNotEmpty().containsOnly(1);
+        assertThat(chunkCount(documentId, 2)).isZero();
+
+        // 실패한 재처리 버전은 다시 반영으로 살린다
+        reset(documentEmbedder);
+        when(documentEmbedder.embedAll(anyList(), anyString())).thenAnswer(call -> fakeVectors(call.getArgument(0)));
+        mockMvc.perform(post("/api/admin/document-versions/{id}/retry", versionTwo).cookie(admin).with(csrf()))
+                .andExpect(status().isAccepted());
+        awaitStatus(documentId, 2, "COMPLETED");
+        assertThat(currentVersionNos(documentId)).containsExactly(2);
+    }
+
+    @Test
+    void reprocessRejectsInProgressMissingCurrentAndNonAdmin() throws Exception {
+        long documentId = createAndAwait("Reprocess Reject Guide " + UUID.randomUUID());
+
+        // 대기 중인 버전이 있으면 재처리하지 않는다
+        jdbcTemplate.update("INSERT INTO document_version (document_id, version_no, file_storage_key, processing_status) "
+                + "VALUES (?, 9, 'documents/test/missing.pdf', 'PENDING')", documentId);
+        mockMvc.perform(post("/api/admin/documents/{id}/reprocess", documentId).cookie(admin).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_VERSION_IN_PROGRESS"));
+        jdbcTemplate.update("DELETE FROM document_version WHERE document_id = ? AND version_no = 9", documentId);
+
+        // 첫 버전이 실패해 현재 버전이 없으면 재처리할 수 없다
+        long failedDocument = id(mockMvc.perform(multipart("/api/admin/documents")
+                        .file(pdf(TestPdfs.blank(1)))
+                        .param("name", "No Current Guide " + UUID.randomUUID())
+                        .param("sourceUrl", SOURCE_URL)
+                        .cookie(admin).with(csrf()))
+                .andExpect(status().isCreated()).andReturn(), "$.data.documentId");
+        awaitStatus(failedDocument, 1, "FAILED");
+        mockMvc.perform(post("/api/admin/documents/{id}/reprocess", failedDocument).cookie(admin).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_CURRENT_VERSION_MISSING"));
+
+        mockMvc.perform(post("/api/admin/documents/{id}/reprocess", Long.MAX_VALUE).cookie(admin).with(csrf()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_NOT_FOUND"));
+
+        mockMvc.perform(post("/api/admin/documents/{id}/reprocess", documentId)
+                        .cookie(login(MEMBER_EMAIL)).with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void validatesUploadAndRequiresAdmin() throws Exception {
         mockMvc.perform(multipart("/api/admin/documents")
                         .file(new MockMultipartFile("file", "notes.pdf", "application/pdf", "hello".getBytes()))
@@ -369,6 +461,28 @@ class DocumentIngestionIntegrationTest {
             Thread.sleep(100);
         }
         throw new AssertionError("document " + documentId + " v" + versionNo + " status " + status + ", expected " + expected);
+    }
+
+    private int chunkCount(long documentId, int versionNo) {
+        return jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM document_chunk c JOIN document_version v ON v.document_version_id = c.document_version_id
+                WHERE v.document_id = ? AND v.version_no = ?""", Integer.class, documentId, versionNo);
+    }
+
+    /** 이 문서에서 검색되는 조각의 버전 번호 */
+    private List<Integer> searchedVersionNos(String documentName) {
+        List<Integer> versionNos = new ArrayList<>();
+        for (int axis = 0; axis < 2; axis++) {
+            for (RetrievedChunk chunk : chunkRetriever.search(axis(axis), 50)) {
+                if (documentName.equals(chunk.documentName())) {
+                    versionNos.add(jdbcTemplate.queryForObject("""
+                            SELECT v.version_no FROM document_chunk c
+                            JOIN document_version v ON v.document_version_id = c.document_version_id
+                            WHERE c.chunk_id = ?""", Integer.class, chunk.chunkId()));
+                }
+            }
+        }
+        return versionNos;
     }
 
     private List<Integer> currentVersionNos(long documentId) {

@@ -50,6 +50,7 @@ public class DocumentAdminService {
     /** PDF 머리말("%PDF-")은 파일 앞 1024바이트 안에 있어야 한다 (PDF 규격) */
     private static final int PDF_HEADER_WINDOW = 1024;
     private static final byte[] PDF_HEADER = "%PDF-".getBytes(StandardCharsets.US_ASCII);
+    static final String REPROCESS_SUMMARY = "조각 규칙 변경으로 재처리";
     private static final List<ProcessingStatus> IN_PROGRESS = List.of(ProcessingStatus.PENDING, ProcessingStatus.PROCESSING);
 
     private final DocumentRepository documentRepository;
@@ -108,6 +109,28 @@ public class DocumentAdminService {
         int versionNo = versionRepository.findMaxVersionNo(documentId) + 1;
         DocumentVersion version = storeVersion(document, versionNo, request.file(), content, checksum,
                 adminId, ChangeType.REPLACE, strip(request.changeSummary()));
+        return DocumentVersionResponse.from(version, 0);
+    }
+
+    /**
+     * ADM-04: 현재 버전의 저장된 파일로 새 버전을 만들어 다시 반영한다 (조각 규칙이 바뀌었을 때).
+     * 파일은 다시 저장하지 않고 같은 저장 키를 쓴다. 그래서 {@link #storeVersion} 의 롤백 시 파일 삭제를 타면 안 된다
+     * (현재 버전의 원본이 지워진다). 성공하면 새 버전이 현재 버전이 되고, 실패하면 이전 버전을 계속 쓴다.
+     */
+    @Transactional
+    public DocumentVersionResponse reprocess(Long adminId, Long documentId) {
+        Document document = documentRepository.findByIdForUpdate(documentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
+        if (versionRepository.existsByDocumentIdAndProcessingStatusIn(documentId, IN_PROGRESS)) {
+            throw new BusinessException(ErrorCode.DOCUMENT_VERSION_IN_PROGRESS);
+        }
+        DocumentVersion current = versionRepository.findByDocumentIdAndCurrentTrue(documentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_CURRENT_VERSION_MISSING));
+        int versionNo = versionRepository.findMaxVersionNo(documentId) + 1;
+        DocumentVersion version = versionRepository.save(DocumentVersion.create(document, versionNo,
+                current.getOriginalFilename(), current.getFileStorageKey(), current.getChecksum(), adminId,
+                ChangeType.REPROCESS, REPROCESS_SUMMARY));
+        eventPublisher.publishEvent(new DocumentProcessingQueue.VersionQueued(version.getId()));
         return DocumentVersionResponse.from(version, 0);
     }
 

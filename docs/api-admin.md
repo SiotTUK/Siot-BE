@@ -16,6 +16,7 @@
 | POST | `/api/admin/documents/{documentId}/versions` | ADM-02 | 새 버전 업로드 (multipart: `file`, `changeSummary`) |
 | GET | `/api/admin/documents/{documentId}/versions` | ADM-04, NTF-06 | 버전 목록과 반영 상태 |
 | POST | `/api/admin/document-versions/{versionId}/retry` | ADM-04 | 실패한 버전 다시 반영 |
+| POST | `/api/admin/documents/{documentId}/reprocess` | ADM-04 | 현재 버전 파일로 재처리 (바뀐 조각 규칙 적용) |
 
 ## 관리자 지정 (ADM-01)
 
@@ -109,8 +110,20 @@ PENDING(대기) → PROCESSING(처리 중) → COMPLETED(완료) / FAILED(실패
   "uploadedAt": "2026-11-20T10:05:00+09:00", "processedAt": "2026-11-20T10:07:12+09:00" } ] }
 ```
 
-- `changeType`: `NEW`(새 문서 등록) / `REPLACE`(기존 문서 교체).
+- `changeType`: `NEW`(새 문서 등록) / `REPLACE`(기존 문서 교체) / `REPROCESS`(같은 파일 재처리).
 - 텍스트가 없는 PDF(스캔 이미지)는 `EXTRACT` 단계에서 실패합니다. 글자를 선택할 수 있는 PDF 로 다시 올립니다.
+
+### 재처리 `POST /api/admin/documents/{documentId}/reprocess` → 202
+
+조각 나누기 규칙이 바뀌었을 때 기존 문서에 새 규칙을 적용합니다. 같은 파일을 새 버전으로 올리면 `DOCUMENT_FILE_UNCHANGED` 로 막히므로 이 API 를 씁니다.
+
+- 현재 버전(`current: true`)의 저장된 파일로 새 버전을 만듭니다. 파일은 다시 저장하지 않고 같은 저장 키·checksum 을 씁니다.
+- `versionNo` 는 +1, `changeType: "REPROCESS"`, `changeSummary: "조각 규칙 변경으로 재처리"`, `uploadedBy` 는 요청한 관리자입니다.
+- 처리 흐름은 새 버전 업로드와 같습니다. 성공하면 새 버전이 현재 버전이 되고, 실패하면 이전 버전을 계속 씁니다. 실패한 재처리 버전은 `retry` 로 다시 반영할 수 있습니다.
+- 문서 내용이 바뀐 것이 아니므로 **사용자 알림 대상이 아닙니다.** 사용자에게 문서 변경 알림을 보내게 되면 `REPROCESS` 는 빼야 합니다.
+- 사용 중지(`active: false`) 문서도 재처리할 수 있으며, 검색에서는 계속 빠집니다.
+- 실패한 새 버전(REPLACE)이 남아 있는 상태에서 재처리가 성공하면, 그 실패 버전은 현재 버전보다 오래된 버전이 되어 `retry` 할 수 없습니다.
+- 응답은 새 버전 (`status: "PENDING"`, `current: false`). 진행 상태는 버전 목록에서 확인합니다.
 
 ### 오류
 
@@ -118,8 +131,9 @@ PENDING(대기) → PROCESSING(처리 중) → COMPLETED(완료) / FAILED(실패
 |---|---|
 | PDF 가 아님 | 400 `DOCUMENT_FILE_INVALID` |
 | 30MB 초과 | 413 `DOCUMENT_FILE_TOO_LARGE` |
-| 같은 문서의 다른 버전이 대기·처리 중 | 409 `DOCUMENT_VERSION_IN_PROGRESS` |
+| 같은 문서의 다른 버전이 대기·처리 중 (업로드·재처리) | 409 `DOCUMENT_VERSION_IN_PROGRESS` |
 | 현재 버전과 같은 파일 | 409 `DOCUMENT_FILE_UNCHANGED` |
+| 재처리: 현재 버전이 없음 (첫 버전이 아직 성공하지 못함) | 409 `DOCUMENT_CURRENT_VERSION_MISSING` |
 | 재실행: 실패가 아닌 버전, 또는 현재 버전보다 오래된 버전 | 409 `DOCUMENT_VERSION_NOT_RETRYABLE` |
 | 없는 문서 / 버전 | 404 `DOCUMENT_NOT_FOUND` / `DOCUMENT_VERSION_NOT_FOUND` |
 

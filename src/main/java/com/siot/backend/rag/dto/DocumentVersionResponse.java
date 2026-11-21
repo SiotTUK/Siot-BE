@@ -15,7 +15,7 @@ public record DocumentVersionResponse(
         @Schema(description = "문서 ID", example = "3") Long documentId,
         @Schema(description = "버전 번호 (문서마다 1부터)", example = "2") int versionNo,
         @Schema(description = "올린 파일 이름", nullable = true, example = "guide-2026.pdf") String originalFilename,
-        @Schema(description = "NEW: 새 문서 등록, REPLACE: 기존 문서 교체", nullable = true, example = "REPLACE") ChangeType changeType,
+        @Schema(description = "NEW: 새 문서 등록, REPLACE: 기존 문서 교체, REPROCESS: 같은 파일을 지금 조각 규칙으로 재처리", nullable = true, example = "REPLACE") ChangeType changeType,
         @Schema(description = "바뀐 내용 요약", nullable = true) String changeSummary,
         @Schema(description = "PENDING(대기) / PROCESSING(처리 중) / COMPLETED(완료) / FAILED(실패)", example = "COMPLETED")
         ProcessingStatus status,

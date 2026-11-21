@@ -46,6 +46,7 @@ public enum ErrorCode {
     DOCUMENT_FILE_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "파일이 너무 큽니다. 30MB 이하로 올려 주세요."),
     DOCUMENT_FILE_UNCHANGED(HttpStatus.CONFLICT, "현재 버전과 같은 파일입니다."),
     DOCUMENT_VERSION_IN_PROGRESS(HttpStatus.CONFLICT, "이 문서의 다른 버전을 반영하는 중입니다. 끝난 뒤 다시 시도해 주세요."),
+    DOCUMENT_CURRENT_VERSION_MISSING(HttpStatus.CONFLICT, "검색에 쓰는 현재 버전이 없어 재처리할 수 없습니다. 실패한 버전은 다시 반영을 사용해 주세요."),
     DOCUMENT_VERSION_NOT_RETRYABLE(HttpStatus.CONFLICT, "다시 반영할 수 없는 버전입니다. 실패한 버전 중 현재 버전보다 새 버전만 다시 반영할 수 있습니다."),
 
     // ---- 행사 (EVE-03~10, ADM-05) ----
