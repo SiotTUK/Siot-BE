@@ -44,7 +44,11 @@ public record ExtractedContent(List<ContentBlock> blocks, int pageCount, Source 
         return length;
     }
 
+    /** 머리 행이 빈 열의 이름은 null 이다 (TaggedPdfExtractor.columnNames) */
     static int nonSpaceLength(String text) {
+        if (text == null) {
+            return 0;
+        }
         int length = 0;
         for (int i = 0; i < text.length(); i++) {
             if (!Character.isWhitespace(text.charAt(i))) {
