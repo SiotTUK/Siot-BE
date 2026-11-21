@@ -131,6 +131,22 @@ public final class TaggedTestPdf {
         return this;
     }
 
+    /** 화면의 한 줄을 구조 요소 여러 개로 나눈 것 ("※" / "외국인근로자에게 적용되는" / "4" / "대 보험 …" 같은 PDF) */
+    public TaggedTestPdf paragraphsOnOneLine(String... parts) {
+        float x = 50;
+        for (String part : parts) {
+            PDStructureElement element = element("NormalParagraphStyle", root);
+            element.appendKid(markedText(P, part, x, false));
+            try {
+                x += font.getStringWidth(part) / 1000 * SIZE + 1;
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+        y -= LEADING;
+        return this;
+    }
+
     /** 앞 쪽의 마지막 문단이 이 쪽으로 이어짐 (MCR 로 다른 쪽 내용을 가리킨다) */
     public TaggedTestPdf continueParagraph(String text) {
         PDMarkedContentReference reference = new PDMarkedContentReference();

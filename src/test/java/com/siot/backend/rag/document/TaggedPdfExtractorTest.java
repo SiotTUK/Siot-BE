@@ -31,8 +31,8 @@ class TaggedPdfExtractorTest {
         assertThat(content.source()).isEqualTo(Source.TAGGED);
         assertThat(content.pageCount()).isEqualTo(1);
         assertThat(content.blocks()).containsExactly(
-                new TextLine("1-4 Local Tax", 1, true),
-                new TextLine("Property tax is paid in July and September.", 1, true));
+                new TextLine("1-4 Local Tax", 1, true, 10, false),
+                new TextLine("Property tax is paid in July and September.", 1, true, 10, false));
     }
 
     @Test
@@ -43,8 +43,8 @@ class TaggedPdfExtractorTest {
                 .build();
 
         assertThat(extractor.extract(pdf).blocks()).containsExactly(
-                new TextLine("Foreign residents join health insurance", 1, true),
-                new TextLine("after six months of stay.", 2, false));
+                new TextLine("Foreign residents join health insurance", 1, true, 10, false),
+                new TextLine("after six months of stay.", 2, false, 10, false));
     }
 
     @Test
@@ -54,7 +54,30 @@ class TaggedPdfExtractorTest {
                 .build();
 
         assertThat(extractor.extract(pdf).blocks())
-                .containsExactly(new TextLine("Visit the immigration office", 1, true));
+                .containsExactly(new TextLine("Visit the immigration office", 1, true, 10, false));
+    }
+
+    /** 07: 화면 한 줄이 구조 요소 여러 개로 나뉘어 있으면 한 줄로 잇는다 (다음 줄 문단은 따로) */
+    @Test
+    void joinsElementsOnTheSameLine() throws IOException {
+        byte[] pdf = TaggedTestPdf.create().page()
+                .paragraphsOnOneLine("Health insurance", "(", "mandatory", ")")
+                .paragraph("Foreign workers join on the first day.")
+                .build();
+
+        assertThat(extractor.extract(pdf).blocks()).containsExactly(
+                new TextLine("Health insurance (mandatory)", 1, true, 10, false),
+                new TextLine("Foreign workers join on the first day.", 1, true, 10, false));
+    }
+
+    @Test
+    void sameLineSeparatorFollowsPunctuationAndNumbers() {
+        assertThat(TaggedPdfExtractor.sameLineSeparator("※", "외국인근로자에게 적용되는")).isEqualTo(" ");
+        assertThat(TaggedPdfExtractor.sameLineSeparator("※ 외국인근로자에게 적용되는", "4")).isEqualTo(" ");
+        assertThat(TaggedPdfExtractor.sameLineSeparator("※ 외국인근로자에게 적용되는 4", "대 보험 가입사항 비교")).isEqualTo("");
+        assertThat(TaggedPdfExtractor.sameLineSeparator("※ “", "근로계약 효력발생일")).isEqualTo("");
+        assertThat(TaggedPdfExtractor.sameLineSeparator("근로계약 효력발생일", "”")).isEqualTo("");
+        assertThat(TaggedPdfExtractor.sameLineSeparator("이란", "?")).isEqualTo("");
     }
 
     @Test
@@ -79,7 +102,7 @@ class TaggedPdfExtractorTest {
                 "Type: Korean class / Program: Weekday class / Target: Workers",
                 "Type: Counseling / Program: Multilingual counseling");
         assertThat(table.rows()).extracting(TableRow::page).containsOnly(1);
-        assertThat(blocks.get(2)).isEqualTo(new TextLine("Call 031-434-0411 for details.", 1, true));
+        assertThat(blocks.get(2)).isEqualTo(new TextLine("Call 031-434-0411 for details.", 1, true, 10, false));
     }
 
     /** 머리 행 없이 같은 모양 행만 있는 표 (첫 행에 전화·URL·주소) */
@@ -149,9 +172,9 @@ class TaggedPdfExtractorTest {
 
         assertThat(extractor.extract(tagged, Set.of(1)).blocks())
                 .hasSize(2)
-                .first().isEqualTo(new TextLine("1-1 Basic Rules", 2, true));
+                .first().isEqualTo(new TextLine("1-1 Basic Rules", 2, true, 10, false));
         assertThat(extractor.extract(tagged, Set.of(2)).blocks())
-                .containsExactly(new TextLine("CONTENTS", 1, true));
+                .containsExactly(new TextLine("CONTENTS", 1, true, 10, false));
         assertThat(extractor.extract(plain, Set.of(1)).blocks())
                 .containsExactly(new TextLine("Register within 90 days.", 2, false, 10, false));
     }

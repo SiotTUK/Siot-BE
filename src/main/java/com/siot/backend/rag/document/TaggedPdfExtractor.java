@@ -85,11 +85,13 @@ public class TaggedPdfExtractor {
         usedContent = new java.util.HashSet<>();
         indexGlyphs(document);
         blocks = new ArrayList<>();
+        lastGlyph = null;
         visit(root, null);
         Result result = new Result(blocks, usedLength, artifactLength);
         glyphs = null;
         pageNumbers = null;
         blocks = null;
+        lastGlyph = null;
         usedContent = null;
         return result;
     }
@@ -209,16 +211,73 @@ public class TaggedPdfExtractor {
         }
     }
 
-    /** 쪽마다, 그리고 문단 안 강제 줄바꿈마다 한 줄. 첫 줄만 새 문단 */
+    /**
+     * 쪽마다, 그리고 문단 안 강제 줄바꿈마다 한 줄. 첫 줄만 새 문단. 줄마다 글자 크기(pt, 글자 수 평균)와 굵기를 넣는다.
+     * 문단의 첫 줄이 앞 문단의 마지막 줄과 같은 쪽·같은 높이에서 바로 오른쪽에 이어지면
+     * (구조 요소가 한 줄을 "※" / "외국인근로자에게 적용되는" / "4" / "대 보험 …" 으로 나눈 경우) 앞 줄에 잇는다.
+     */
     private void addTextLines(List<Run> runs) {
         boolean first = true;
         for (Run run : runs) {
-            for (String text : lines(run.positions())) {
-                blocks.add(new TextLine(text, run.page(), first));
+            for (StyledLine line : styledLines(run.positions())) {
+                if (first && continuesLastLine(run.page(), line)) {
+                    TextLine last = (TextLine) blocks.getLast();
+                    String separator = sameLineSeparator(last.text(), line.text());
+                    int lastLength = last.text().length();
+                    int length = line.text().length();
+                    float size = (last.fontSize() * lastLength + line.size() * length) / (lastLength + length);
+                    boolean bold = last.bold() ? lastLength >= length || line.bold() : line.bold() && length > lastLength;
+                    blocks.set(blocks.size() - 1, new TextLine(last.text() + separator + line.text(), last.page(),
+                            last.newParagraph(), size, bold));
+                } else {
+                    blocks.add(new TextLine(line.text(), run.page(), first, line.size(), line.bold()));
+                }
+                lastGlyph = line.last();
+                lastGlyphPage = run.page();
                 first = false;
             }
         }
     }
+
+    /** 앞 줄의 마지막 글자 (같은 줄 잇기 판단용). 표가 나오면 지운다 */
+    private TextPosition lastGlyph;
+    private int lastGlyphPage;
+
+    private boolean continuesLastLine(int page, StyledLine line) {
+        if (lastGlyph == null || lastGlyphPage != page || blocks.isEmpty() || !(blocks.getLast() instanceof TextLine last)
+                || last.page() != page) {
+            return false;
+        }
+        TextPosition next = line.first();
+        float size = size(lastGlyph);
+        float gap = next.getXDirAdj() - (lastGlyph.getXDirAdj() + lastGlyph.getWidthDirAdj());
+        return !isNewLine(lastGlyph, next) && gap > -size * 0.5f && gap < size * SAME_LINE_GAP;
+    }
+
+    /**
+     * 같은 줄로 이은 구조 요소 사이의 띄어쓰기. 요소 사이 공백 글자는 구조 트리 밖에 있어 간격으로 알 수 없으므로 글자로 정한다:
+     * 여는 괄호·따옴표 뒤, 닫는 괄호·따옴표·문장부호 앞, 숫자만 있는 조각 뒤의 한글("4" + "대 보험")은 붙이고 나머지는 띄운다.
+     */
+    static String sameLineSeparator(String previous, String next) {
+        if (previous.isEmpty() || next.isEmpty()) {
+            return "";
+        }
+        char last = previous.charAt(previous.length() - 1);
+        char first = next.charAt(0);
+        if ("([{「『“‘<〈《【".indexOf(last) >= 0 || ")]}」』”’>〉》】.,?!:;".indexOf(first) >= 0) {
+            return "";
+        }
+        if (Character.isDigit(last) && Character.isLetter(first) && TRAILING_NUMBER.matcher(previous).find()) {
+            return "";
+        }
+        return " ";
+    }
+
+    /** 띄어 쓴 짧은 숫자로 끝남 ("… 적용되는 4") */
+    private static final Pattern TRAILING_NUMBER = Pattern.compile("(?:^|\\s)\\d{1,3}$");
+
+    /** 같은 줄로 이을 앞 문단 끝과의 최대 간격 (글자 크기 배수) */
+    private static final float SAME_LINE_GAP = 3f;
 
     // ---------------------------------------------------------------- 표
 
@@ -476,8 +535,12 @@ public class TaggedPdfExtractor {
         return false;
     }
 
-    /** 화면의 한 줄: 글자, 시작·끝 x, 글자 크기 */
-    private record VisualLine(String text, float startX, float endX, float size) {
+    /**
+     * 화면의 한 줄: 글자, 시작·끝 x, 글자 크기, 첫·마지막 글자.
+     * sizeSum·chars·boldChars 는 공백이 아닌 글자의 pt 합·글자 수·굵은 글자 수
+     */
+    private record VisualLine(String text, float startX, float endX, float size, TextPosition first, TextPosition last,
+                              double sizeSum, int chars, int boldChars) {
     }
 
     /** 표 칸처럼 줄바꿈 없이 한 줄로 (칸 안 줄은 공백으로 잇는다) */
@@ -490,31 +553,57 @@ public class TaggedPdfExtractor {
      * 강제 줄바꿈: 앞 줄이 문단의 가장 긴 줄보다 글자 2개 이상 짧게 끝났거나, 다음 줄이 목록·번호 기호로 시작.
      */
     static List<String> lines(List<TextPosition> positions) {
+        return styledLines(positions).stream().map(StyledLine::text).toList();
+    }
+
+    /**
+     * 나눈 줄과 글자 모양.
+     *
+     * @param size  글자 크기 (pt, 글자 수 평균)
+     * @param bold  글자의 절반 이상이 굵은 글꼴
+     * @param first 첫 글자
+     * @param last  마지막 글자
+     */
+    record StyledLine(String text, float size, boolean bold, TextPosition first, TextPosition last) {
+    }
+
+    private static List<StyledLine> styledLines(List<TextPosition> positions) {
         List<VisualLine> visual = visualLines(positions);
         float maxEnd = 0;
         for (VisualLine line : visual) {
             maxEnd = Math.max(maxEnd, line.endX());
         }
-        List<String> lines = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
+        List<StyledLine> lines = new ArrayList<>();
+        List<VisualLine> current = new ArrayList<>();
         VisualLine previous = null;
         for (VisualLine line : visual) {
             boolean forced = previous != null
                     && (previous.endX() < maxEnd - previous.size() * 2 || LINE_START_MARKER.matcher(line.text()).find());
             if (forced && !current.isEmpty()) {
-                lines.add(current.toString());
-                current.setLength(0);
+                lines.add(styled(current));
+                current.clear();
             }
-            if (!current.isEmpty()) {
-                current.append(' ');
-            }
-            current.append(line.text());
+            current.add(line);
             previous = line;
         }
         if (!current.isEmpty()) {
-            lines.add(current.toString());
+            lines.add(styled(current));
         }
         return lines;
+    }
+
+    private static StyledLine styled(List<VisualLine> visual) {
+        double sizeSum = 0;
+        int chars = 0;
+        int boldChars = 0;
+        for (VisualLine line : visual) {
+            sizeSum += line.sizeSum();
+            chars += line.chars();
+            boldChars += line.boldChars();
+        }
+        String text = String.join(" ", visual.stream().map(VisualLine::text).toList());
+        return new StyledLine(text, chars == 0 ? 0 : (float) (sizeSum / chars), chars > 0 && boldChars * 2 >= chars,
+                visual.getFirst().first(), visual.getLast().last());
     }
 
     /**
@@ -526,16 +615,18 @@ public class TaggedPdfExtractor {
         StringBuilder text = new StringBuilder();
         TextPosition previous = null;
         TextPosition lineStart = null;
-        float lineEnd = 0;
+        TextPosition lineLast = null;
+        LineStats stats = new LineStats();
         for (TextPosition position : positions) {
             String unicode = clean(position.getUnicode());
             if (unicode.isEmpty()) {
                 continue;
             }
             if (previous != null && isNewLine(previous, position)) {
-                addLine(lines, text, lineStart, lineEnd);
+                addLine(lines, text, lineStart, lineLast, stats);
                 text.setLength(0);
                 lineStart = null;
+                stats = new LineStats();
             }
             if (unicode.isBlank()) {
                 appendSpace(text);
@@ -547,18 +638,37 @@ public class TaggedPdfExtractor {
                     lineStart = position;
                 }
                 text.append(unicode);
-                lineEnd = position.getXDirAdj() + position.getWidthDirAdj();
+                lineLast = position;
+                stats.add(position, unicode.length());
             }
             previous = position;
         }
-        addLine(lines, text, lineStart, lineEnd);
+        addLine(lines, text, lineStart, lineLast, stats);
         return lines;
     }
 
-    private static void addLine(List<VisualLine> lines, StringBuilder text, TextPosition start, float end) {
+    /** 줄 글자 모양 집계 */
+    private static final class LineStats {
+        double sizeSum;
+        int chars;
+        int boldChars;
+
+        void add(TextPosition position, int length) {
+            sizeSum += (double) position.getFontSizeInPt() * length;
+            chars += length;
+            if (PdfTextExtractor.isBold(position.getFont())) {
+                boldChars += length;
+            }
+        }
+    }
+
+    private static void addLine(List<VisualLine> lines, StringBuilder text, TextPosition start, TextPosition last,
+                                LineStats stats) {
         String line = SPACES.matcher(text).replaceAll(" ").strip();
         if (!line.isEmpty() && start != null) {
-            lines.add(new VisualLine(line, start.getXDirAdj(), end, size(start)));
+            float end = last.getXDirAdj() + last.getWidthDirAdj();
+            lines.add(new VisualLine(line, start.getXDirAdj(), end, size(start), start, last,
+                    stats.sizeSum, stats.chars, stats.boldChars));
         }
     }
 
