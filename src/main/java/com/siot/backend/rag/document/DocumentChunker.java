@@ -35,6 +35,13 @@ import java.util.regex.Pattern;
  *     <li>태그 PDF 에서 따로 떨어진 기호·괄호 줄("※", "(", ")")은 앞뒤 줄에 붙인다</li>
  *     <li>본문이 {@value #MIN_BODY}자 미만인 조각은 같은 절의 다음(안 되면 앞) 조각과 합친다.
  *         본문이 {@value #TINY_BODY}자 미만이고 절이 바뀌는 조각(표지·간지)은 다음 절 첫 조각에 붙인다. 표 조각은 합치지 않는다</li>
+ *     <li>바로 위 부모 제목이 같은 이웃 형제 절은 목표 길이까지 한 조각으로 묶고 하위 제목은 본문 줄로 남긴다
+ *         (부모가 최상위 제목뿐이면 묶지 않고, 묶은 조각은 {@value #MERGE_MAX_PAGES}쪽 안). {@link #mergeSiblings}</li>
+ *     <li>강조 기준 크기는 문서와 쪽의 본문 크기 중 큰 쪽 (별표 쪽처럼 쪽 전체 글자가 크면 표 칸이 제목이 되지 않게).
+ *         쪽 끝까지 찬 줄이라도 본문보다 {@value #BOX_TITLE_RATIO}배 이상 크면 상자 제목</li>
+ *     <li>"[별표 N] &lt;개정 …&gt;" 은 개정 표기를 떼고 아래 제목 줄과 이어 제목으로, "3.1.3." 점 번호는 숫자 개수로 단계를 가른다</li>
+ *     <li>조각이 "※ …" 같은 짧은 머리 문장으로 끝나면 다음 조각으로 넘긴다</li>
+ *     <li>PLAIN 의 05 체류관리 표는 "칸 이름: 값" 행으로 바꾸고 자격 제목 아래 "체류관리" 절에 둔다 ({@link StayTable})</li>
  * </ul>
  */
 public class DocumentChunker {
@@ -43,6 +50,18 @@ public class DocumentChunker {
     public static final int MAX = 1000;
     public static final int OVERLAP = 100;
     static final int HEADING_MAX = 40;
+    /** "[별표 1] 재외국민 및 외국인 지역가입자의 제출서류(제4조제4항 관련)" 처럼 별표 제목은 길다 */
+    static final int APPENDIX_HEADING_MAX = 60;
+    /** 조각 첫 줄 제목 경로의 최대 길이. 넘으면 위 단계부터 뺀다 */
+    static final int TITLE_MAX = 80;
+    /** 형제 절을 묶은 조각의 최대 쪽 수 (출처 쪽 범위가 넓어지지 않게) */
+    static final int MERGE_MAX_PAGES = 2;
+    /** 이어지는 머리 문장("※ …", "… 다음과 같다:")으로 보는 최대 길이 */
+    static final int LEAD_IN_MAX = 60;
+    /** 쪽마다 본문 크기를 따로 볼 최소 글자 수 (별표 쪽처럼 쪽 전체 글자 배율이 다른 경우) */
+    static final int PAGE_STYLE_MIN_CHARS = 200;
+    /** 쪽 오른쪽 끝까지 찬 줄이라도 본문보다 이 배수 이상 크면 상자 제목 ("코로나19 관련 … 알림") */
+    static final double BOX_TITLE_RATIO = 1.25;
     /** 표로 볼 연속 줄 수 */
     static final int TABLE_MIN_ROWS = 3;
     /** 본문이 이보다 짧은 조각은 이웃 조각과 합친다 */
@@ -51,6 +70,8 @@ public class DocumentChunker {
     static final int TINY_BODY = 30;
     /** 본문 글자 크기(중앙값)의 이 배수 이상이면 강조된 줄 */
     static final double EMPHASIS_RATIO = 1.15;
+    /** 강조된 줄은 그 쪽 본문(중앙값)보다도 이 배수 이상 크다 */
+    static final double PAGE_EMPHASIS_RATIO = 1.05;
     private static final int MIN_BUDGET = 200;
     private static final int TITLE_LEVELS = 3;
 
@@ -85,7 +106,7 @@ public class DocumentChunker {
     private static final Pattern TOC_TITLE = Pattern.compile(
             "^(?:" + PageNoiseFilter.PRIVATE_USE + "|[\\s<\\[(〈《【])*(?:목\\s*차|目\\s*次|차\\s*례|(?i:table\\s+of\\s+)?(?i:contents))[\\s>\\])〉》】]*$");
     /** 서식 끝의 기관 서명 ("법 무 부", "출입국․외국인정책본부"): 공백을 뺀 줄 전체가 기관 이름 */
-    private static final Pattern AGENCY_SIGNATURE = Pattern.compile("^(?:[가-힣]{1,4}부|[가-힣·․ㆍ]{2,14}본부|[가-힣·․ㆍ]{2,12}외국인청)$");
+    private static final Pattern AGENCY_SIGNATURE = Pattern.compile("^(?:[가-힣]{1,4}(?<!납)부|[가-힣·․ㆍ]{2,14}본부|[가-힣·․ㆍ]{2,12}외국인청)$");
     /** 조문 인용 ("제13조에 따라", "제28조 제1항") */
     private static final Pattern ARTICLE_START = Pattern.compile("^제\\s*\\d+\\s*조");
     /** 닫는 괄호류로 시작 (앞 줄에서 이어지는 링크 글자 ")-외국인근로자 고용관리-4대 사회보험]") */
@@ -111,8 +132,12 @@ public class DocumentChunker {
         SECTION("^제\\s*\\d+\\s*절", false),
         /** "제13조(연수생 관리 부실업체의 연수제한)": 줄 맨 앞의 괄호 제목 꼴만. "제13조에 따라 …" 는 아니다 */
         ARTICLE("^제\\s*\\d+\\s*조(?:\\s*의\\s*\\d+)?\\s*\\([^)]{1,40}\\)", false),
+        /** "[별표 2] 지역보험료 산정 기준(제6조제1항 관련)", "[별지 제10호서식]" */
+        APPENDIX("^\\[\\s*별\\s*[표지][^\\]]{0,20}\\]", true),
         ROMAN("^(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[IVX]{1,4}\\.)\\s*", false),
         BRACKET("^【[^】]{1,30}】", false),
+        /** "3.1.3. 외국인근로자 전용보험", "3.1. 근로", "2.1.4 임금" (점이 둘 이상이거나 끝에 점). 단계는 숫자 개수로 가른다 */
+        DECIMAL("^\\d{1,2}(?:\\.\\d{1,2}){1,3}\\.\\s+|^\\d{1,2}(?:\\.\\d{1,2}){2,3}\\s+", false),
         SQUARE("^■\\s*", true),
         SYMBOL("^(?:[□▶▷●◆◇◎▣❶-❿➊-➓]|" + PRIVATE_USE + ")\\s*", false),
         NUM_DOT("^\\d{1,2}\\.\\s+", false),
@@ -166,10 +191,11 @@ public class DocumentChunker {
      * @param fontSize   글자 크기 (0 이면 모름)
      * @param emphasized 본문보다 확실히 크거나 굵음 (PLAIN 에서만)
      * @param fullWidth  쪽의 오른쪽 끝까지 찬 줄 (PLAIN 에서만, 문장이 다음 줄로 이어짐)
+     * @param synthetic  문서에 없는 제목을 넣은 줄 (05 체류관리 표 앞의 "체류관리")
      */
     private record Line(String text, int page, boolean blankBefore, boolean pageStart, Marker marker,
                         boolean table, boolean header, TableBlock tableBlock, float fontSize, boolean bold,
-                        boolean emphasized, boolean fullWidth) {
+                        boolean emphasized, boolean fullWidth, boolean synthetic) {
     }
 
     /** 제목을 고르는 방식 */
@@ -215,16 +241,43 @@ public class DocumentChunker {
     private record Unit(String text, int pageStart, int pageEnd, boolean table) {
     }
 
-    /** 절: 제목과, 순서대로의 문단({@link Paragraph})·표({@link TableBlock}) */
-    private record Section(String title, List<Object> items) {
+    /**
+     * 절: 제목 경로(위 단계부터, 문서 이름 제외)와 조각 첫 줄 제목, 순서대로의 문단({@link Paragraph})·표({@link TableBlock})
+     */
+    private record Section(List<String> path, String title, List<Object> items) {
     }
 
     /**
      * 내보내기 전 조각.
      *
-     * @param overlap 첫 단위가 앞 조각 끝을 겹친 것 (합칠 때 뺀다)
+     * @param path     제목 경로. 형제 절을 묶은 조각({@code group})은 공통 부모 경로
+     * @param overlap  첫 단위가 앞 조각 끝을 겹친 것 (합칠 때 뺀다)
+     * @param group    형제 절을 묶은 조각 (하위 제목이 본문 안에 줄로 있다)
+     * @param lastPath 마지막으로 넣은 절의 경로 (묶지 않은 조각은 path)
+     * @param continuation 절의 첫 조각이 아니다 (앞 조각에서 이어지는 꼬리)
      */
-    private record Draft(String title, List<Unit> units, boolean structuredTable, boolean overlap) {
+    private record Draft(List<String> path, String title, List<Unit> units, boolean structuredTable, boolean overlap,
+                         boolean group, List<String> lastPath, boolean continuation) {
+
+        Draft(List<String> path, String title, List<Unit> units, boolean structuredTable, boolean overlap) {
+            this(path, title, units, structuredTable, overlap, false, path, false);
+        }
+
+        Draft asContinuation() {
+            return new Draft(path, title, units, structuredTable, overlap, group, lastPath, true);
+        }
+
+        Draft withUnits(List<Unit> newUnits, boolean newOverlap) {
+            return new Draft(path, title, newUnits, structuredTable, newOverlap, group, lastPath, continuation);
+        }
+
+        int pageStart() {
+            return units.stream().mapToInt(Unit::pageStart).min().orElse(0);
+        }
+
+        int pageEnd() {
+            return units.stream().mapToInt(Unit::pageEnd).max().orElse(0);
+        }
 
         int bodyLength() {
             int length = -1;
@@ -270,16 +323,33 @@ public class DocumentChunker {
     public List<Chunk> splitBlocks(List<ContentBlock> blocks, String fallbackTitle, Source source) {
         List<ContentBlock> prepared = source == Source.TAGGED ? joinFragments(blocks) : blocks;
         Rules rules = source == Source.PLAIN ? new Rules(true) : Rules.LENIENT;
-        List<Line> lines = toLines(prepared, source == Source.PLAIN);
+        // 글자 크기를 아는 출처(PLAIN, TAGGED)는 강조·단계 판단에 쓴다
+        List<Line> lines = toLines(prepared, source != null);
+        if (source == Source.PLAIN) {
+            lines = StayTable.rewrite(lines);
+        }
         boolean[] headings = findHeadings(lines, rules);
-        List<Section> sections = toSections(lines, headings, fallbackTitle);
+        // 표지 제목: 앞 3쪽의 가장 큰 첫 제목, 그리고 절반 넘게 경로 맨 앞에 붙는 제목 (부제가 이어지면 그것도)
+        java.util.Set<String> covers = new java.util.HashSet<>();
+        String first = coverHeading(lines, headings);
+        if (first != null) {
+            covers.add(first);
+        }
+        List<Section> sections = toSections(lines, headings, fallbackTitle, covers);
+        for (int round = 0; round < COVER_ROUNDS; round++) {
+            String majority = majorityTopTitle(sections);
+            if (majority == null || !covers.add(majority)) {
+                break;
+            }
+            sections = toSections(lines, headings, fallbackTitle, covers);
+        }
 
         List<Draft> drafts = new ArrayList<>();
         for (Section section : sections) {
             pack(section, drafts);
         }
         List<Chunk> chunks = new ArrayList<>();
-        for (Draft draft : mergeShort(drafts)) {
+        for (Draft draft : mergeSiblings(mergeShort(drafts), fallbackTitle)) {
             emit(draft, chunks);
         }
         return chunks;
@@ -339,8 +409,10 @@ public class DocumentChunker {
 
     static final int FRAGMENT_MAX = 3;
 
+    /** 장-절 번호("1-4")는 조각이 아니다: 제목 줄과 합친다 ({@link #mergeSectionNumbers}) */
     private static boolean isFragment(String text) {
-        return text.length() <= FRAGMENT_MAX || !LETTER_OR_DIGIT.matcher(text).find();
+        return !SECTION_NUMBER_ONLY.matcher(text).matches()
+                && (text.length() <= FRAGMENT_MAX || !LETTER_OR_DIGIT.matcher(text).find());
     }
 
     private static boolean endsWithOpening(String text) {
@@ -381,7 +453,8 @@ public class DocumentChunker {
                     Marker marker = Marker.of(text);
                     lines.add(new Line(text, textLine.page(), textLine.newParagraph(), textLine.page() != previousPage,
                             marker, isTableRow(text), marker == Marker.NONE && isHeaderRow(text), null,
-                            textLine.fontSize(), textLine.bold(), body.emphasized(textLine), textLine.fullWidth()));
+                            textLine.fontSize(), textLine.bold(), body.emphasized(textLine),
+                            textLine.fullWidth() && !body.boxTitle(textLine), false));
                     previousPage = textLine.page();
                 }
                 case TableBlock table -> {
@@ -390,26 +463,87 @@ public class DocumentChunker {
                     }
                     int page = table.firstPage();
                     lines.add(new Line("", page, true, page != previousPage, Marker.NONE, false, false, table,
-                            0, false, false, false));
+                            0, false, false, false, false));
                     previousPage = table.rows().getLast().page();
                 }
             }
         }
-        return mergeSectionNumbers(lines);
+        return mergeAppendixTitles(mergeSectionNumbers(lines));
     }
 
-    /** 본문 글자 모양: 글자 수 가중 중앙값 크기, 굵은 글자 비율 */
-    private record BodyStyle(float medianSize, boolean mostlyBold) {
-        static final BodyStyle UNKNOWN = new BodyStyle(0, true);
+    private static final Pattern AMENDMENT_NOTE = Pattern.compile("\\s*<[^>]*>");
+    private static final Pattern APPENDIX_ONLY = Pattern.compile("^\\[[^\\]]*\\]$");
+
+    /**
+     * 별표 머리 줄("[별표 2] <개정 2019.7.11., …>")의 개정 표기를 떼고, 바로 아래 짧은 제목 줄을 잇는다
+     * ("[별표 2] 지역보험료 산정 기준(제6조제1항 관련)").
+     */
+    private static List<Line> mergeAppendixTitles(List<Line> lines) {
+        List<Line> merged = new ArrayList<>(lines.size());
+        for (int i = 0; i < lines.size(); i++) {
+            Line line = lines.get(i);
+            if (line.marker() != Marker.APPENDIX) {
+                merged.add(line);
+                continue;
+            }
+            String text = AMENDMENT_NOTE.matcher(line.text()).replaceAll("").strip();
+            Line next = i + 1 < lines.size() ? lines.get(i + 1) : null;
+            if (APPENDIX_ONLY.matcher(text).matches() && next != null && next.page() == line.page()
+                    && next.tableBlock() == null && next.marker() == Marker.NONE
+                    && isPlausibleTitle(text + " " + next.text(), Marker.APPENDIX)
+                    && !mostlyDigits(next.text()) && !NOT_A_TITLE.matcher(next.text()).find()) {
+                text = text + " " + next.text();
+                i++;
+            } else if (!APPENDIX_ONLY.matcher(text).matches()) {
+                // 대괄호 뒤에 본문이 이어지는 줄("[별표1의2] 의 24. 거주(F-2) 타목의 …")은 별표 제목이 아니다
+                merged.add(new Line(line.text(), line.page(), line.blankBefore(), line.pageStart(), Marker.NONE,
+                        line.table(), line.header(), null, line.fontSize(), line.bold(), line.emphasized(),
+                        line.fullWidth(), false));
+                continue;
+            }
+            merged.add(withText(line, text));
+        }
+        return mergeChapterNumbers(merged);
+    }
+
+    /** 번호만 있는 장 머리 줄 ("PART 1.", "제2장") */
+    private static final Pattern CHAPTER_NUMBER_ONLY = Pattern.compile("^(?:제\\s*\\d+\\s*[장편부]|PART\\s*\\d+)\\.?$");
+
+    /** 번호만 있는 장 머리 줄("PART 1.")을 같은 쪽 바로 아래 짧은 장 이름("생활 정보")과 잇는다 ("PART 1. 생활 정보") */
+    private static List<Line> mergeChapterNumbers(List<Line> lines) {
+        List<Line> merged = new ArrayList<>(lines.size());
+        for (int i = 0; i < lines.size(); i++) {
+            Line line = lines.get(i);
+            Line next = i + 1 < lines.size() ? lines.get(i + 1) : null;
+            if (CHAPTER_NUMBER_ONLY.matcher(line.text()).matches() && isPlainTitle(next, line.page())) {
+                merged.add(withText(line, line.text() + " " + next.text()));
+                i++;
+            } else {
+                merged.add(line);
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * 본문 글자 모양: 글자 수 가중 중앙값 크기, 굵은 글자 비율.
+     * 글자가 {@value #PAGE_STYLE_MIN_CHARS}자 이상인 쪽은 쪽의 중앙값도 둔다: 별표 쪽처럼 쪽 전체의 글자 배율이 크면
+     * 그 쪽의 본문 줄이 모두 "강조" 로 보여 표 칸이 제목이 되므로, 문서와 쪽 중앙값 중 큰 쪽을 기준으로 한다.
+     */
+    private record BodyStyle(float medianSize, boolean mostlyBold, Map<Integer, Float> pageMedians) {
+        static final BodyStyle UNKNOWN = new BodyStyle(0, true, Map.of());
 
         static BodyStyle of(List<ContentBlock> blocks) {
             List<float[]> sizes = new ArrayList<>();
+            Map<Integer, List<float[]>> pageSizes = new HashMap<>();
             long total = 0;
             long bold = 0;
             for (ContentBlock block : blocks) {
                 if (block instanceof TextLine line && line.fontSize() > 0) {
                     int length = line.text().length();
-                    sizes.add(new float[]{line.fontSize(), length});
+                    float[] size = {line.fontSize(), length};
+                    sizes.add(size);
+                    pageSizes.computeIfAbsent(line.page(), key -> new ArrayList<>()).add(size);
                     total += length;
                     if (line.bold()) {
                         bold += length;
@@ -419,24 +553,57 @@ public class DocumentChunker {
             if (total == 0) {
                 return UNKNOWN;
             }
-            sizes.sort((a, b) -> Float.compare(a[0], b[0]));
-            long seen = 0;
-            float median = sizes.getLast()[0];
-            for (float[] size : sizes) {
-                seen += (long) size[1];
-                if (seen * 2 >= total) {
-                    median = size[0];
-                    break;
+            Map<Integer, Float> pageMedians = new HashMap<>();
+            pageSizes.forEach((page, list) -> {
+                if (list.stream().mapToDouble(size -> size[1]).sum() >= PAGE_STYLE_MIN_CHARS) {
+                    pageMedians.put(page, median(list));
                 }
-            }
-            return new BodyStyle(median, bold * 2 >= total);
+            });
+            return new BodyStyle(median(sizes), bold * 2 >= total, pageMedians);
         }
 
+        /** {크기, 글자 수} 의 글자 수 가중 중앙값 */
+        private static float median(List<float[]> sizes) {
+            List<float[]> sorted = new ArrayList<>(sizes);
+            sorted.sort((a, b) -> Float.compare(a[0], b[0]));
+            double total = sorted.stream().mapToDouble(size -> size[1]).sum();
+            double seen = 0;
+            for (float[] size : sorted) {
+                seen += size[1];
+                if (seen * 2 >= total) {
+                    return size[0];
+                }
+            }
+            return sorted.getLast()[0];
+        }
+
+        float bodySize(int page) {
+            return Math.max(medianSize, pageMedians.getOrDefault(page, 0f));
+        }
+
+        /**
+         * 문서 본문보다 {@value #EMPHASIS_RATIO}배 이상 크고, 그 쪽 본문보다도 {@value #PAGE_EMPHASIS_RATIO}배 이상 크면 강조.
+         * 별표 쪽처럼 쪽 전체 글자가 큰 쪽의 표 칸(쪽 본문과 같은 크기)은 강조가 아니고,
+         * 큰 글자 본문 쪽의 제목(02 p4: 본문 125, 제목 133)은 강조다. 번호·기호가 있는 줄은 문서 기준만 본다
+         */
         boolean emphasized(TextLine line) {
             if (medianSize <= 0 || line.fontSize() <= 0) {
                 return false;
             }
-            return line.fontSize() >= medianSize * EMPHASIS_RATIO || (line.bold() && !mostlyBold);
+            if (line.bold() && !mostlyBold) {
+                return true;
+            }
+            if (line.fontSize() < medianSize * EMPHASIS_RATIO) {
+                return false;
+            }
+            Float page = pageMedians.get(line.page());
+            return Marker.of(line.text().strip()) != Marker.NONE || page == null
+                    || line.fontSize() >= page * PAGE_EMPHASIS_RATIO;
+        }
+
+        /** 쪽 오른쪽 끝까지 찼어도 제목으로 볼 만큼 큰 줄 (상자 제목) */
+        boolean boxTitle(TextLine line) {
+            return medianSize > 0 && line.fontSize() >= bodySize(line.page()) * BOX_TITLE_RATIO;
         }
     }
 
@@ -459,7 +626,7 @@ public class DocumentChunker {
             } else if (isPlainTitle(next, line.page())) {
                 merged.add(withText(new Line(next.text(), line.page(), line.blankBefore(), line.pageStart(),
                         next.marker(), false, false, null, next.fontSize(), next.bold(), next.emphasized(),
-                        next.fullWidth()),
+                        next.fullWidth(), false),
                         line.text() + " " + next.text()));
                 i++;
             } else {
@@ -467,6 +634,246 @@ public class DocumentChunker {
             }
         }
         return merged;
+    }
+
+    /**
+     * 05 체류 매뉴얼의 체류관리 표 (태그 없는 PDF). 왼쪽 칸 이름이 행 가운데에 놓여서 화면 순서로 읽으면 값 줄 사이에 끼고
+     * ("체류기간 / 해당사항 없음 / 연장허가", "… 재입국허가 / 면제 / 재입국허가 출국한 날부터 …"),
+     * 둘로 나뉜 이름은 값의 위아래에, 한 줄 이름은 값의 가운데 줄 앞에 붙는다.
+     * <ul>
+     *     <li>칸 이름 사전({@link #LABELS})과 맞는 줄(이름만 있거나 이름으로 시작)을 찾는다. 서로 {@value #REGION_GAP}줄 안에
+     *         이어진 것이 {@value #MIN_EVENTS}개 이상이면 표로 본다</li>
+     *     <li>이름은 행 가운데에 있으므로, 이름 앞 줄 수만큼 이름 뒤 줄을 같은 행으로 본다. 남는 줄은 다음 행 앞 줄이다.
+     *         마지막 행은 쪽이 바뀌거나 강조·번호 줄이 나올 때까지 ({@value #LAST_ROW_MAX}줄까지)</li>
+     *     <li>행마다 "칸 이름: 값" 한 줄로 바꾸고, 표 앞에 자격 제목 바로 아래 단계의 "{@value #TITLE}" 제목을 넣는다</li>
+     * </ul>
+     */
+    static final class StayTable {
+
+        static final String TITLE = "체류관리";
+        static final int REGION_GAP = 3;
+        static final int MIN_EVENTS = 2;
+        static final int SPLIT_MAX_GAP = 12;
+        static final int LAST_ROW_MAX = 6;
+        /** 자격 제목 ("영 주(F-5)", "비전문취업(E-9)") */
+        static final Pattern QUALIFICATION = Pattern.compile("\\(\\s*[A-H]\\s*-\\s*\\d{1,2}\\s*\\)\\s*$");
+
+        /** 칸 이름과, 두 줄로 나뉠 때의 윗줄·아랫줄 (공백·가운뎃점 뺀 모양). 한 줄 이름은 second 가 null */
+        record Label(String name, String first, String second) {
+        }
+
+        static final List<Label> LABELS = List.of(
+                new Label("체류자격외 활동", "체류자격외", "활동"),
+                new Label("근무처의 변경·추가", "근무처의", "변경추가"),
+                new Label("체류자격 부여", "체류자격", "부여"),
+                new Label("체류자격 변경허가", "체류자격", "변경허가"),
+                new Label("체류기간 연장허가", "체류기간", "연장허가"),
+                new Label("재입국허가", "재입국허가", null),
+                new Label("외국인등록", "외국인등록", null));
+
+        /** 칸 이름이 있는 줄 범위 [start, end] 와 그 줄들에서 이름을 뗀 글자 */
+        private record Event(Label label, int start, int end, List<String> spanTexts) {
+        }
+
+        static List<Line> rewrite(List<Line> lines) {
+            List<Event> events = findEvents(lines);
+            if (events.size() < MIN_EVENTS) {
+                return lines;
+            }
+            List<Line> out = new ArrayList<>(lines.size());
+            int next = 0;
+            int e = 0;
+            while (e < events.size()) {
+                // 이어진 이름들을 한 표로
+                int regionEnd = e;
+                while (regionEnd + 1 < events.size()
+                        && events.get(regionEnd + 1).start() - events.get(regionEnd).end() - 1 <= REGION_GAP) {
+                    regionEnd++;
+                }
+                List<Event> region = events.subList(e, regionEnd + 1);
+                e = regionEnd + 1;
+                if (region.size() < MIN_EVENTS) {
+                    continue;
+                }
+                int first = region.getFirst().start();
+                for (; next < first; next++) {
+                    out.add(lines.get(next));
+                }
+                Line firstLine = lines.get(first);
+                out.add(new Line(TITLE, firstLine.page(), true, firstLine.pageStart(), Marker.NONE, false, false, null,
+                        firstLine.fontSize(), false, false, false, true));
+                int before = 0;
+                int cursor = first;
+                for (int k = 0; k < region.size(); k++) {
+                    Event event = region.get(k);
+                    int after;
+                    if (k + 1 < region.size()) {
+                        int gap = region.get(k + 1).start() - event.end() - 1;
+                        after = Math.min(gap, before);
+                    } else {
+                        after = lastRowLength(lines, event.end());
+                    }
+                    StringBuilder value = new StringBuilder();
+                    for (int i = cursor; i < event.start(); i++) {
+                        append(value, lines.get(i).text());
+                    }
+                    for (String text : event.spanTexts()) {
+                        append(value, text);
+                    }
+                    for (int i = event.end() + 1; i <= event.end() + after; i++) {
+                        append(value, lines.get(i).text());
+                    }
+                    Line page = lines.get(cursor);
+                    String text = value.isEmpty() ? event.label().name() : event.label().name() + ": " + value;
+                    out.add(new Line(text, page.page(), true, page.pageStart(), Marker.NONE, false, false, null,
+                            page.fontSize(), false, false, false, false));
+                    cursor = event.end() + after + 1;
+                    before = k + 1 < region.size() ? region.get(k + 1).start() - cursor : 0;
+                }
+                // 표 끝: 뒤 내용은 "체류관리" 아래로 들지 않는다
+                Line end = lines.get(cursor - 1);
+                out.add(new Line("", end.page(), true, false, Marker.NONE, false, false, null, 0, false, false, false,
+                        true));
+                next = cursor;
+            }
+            for (; next < lines.size(); next++) {
+                out.add(lines.get(next));
+            }
+            return out;
+        }
+
+        private static void append(StringBuilder value, String text) {
+            if (!text.isBlank()) {
+                if (!value.isEmpty()) {
+                    value.append(' ');
+                }
+                value.append(text.strip());
+            }
+        }
+
+        /** 마지막 행의 이름 뒤 줄 수: 같은 쪽에서 강조·번호 줄·표 전까지 */
+        private static int lastRowLength(List<Line> lines, int end) {
+            int count = 0;
+            for (int i = end + 1; i < lines.size() && count < LAST_ROW_MAX; i++) {
+                Line line = lines.get(i);
+                if (line.page() != lines.get(end).page() || line.emphasized() || line.tableBlock() != null
+                        || (line.marker() != Marker.NONE && line.marker() != Marker.CIRCLED) || isAnyLabel(line.text())) {
+                    break;
+                }
+                count++;
+            }
+            return count;
+        }
+
+        private static List<Event> findEvents(List<Line> lines) {
+            List<Event> events = new ArrayList<>();
+            for (int i = 0; i < lines.size(); i++) {
+                Event event = eventAt(lines, i);
+                // 같은 이름이 바로 다시 나오면 값 속 낱말 ("… 경우 / 재입국허가 면제")
+                Event previous = events.isEmpty() ? null : events.getLast();
+                if (event != null && previous != null && previous.label().equals(event.label())
+                        && event.start() - previous.end() - 1 <= SPLIT_MAX_GAP) {
+                    continue;
+                }
+                if (event != null) {
+                    events.add(event);
+                    i = event.end();
+                }
+            }
+            return events;
+        }
+
+        private static Event eventAt(List<Line> lines, int i) {
+            String text = lines.get(i).text();
+            if (lines.get(i).tableBlock() != null) {
+                return null;
+            }
+            // 한 줄 이름 (이름만 있거나 이름 + 값)
+            for (Label label : LABELS) {
+                String rest = rest(text, normalize(label.name()));
+                if (rest != null) {
+                    return new Event(label, i, i, List.of(rest));
+                }
+            }
+            // 두 줄로 나뉜 이름: 윗줄과 가장 가까운 아랫줄
+            for (Label label : LABELS) {
+                if (label.second() == null) {
+                    continue;
+                }
+                String firstRest = rest(text, label.first());
+                if (firstRest == null) {
+                    continue;
+                }
+                for (int j = i + 1; j < lines.size() && j <= i + SPLIT_MAX_GAP; j++) {
+                    String secondRest = rest(lines.get(j).text(), label.second());
+                    // 본문 문장("체류자격 구분에 따른 …")과 헷갈리지 않게 두 줄 중 하나는 이름만 있는 줄
+                    if (secondRest != null && (firstRest.isEmpty() || secondRest.isEmpty())) {
+                        List<String> span = new ArrayList<>();
+                        span.add(firstRest);
+                        for (int k = i + 1; k < j; k++) {
+                            span.add(lines.get(k).text());
+                        }
+                        span.add(secondRest);
+                        return new Event(label, i, j, span);
+                    }
+                    if (isAnyLabel(lines.get(j).text())) {
+                        break;
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static boolean isAnyLabel(String text) {
+            for (Label label : LABELS) {
+                if (rest(text, normalize(label.name())) != null || rest(text, label.first()) != null) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * 줄이 이름(공백·가운뎃점 무시)으로 시작하면 이름 뒤 글자 (이름만 있으면 ""), 아니면 null.
+         * 이름 바로 뒤가 공백이어야 한다 ("재입국허가를 받아야" 는 아니다)
+         */
+        static String rest(String text, String normalizedName) {
+            int matched = 0;
+            int i = 0;
+            while (i < text.length() && matched < normalizedName.length()) {
+                char c = text.charAt(i);
+                if (isIgnorable(c)) {
+                    i++;
+                    continue;
+                }
+                if (c != normalizedName.charAt(matched)) {
+                    return null;
+                }
+                matched++;
+                i++;
+            }
+            if (matched < normalizedName.length()) {
+                return null;
+            }
+            if (i == text.length()) {
+                return "";
+            }
+            return Character.isWhitespace(text.charAt(i)) ? text.substring(i).strip() : null;
+        }
+
+        private static boolean isIgnorable(char c) {
+            return Character.isWhitespace(c) || c == '·' || c == '․' || c == 'ㆍ' || c == '‧' || c == ' ';
+        }
+
+        static String normalize(String text) {
+            StringBuilder out = new StringBuilder();
+            for (char c : text.toCharArray()) {
+                if (!isIgnorable(c)) {
+                    out.append(c);
+                }
+            }
+            return out.toString();
+        }
     }
 
     private static boolean isPlainTitle(Line line, int page) {
@@ -477,7 +884,7 @@ public class DocumentChunker {
     private static Line withText(Line line, String text) {
         Marker marker = Marker.of(text);
         return new Line(text, line.page(), line.blankBefore(), line.pageStart(), marker, false, false, null,
-                line.fontSize(), line.bold(), line.emphasized(), line.fullWidth());
+                line.fontSize(), line.bold(), line.emphasized(), line.fullWidth(), line.synthetic());
     }
 
     /**
@@ -549,6 +956,10 @@ public class DocumentChunker {
         // 뒤에서부터: "2. 신청 / 가. 기한 / 본문" 처럼 제목이 이어지면 다음 줄이 제목이어도 된다
         for (int i = n - 1; i >= 0; i--) {
             Line line = lines.get(i);
+            if (line.synthetic()) {
+                heading[i] = true;
+                continue;
+            }
             if (i + 1 >= n || !candidate[i]) {
                 continue;
             }
@@ -589,8 +1000,14 @@ public class DocumentChunker {
         return shapeKey(a).equals(shapeKey(b));
     }
 
-    /** 제목 모양: 번호·기호 종류, 번호 없으면 글자 크기·굵기 */
+    /** 제목 모양: 번호·기호 종류 ("3.1.3." 은 숫자 개수까지), 번호 없으면 글자 크기·굵기 */
     private static String shapeKey(Line line) {
+        if (line.synthetic()) {
+            return "SYNTHETIC";
+        }
+        if (line.marker() == Marker.DECIMAL) {
+            return "DECIMAL" + line.text().split("\\s", 2)[0].replaceAll("\\.$", "").split("\\.").length;
+        }
         if (line.marker() != Marker.NONE) {
             return line.marker().name();
         }
@@ -621,7 +1038,7 @@ public class DocumentChunker {
 
     private static boolean isPlausibleTitle(String text, Marker marker) {
         boolean numbered = marker != Marker.NONE;
-        return text.length() <= HEADING_MAX
+        return text.length() <= (marker == Marker.APPENDIX ? APPENDIX_HEADING_MAX : HEADING_MAX)
                 && !SENTENCE_END.matcher(text).find()
                 && !text.endsWith(":") && !text.endsWith(",")
                 && !BULLET.matcher(text).find()
@@ -662,7 +1079,8 @@ public class DocumentChunker {
     /** 앞이나 뒤 줄이 같은 번호 모양이면 목록 항목 */
     private static boolean isListItem(List<Line> lines, int i) {
         Marker marker = lines.get(i).marker();
-        if (marker == Marker.NONE || marker == Marker.CHAPTER || marker == Marker.SECTION || marker == Marker.ARTICLE) {
+        if (marker == Marker.NONE || marker == Marker.CHAPTER || marker == Marker.SECTION || marker == Marker.ARTICLE
+                || marker == Marker.DECIMAL || marker == Marker.APPENDIX) {
             return false;
         }
         // 목차 줄("Ⅰ. 외국인등록 …… 3")은 바로 뒤의 같은 번호 제목을 목록으로 만들지 않는다
@@ -690,7 +1108,7 @@ public class DocumentChunker {
         if (line.pageStart()) {
             return true;
         }
-        if (prev.tableBlock() != null) {
+        if (prev.tableBlock() != null || prev.synthetic()) {
             return true;
         }
         if (line.blankBefore()) {
@@ -715,24 +1133,70 @@ public class DocumentChunker {
      * 제목 단계는 문서에서 처음 나온 순서로 정한다: 처음 보는 모양은 그때 제목 경로의 마지막 제목 바로 아래 단계,
      * 이미 본 모양은 그 단계. 같거나 높은 단계의 제목이 나오면 그 아래 단계 제목은 지운다.
      */
-    private static List<Section> toSections(List<Line> lines, boolean[] headings, String fallbackTitle) {
+    /** @param covers 표지 제목 글자 (같은 글자의 제목은 경로에 넣지 않는다) */
+    private static List<Section> toSections(List<Line> lines, boolean[] headings, String fallbackTitle,
+                                            java.util.Set<String> covers) {
         List<Section> sections = new ArrayList<>();
         Deque<Line> path = new ArrayDeque<>();
         Map<String, Integer> levels = new HashMap<>();
-        Section section = new Section(fallbackTitle, new ArrayList<>());
+        Section section = new Section(List.of(), fallbackTitle, new ArrayList<>());
         sections.add(section);
         Paragraph paragraph = null;
         Line prev = null;
 
         for (int i = 0; i < lines.size(); i++) {
             Line line = lines.get(i);
+            if (headings[i] && line.synthetic() && line.text().isEmpty()) {
+                // 넣은 제목의 끝: 그 제목을 경로에서 빼고 자격 제목 아래로 돌아간다
+                if (path.stream().anyMatch(Line::synthetic)) {
+                    while (!path.isEmpty() && !path.peekLast().synthetic()) {
+                        path.removeLast();
+                    }
+                    path.removeLast();
+                    section = new Section(pathTexts(path), path.isEmpty() ? fallbackTitle : title(path),
+                            new ArrayList<>());
+                    sections.add(section);
+                    paragraph = null;
+                }
+                prev = line;
+                continue;
+            }
+            if (headings[i] && line.synthetic()) {
+                // 넣은 제목("체류관리")은 자격 제목 바로 아래 단계. 위에 자격 제목이 없으면 넣지 않는다 (수수료 표 등)
+                if (path.stream().noneMatch(p -> StayTable.QUALIFICATION.matcher(p.text()).find())) {
+                    continue;
+                }
+                while (!path.isEmpty() && !StayTable.QUALIFICATION.matcher(path.peekLast().text()).find()) {
+                    path.removeLast();
+                }
+                int parentLevel = path.isEmpty() ? 0 : levels.get(shapeKey(path.peekLast()));
+                levels.put(shapeKey(line), parentLevel + 1);
+                path.addLast(line);
+                section = new Section(pathTexts(path), title(path), new ArrayList<>());
+                sections.add(section);
+                paragraph = null;
+                prev = line;
+                continue;
+            }
+            if (headings[i] && covers.contains(line.text())) {
+                // 표지 제목(과 같은 글자의 제목)은 제목 경로에 넣지 않는다: 그 조각의 첫 줄로만 쓰고, 다음 제목부터 새로 단계를 센다
+                path.clear();
+                levels.clear();
+                section = new Section(List.of(), line.text(), new ArrayList<>());
+                sections.add(section);
+                paragraph = null;
+                prev = line;
+                continue;
+            }
             if (headings[i]) {
                 // 글자가 더 큰 제목은 더 작은 제목 아래에 들지 않는다 ("방문동거(F-1)" 20pt 아래의 "영 주(F-5)" 24pt)
                 while (!path.isEmpty() && isSmaller(path.peekLast(), line)) {
                     path.removeLast();
                 }
-                // 장 제목과 같은 모양이면 새 장 (붙임 서식의 큰 글자 "학교 변경 동의서" 아래로 "기술연수(D-3)" 가 들지 않게)
-                if (Integer.valueOf(1).equals(levels.get(shapeKey(line)))) {
+                // 장 제목과 같은 모양이면 새 장 (붙임 서식의 큰 글자 "학교 변경 동의서" 아래로 "기술연수(D-3)" 가 들지 않게).
+                // 장 번호 제목("PART 1.", "제2장")은 늘 새 장 (표지의 큰 글자 아래로 들지 않게)
+                if (Integer.valueOf(1).equals(levels.get(shapeKey(line))) || line.marker() == Marker.CHAPTER
+                        || startsQualificationChapter(path, line)) {
                     path.clear();
                 }
                 int parentLevel = path.isEmpty() ? 0 : levels.get(shapeKey(path.peekLast()));
@@ -746,7 +1210,7 @@ public class DocumentChunker {
                     levels.put(shapeKey(line), 1);
                 }
                 path.addLast(line);
-                section = new Section(title(path), new ArrayList<>());
+                section = new Section(pathTexts(path), title(path), new ArrayList<>());
                 sections.add(section);
                 paragraph = null;
                 prev = line;
@@ -769,6 +1233,14 @@ public class DocumentChunker {
             prev = line;
         }
         return sections;
+    }
+
+    /**
+     * 번호 없는 체류자격 제목("영 주(F-5)", "비전문취업(E-9)")은 늘 새 장이다 (05 는 자격마다 장이 시작된다).
+     * 서식 제목 "K-point E74 고용기업 추천서" 나 앞 자격 아래로 들지 않게 한다. 번호 있는 "3) 영주(F-5-28)…" 는 아니다
+     */
+    private static boolean startsQualificationChapter(Deque<Line> path, Line line) {
+        return !path.isEmpty() && line.marker() == Marker.NONE && StayTable.QUALIFICATION.matcher(line.text()).find();
     }
 
     /** 글자 크기를 둘 다 알고, a 가 b 보다 확실히({@value #LARGER_RATIO}배 이상) 작다. 13pt 와 12pt 는 같은 크기로 본다 */
@@ -806,20 +1278,105 @@ public class DocumentChunker {
         return end - start + 1 >= TABLE_MIN_ROWS;
     }
 
+    private static List<String> pathTexts(Deque<Line> path) {
+        return path.stream().map(Line::text).toList();
+    }
+
     private static String title(Deque<Line> path) {
-        List<String> parts = new ArrayList<>();
-        path.descendingIterator().forEachRemaining(line -> {
-            if (parts.size() < TITLE_LEVELS) {
-                parts.addFirst(line.text());
+        return title(pathTexts(path), null);
+    }
+
+    /**
+     * 표지 제목의 두 번째 판단: 내용이 있는 절의 절반 넘게 경로 맨 앞에 같은 번호 없는 1단계 제목이 붙으면 표지
+     * ("비자 내비게이터", "외국인체류 안 내 매 뉴 얼"). 번호가 있는 장("Ⅱ. 외국인 근로자의 연말정산")과 체류자격 제목("영 주(F-5)")은
+     * 문서의 절반을 차지해도 장이다. 절이 {@value #MAJORITY_MIN_SECTIONS}개 미만인 짧은 문서는 보지 않는다. 없으면 null
+     */
+    static String majorityTopTitle(List<Section> sections) {
+        Map<String, Integer> counts = new HashMap<>();
+        int total = 0;
+        for (Section section : sections) {
+            if (section.items().isEmpty()) {
+                continue;
             }
-        });
-        return String.join(" > ", parts);
+            total++;
+            if (section.path().size() >= 2) {
+                counts.merge(section.path().getFirst(), 1, Integer::sum);
+            }
+        }
+        if (total < MAJORITY_MIN_SECTIONS) {
+            return null;
+        }
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            if (entry.getValue() * 2 > total && Marker.of(entry.getKey()) == Marker.NONE
+                    && !StayTable.QUALIFICATION.matcher(entry.getKey()).find()) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    /** 표지 제목을 절반 규칙으로 찾는 최대 횟수 (표지 제목 아래 부제가 또 붙는 경우) */
+    static final int COVER_ROUNDS = 3;
+
+    /** 절 수가 이보다 적은 문서는 "절반 넘게 붙는 1단계 제목" 으로 표지를 정하지 않는다 */
+    static final int MAJORITY_MIN_SECTIONS = 20;
+
+    /** 표지로 보는 제목이 있는 쪽 (이 쪽까지) */
+    static final int COVER_MAX_PAGE = 3;
+
+    /**
+     * 표지 제목: 문서의 첫 제목이 {@value #COVER_MAX_PAGE}쪽 안에 있고 다른 어떤 제목보다 글자가 크거나 같다
+     * ("시흥 처음 어서와~" 34pt, "2025 외국인 근로자 연말정산 매뉴얼"). 없으면 null
+     */
+    private static String coverHeading(List<Line> lines, boolean[] headings) {
+        Line first = null;
+        float largestOther = 0;
+        for (int i = 0; i < lines.size(); i++) {
+            if (!headings[i] || lines.get(i).synthetic()) {
+                continue;
+            }
+            if (first == null) {
+                first = lines.get(i);
+            } else {
+                largestOther = Math.max(largestOther, lines.get(i).fontSize());
+            }
+        }
+        if (first == null || first.page() > COVER_MAX_PAGE || first.fontSize() <= 0 || first.fontSize() < largestOther) {
+            return null;
+        }
+        return first.text();
+    }
+
+    /**
+     * 조각 첫 줄 제목: 가까운 {@value #TITLE_LEVELS}단계 ("상위 &gt; 하위"). {@value #TITLE_MAX}자를 넘으면 위 단계부터 뺀다.
+     * 경로가 비면 fallback (문서 이름)
+     */
+    static String title(List<String> path, String fallback) {
+        if (path.isEmpty()) {
+            return fallback;
+        }
+        int from = Math.max(0, path.size() - TITLE_LEVELS);
+        String title = String.join(" > ", path.subList(from, path.size()));
+        while (title.length() > TITLE_MAX && from < path.size() - 1) {
+            from++;
+            title = String.join(" > ", path.subList(from, path.size()));
+        }
+        return title;
     }
 
     // ---------------------------------------------------------------- 조각
 
     /** 문단은 목표 길이로 묶고(겹침 있음), 표는 앞뒤 문단과 떼어 따로 조각으로 만든다 */
     private static void pack(Section section, List<Draft> drafts) {
+        int first = drafts.size();
+        packItems(section, drafts);
+        for (int i = first + 1; i < drafts.size(); i++) {
+            drafts.set(i, drafts.get(i).asContinuation());
+        }
+    }
+
+    private static void packItems(Section section, List<Draft> drafts) {
+        List<String> path = section.path();
         String title = section.title();
         int titleLength = title == null ? 0 : title.length() + 1;
         int budget = Math.max(MIN_BUDGET, MAX - titleLength);
@@ -830,37 +1387,42 @@ public class DocumentChunker {
             if (item instanceof Paragraph paragraph) {
                 units.addAll(toUnits(paragraph, budget));
             } else if (item instanceof TableBlock table) {
-                packText(units, title, budget, target, drafts);
+                packText(units, path, title, budget, target, drafts);
                 units.clear();
-                packTable(table, title, budget, drafts);
+                packTable(table, path, title, budget, drafts);
             }
         }
-        packText(units, title, budget, target, drafts);
+        packText(units, path, title, budget, target, drafts);
     }
 
     /**
      * 표 하나를 한 조각으로 (한 줄에 한 행, 행마다 열 이름). 길면 행 경계에서 나눈다.
      * 행마다 열 이름이 붙어 있어 앞 조각 없이도 읽히므로 겹치지 않는다.
      */
-    private static void packTable(TableBlock table, String title, int budget, List<Draft> drafts) {
+    private static void packTable(TableBlock table, List<String> path, String title, int budget, List<Draft> drafts) {
         List<Unit> current = new ArrayList<>();
         for (TableRow row : table.rows()) {
             Paragraph rowText = new Paragraph(true);
             rowText.add(row.render(), row.page());
             for (Unit unit : toUnits(rowText, budget)) {
                 if (!current.isEmpty() && length(current) + 1 + unit.text().length() > budget) {
-                    drafts.add(new Draft(title, current, true, false));
+                    drafts.add(new Draft(path, title, current, true, false));
                     current = new ArrayList<>();
                 }
                 current.add(unit);
             }
         }
         if (!current.isEmpty()) {
-            drafts.add(new Draft(title, current, true, false));
+            drafts.add(new Draft(path, title, current, true, false));
         }
     }
 
-    private static void packText(List<Unit> units, String title, int budget, int target, List<Draft> drafts) {
+    /**
+     * 문단을 목표 길이로 묶는다. 조각이 다음 줄로 이어지는 짧은 머리 문장("※ 외국인근로자에게 적용되는",
+     * "… 다음과 같다:")으로 끝나면 그 문장은 다음 조각으로 넘긴다.
+     */
+    private static void packText(List<Unit> units, List<String> path, String title, int budget, int target,
+                                 List<Draft> drafts) {
         List<Unit> current = new ArrayList<>();
         boolean overlap = false;
         Unit carry = null;
@@ -878,19 +1440,39 @@ public class DocumentChunker {
             if (fits) {
                 current.add(unit);
             } else {
-                carry = tail(current);
-                drafts.add(new Draft(title, current, false, overlap));
+                int own = overlap ? 1 : 0;
+                Unit leadIn = current.size() > own + 1 && isLeadIn(current.getLast())
+                        && current.getLast().text().length() + 1 + unit.text().length() <= budget
+                        ? current.removeLast() : null;
+                carry = leadIn == null ? tail(current) : null;
+                drafts.add(new Draft(path, title, current, false, overlap));
                 current = new ArrayList<>();
-                overlap = carry != null && carry.text().length() + 1 + unit.text().length() <= budget;
-                if (overlap) {
-                    current.add(carry);
+                if (leadIn != null) {
+                    current.add(leadIn);
+                    overlap = false;
+                } else {
+                    overlap = carry != null && carry.text().length() + 1 + unit.text().length() <= budget;
+                    if (overlap) {
+                        current.add(carry);
+                    }
                 }
                 current.add(unit);
             }
         }
         if (!current.isEmpty()) {
-            drafts.add(new Draft(title, current, false, overlap));
+            drafts.add(new Draft(path, title, current, false, overlap));
         }
+    }
+
+    /** 다음 줄로 이어지는 짧은 머리 문장: "※ …" 이거나 콜론·이어지는 말로 끝나고, 문장이 끝나지 않은 줄 */
+    private static boolean isLeadIn(Unit unit) {
+        String text = unit.text().strip();
+        if (unit.table() || text.length() > LEAD_IN_MAX || SENTENCE_END.matcher(text).find()
+                || PREDICATE_END.matcher(text).find()) {
+            return false;
+        }
+        return text.startsWith("※") || text.endsWith(":") || CONTINUES.matcher(text).find()
+                || LIST_CONTINUES.matcher(text).find();
     }
 
     /**
@@ -910,17 +1492,16 @@ public class DocumentChunker {
             if (!draft.structuredTable()) {
                 int body = draft.bodyLength();
                 if (body < TINY_BODY && next != null && !next.structuredTable()
-                        && !Objects.equals(next.title(), draft.title()) && !endsSentence(draft)) {
-                    Draft combined = new Draft(next.title(), concat(draft.units(), next.units()), false, false);
+                        && !sameSection(next, draft) && !endsSentence(draft)) {
+                    Draft combined = next.withUnits(concat(draft.units(), next.units()), false);
                     if (combined.contentLength() <= MAX) {
                         queue.set(i + 1, combined);
                         continue;
                     }
                 }
                 if (body < MIN_BODY) {
-                    if (next != null && !next.structuredTable() && Objects.equals(next.title(), draft.title())) {
-                        Draft combined = new Draft(draft.title(), concat(draft.units(), next.withoutOverlap()), false,
-                                draft.overlap());
+                    if (next != null && !next.structuredTable() && sameSection(next, draft)) {
+                        Draft combined = draft.withUnits(concat(draft.units(), next.withoutOverlap()), draft.overlap());
                         if (combined.contentLength() <= MAX) {
                             queue.set(i + 1, combined);
                             continue;
@@ -928,9 +1509,9 @@ public class DocumentChunker {
                     }
                     Draft previous = merged.isEmpty() ? null : merged.getLast();
                     if (previous != null && !previous.structuredTable()
-                            && Objects.equals(previous.title(), draft.title())) {
-                        Draft combined = new Draft(previous.title(), concat(previous.units(), draft.withoutOverlap()),
-                                false, previous.overlap());
+                            && sameSection(previous, draft)) {
+                        Draft combined = previous.withUnits(concat(previous.units(), draft.withoutOverlap()),
+                                previous.overlap());
                         if (combined.contentLength() <= MAX) {
                             merged.set(merged.size() - 1, combined);
                             continue;
@@ -941,6 +1522,82 @@ public class DocumentChunker {
             merged.add(draft);
         }
         return merged;
+    }
+
+    /**
+     * 같은 부모 제목 아래의 이웃한 형제 절을 한 조각으로 묶는다 (표 조각은 그대로).
+     * <ul>
+     *     <li>바로 위 부모 경로가 같아야 한다. 부모가 없거나(문서 이름) 최상위 제목(장)뿐이면 묶지 않는다</li>
+     *     <li>합쳐서 목표 {@value #TARGET}자 이하, 또는 한쪽 본문이 {@value #MIN_BODY}자 미만이고 합쳐서 {@value #MAX}자 이하</li>
+     *     <li>합친 조각은 {@value #MERGE_MAX_PAGES}쪽 안 (출처 쪽 범위가 넓어지지 않게)</li>
+     *     <li>첫 줄은 부모 경로, 하위 제목은 본문 안에 줄로 남긴다. 같은 절이 길어 나뉜 다음 조각은 겹침을 빼고 잇는다</li>
+     * </ul>
+     */
+    private static List<Draft> mergeSiblings(List<Draft> drafts, String fallbackTitle) {
+        List<Draft> merged = new ArrayList<>(drafts.size());
+        for (Draft draft : drafts) {
+            Draft previous = merged.isEmpty() ? null : merged.getLast();
+            Draft combined = previous == null ? null : combineSiblings(previous, draft, fallbackTitle);
+            if (combined != null) {
+                merged.set(merged.size() - 1, combined);
+            } else {
+                merged.add(draft);
+            }
+        }
+        return merged;
+    }
+
+    private static Draft combineSiblings(Draft previous, Draft draft, String fallbackTitle) {
+        if (previous.structuredTable() || draft.structuredTable() || draft.group()) {
+            return null;
+        }
+        // 길어서 나뉜 같은 절의 조각끼리는 다시 묶지 않는다
+        if (!previous.group() && previous.path().equals(draft.path())) {
+            return null;
+        }
+        boolean sameSection = previous.group() && draft.path().equals(previous.lastPath());
+        List<String> parent = previous.group() ? previous.path() : parentOf(previous.path());
+        if (parent == null || parent.size() < 2 || !sameSection && !parent.equals(parentOf(draft.path()))) {
+            return null;
+        }
+        List<Unit> units = new ArrayList<>();
+        if (previous.group()) {
+            units.addAll(previous.units());
+        } else {
+            units.add(headingUnit(previous.path(), parent, previous.pageStart(), previous.continuation()));
+            units.addAll(previous.units());
+        }
+        if (sameSection) {
+            units.addAll(draft.withoutOverlap());
+        } else {
+            units.add(headingUnit(draft.path(), parent, draft.pageStart(), draft.continuation()));
+            units.addAll(draft.units());
+        }
+        Draft combined = new Draft(parent, title(parent, fallbackTitle), units, false, previous.overlap(), true,
+                draft.path(), previous.continuation());
+        int length = combined.contentLength();
+        boolean small = previous.bodyLength() < MIN_BODY || draft.bodyLength() < MIN_BODY;
+        boolean fits = length <= TARGET || (small && length <= MAX);
+        int pages = combined.pageEnd() - combined.pageStart() + 1;
+        return fits && pages <= MERGE_MAX_PAGES ? combined : null;
+    }
+
+    private static List<String> parentOf(List<String> path) {
+        return path.isEmpty() ? null : path.subList(0, path.size() - 1);
+    }
+
+    /** 앞 조각에서 이어지는 꼬리를 묶을 때 하위 제목 줄 끝에 붙인다 (꼬리 내용을 그 제목의 첫 내용으로 읽지 않게) */
+    static final String CONTINUED = " (이어서)";
+
+    /** 묶은 조각 안의 하위 제목 줄: 부모 경로 아래 부분. 절의 꼬리면 "… (이어서)" */
+    private static Unit headingUnit(List<String> path, List<String> parent, int page, boolean continuation) {
+        String text = String.join(" > ", path.subList(parent.size(), path.size()));
+        return new Unit(continuation ? text + CONTINUED : text, page, page, false);
+    }
+
+    /** 같은 절의 조각 (제목 경로와 첫 줄 제목이 같다. 표지 절과 첫 제목 전 내용은 경로가 둘 다 비어 있다) */
+    private static boolean sameSection(Draft a, Draft b) {
+        return Objects.equals(a.path(), b.path()) && Objects.equals(a.title(), b.title());
     }
 
     /** 본문이 완결된 문장으로 끝남 (짧아도 제 절의 내용이므로 다음 절로 옮기지 않는다) */

@@ -310,6 +310,30 @@ class DocumentChunkerTest {
                 .contains("국내에서 최초로 근로를 제공한 날부터", "아니한 외국인 기술자에 대해서도");
     }
 
+    /**
+     * 01 p7·p11: "PART 1." 번호 줄은 장 이름과 이어 새 장이 되고 (표지의 더 큰 글자 아래로 들지 않는다),
+     * 따로 놓인 장-절 번호 "1-4" 는 앞 제목 줄과 합친다.
+     */
+    @Test
+    void chapterNumberStartsNewChapterAndSectionNumberJoinsTitle() {
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                tagged("시흥 처음 어서와~", 3, 34, true),
+                tagged("책자에 나오는 정보는 2025년 기준입니다.", 3, 8, false),
+                tagged("PART 1.", 7, 18, true),
+                tagged("생활 정보", 7, 24, true),
+                tagged("1-3 반려견 에티켓", 10, 10, true),
+                tagged("· 문의 : 시흥시청 동물축산과 ☎(031)310-6945", 10, 8, false),
+                tagged("지방세 납부", 11, 10, true),
+                tagged("1-4", 11, 10, true),
+                tagged("■ 재산세", 11, 9, true),
+                tagged("· 납부기간 : 매년 7월, 9월 중", 11, 8, false)), DOC, Source.TAGGED);
+
+        assertThat(chunks).extracting(Chunk::title).containsExactly(
+                "시흥 처음 어서와~",
+                "PART 1. 생활 정보 > 1-3 반려견 에티켓",
+                "PART 1. 생활 정보 > 1-4 지방세 납부 > ■ 재산세");
+    }
+
     /** 05: 쪽 오른쪽 끝까지 찬 줄은 다음 줄로 이어지는 문장 ("④ … 어느 하나에 해 / 당하는 …") */
     @Test
     void fullWidthLineIsNotHeadingInPlainPdf() {
@@ -364,6 +388,8 @@ class DocumentChunkerTest {
         assertThat(DocumentChunker.isPlausibleTitle("체류지 변경 신고")).isTrue();
         assertThat(DocumentChunker.isPlausibleTitle("PART 02")).isTrue();
         assertThat(DocumentChunker.isPlausibleTitle("주요 해외공관 연락처")).isTrue();
+        // "…부" 로 끝나도 기관 서명이 아닌 제목 (01 p11 "1-4 지방세 납부")
+        assertThat(DocumentChunker.isPlausibleTitle("지방세 납부")).isTrue();
     }
 
     /** 05 p473: 번호와 "〔F-5-20〕" 의 숫자 때문에 표의 행으로 보면 제목이 본문에 묻힌다 */
@@ -489,6 +515,287 @@ class DocumentChunkerTest {
         assertThat(chunks).extracting(Chunk::structuredTable).containsExactly(false, true);
     }
 
+    // ---------------------------------------------------------------- 6. 제목 경로·형제 절 묶기 (CB-01 평가: 07, 08, 05)
+
+    /**
+     * 07 p13~14: 태그 PDF 의 번호 없는 제목도 글자 크기·굵기로 단계가 갈린다 (15pt 굵게 &gt; 13pt 굵게 &gt; 13pt).
+     * 작은 형제 절("보험금 지급사유", "위반 시 제재")은 부모 제목 아래 한 조각으로 묶고, 하위 제목은 본문 줄로 남는다.
+     * 표 조각의 제목에는 상위 제목이 붙어 "귀국비용보험" 으로도 찾을 수 있다.
+     */
+    @Test
+    void taggedHeadingsGetParentPathAndSmallSiblingsAreMerged() {
+        TableBlock fees = new TableBlock(List.of("구 분", "납부금액"), List.of(
+                row(13, "구 분", "제1군", "납부금액", "40만원"),
+                row(13, "구 분", "제2군", "납부금액", "50만원")));
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                tagged("외국인근로자 취업", 13, 20, true),
+                tagged("3.1.3. 외국인근로자 전용보험", 13, 15, true),
+                tagged("귀국비용보험·신탁 가입", 13, 13, true),
+                tagged("귀국비용보험·신탁은 외국인근로자가 귀국할 때 필요한 비용에 충당하기 위해 가입하는 보험입니다.", 13, 13, false),
+                tagged("납부금액", 13, 13, false),
+                tagged("귀국비용보험등의 납부금액은 다음과 같습니다.", 13, 13, false),
+                fees,
+                tagged("보험금 지급사유", 14, 13, false),
+                tagged("체류기간이 만료되어 출국하려는 경우 일시금의 지급을 신청할 수 있습니다.", 14, 13, false),
+                tagged("위반 시 제재", 14, 13, false),
+                tagged("귀국비용보험등에 가입하지 않으면 500만원 이하의 과태료가 부과됩니다.", 14, 13, false),
+                tagged("상해보험 가입", 14, 13, true),
+                tagged("상해보험은 업무상 재해 이외의 질병·사망 등에 대비해서 가입하는 보험입니다.", 14, 13, false),
+                tagged("위반 시 제재", 14, 13, false),
+                tagged("상해보험에 가입하지 않으면 500만원 이하의 벌금이 부과됩니다.", 14, 13, false)), DOC, Source.TAGGED);
+
+        assertThat(chunks).filteredOn(Chunk::structuredTable).singleElement()
+                .extracting(Chunk::title)
+                .isEqualTo("3.1.3. 외국인근로자 전용보험 > 귀국비용보험·신탁 가입 > 납부금액");
+        Chunk merged = chunks.stream().filter(chunk -> chunk.content().contains("과태료")).findFirst().orElseThrow();
+        assertThat(merged.title()).isEqualTo("외국인근로자 취업 > 3.1.3. 외국인근로자 전용보험 > 귀국비용보험·신탁 가입");
+        assertThat(merged.body().lines()).contains("보험금 지급사유", "위반 시 제재");
+        assertThat(merged.content()).doesNotContain("상해보험");
+        // 같은 이름의 하위 절도 어느 보험 이야기인지 제목에 남는다
+        Chunk injury = chunks.stream().filter(chunk -> chunk.content().contains("벌금")).findFirst().orElseThrow();
+        assertThat(injury.title()).contains("상해보험 가입");
+    }
+
+    /**
+     * 02 p13~14: 앞 조각에서 이어지는 절의 꼬리를 형제 절과 묶을 때는 "… (이어서)" 로 표시한다.
+     * 꼬리 내용 위에 원래 제목이 그대로 오면 그 절의 첫 내용으로 읽힌다.
+     */
+    @Test
+    void continuedTailIsMarkedWhenMergedWithSibling() {
+        String reductions = IntStream.rangeClosed(1, 34)
+                .mapToObj(i -> "감면 " + i + "번 문장은 외국인 근로자의 세액 감면 요건을 설명합니다.")
+                .collect(Collectors.joining(" "));
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                tagged("1장 연말정산", 11, 20, true),
+                tagged("1-1 세액계산", 11, 15, true),
+                tagged("① 정부간 협약 감면", 11, 13, true),
+                tagged(reductions, 11, 10, false),
+                tagged("① 근로소득세액공제", 11, 13, true),
+                tagged("산출세액의 55%를 공제합니다.", 11, 10, false)), DOC, Source.TAGGED);
+
+        assertThat(chunks.getFirst().title()).isEqualTo("1장 연말정산 > 1-1 세액계산 > ① 정부간 협약 감면");
+        Chunk merged = chunks.getLast();
+        assertThat(merged.title()).isEqualTo("1장 연말정산 > 1-1 세액계산");
+        assertThat(merged.body().lines().toList())
+                .startsWith("① 정부간 협약 감면" + DocumentChunker.CONTINUED)
+                .contains("① 근로소득세액공제");
+    }
+
+    /**
+     * 03 "비자 내비게이터", 05 "외국인체류 안 내 매 뉴 얼": 표지 쪽이 아니어도, 내용 있는 절의 절반 넘게
+     * 경로 맨 앞에 붙는 번호 없는 1단계 제목은 표지로 보고 뺀다. 번호 있는 장("Ⅱ. …")은 절반을 넘어도 장이다.
+     */
+    @Test
+    void majorityTopTitleIsTreatedAsCover() {
+        List<ContentBlock> manual = new java.util.ArrayList<>(List.of(
+                tagged("외국인체류 안내 매뉴얼", 5, 24, true),
+                tagged("이 매뉴얼은 체류자격별 안내입니다.", 5, 10, false)));
+        for (int i = 1; i <= DocumentChunker.MAJORITY_MIN_SECTIONS; i++) {
+            String name = "체류 유형 " + (char) ('가' + i * 28);
+            manual.add(tagged(name, 10 + i, 20, true));
+            manual.add(tagged(name + " 의 활동 범위를 설명합니다.", 10 + i, 10, false));
+        }
+        manual.add(tagged("1. 체류기간 연장", 40, 12, true));
+        manual.add(tagged("만료 전에 신청합니다.", 40, 10, false));
+        List<Chunk> cover = chunker.splitBlocks(manual, DOC, Source.TAGGED);
+        List<Chunk> chapter = chunker.split(List.of(page(4, """
+                Ⅱ. 외국인 근로자의 연말정산
+                1. 거주자와 비거주자
+                국내에 주소를 둔 개인은 거주자입니다.
+                2. 특례
+                외국인 기술자는 감면을 받습니다.
+                Ⅲ. 계산사례
+                계산 사례를 설명합니다.
+                """)), DOC);
+
+        assertThat(cover.getFirst().title()).isEqualTo("외국인체류 안내 매뉴얼");
+        assertThat(cover.subList(1, cover.size())).extracting(Chunk::title)
+                .noneMatch(title -> title.contains("매뉴얼"))
+                .contains("체류 유형 " + (char) ('가' + 28), "체류 유형 " + (char) ('가' + 20 * 28) + " > 1. 체류기간 연장");
+        assertThat(chapter).extracting(Chunk::title).contains(
+                "Ⅱ. 외국인 근로자의 연말정산 > 1. 거주자와 비거주자", "Ⅱ. 외국인 근로자의 연말정산 > 2. 특례");
+    }
+
+    /** 부모가 최상위 제목(장)뿐인 형제 절, 합치면 2쪽을 넘는 형제 절은 묶지 않는다 */
+    @Test
+    void doesNotMergeSiblingsUnderTopLevelOnlyOrAcrossTooManyPages() {
+        List<Chunk> topLevel = chunker.split(List.of(page(1, """
+                2. 외국인등록
+                가. 신청 기한
+                입국일부터 90일 이내에 신청해야 합니다.
+                나. 준비물
+                여권, 사진 1장, 수수료 3만 원이 필요합니다.
+                """)), DOC);
+        List<Chunk> pages = chunker.splitBlocks(List.of(
+                tagged("1장 생활", 11, 20, true),
+                tagged("1-1 보험", 11, 15, true),
+                tagged("건강보험", 11, 13, true),
+                tagged("6개월 이상 체류하면 가입합니다.", 11, 13, false),
+                tagged("고용보험", 12, 13, true),
+                tagged("근로자는 가입합니다.", 12, 13, false),
+                tagged("산재보험", 13, 13, true),
+                tagged("사업장은 가입합니다.", 13, 13, false)), DOC, Source.TAGGED);
+
+        assertThat(topLevel).extracting(Chunk::title)
+                .containsExactly("2. 외국인등록 > 가. 신청 기한", "2. 외국인등록 > 나. 준비물");
+        assertThat(pages).extracting(Chunk::title)
+                .containsExactly("1장 생활 > 1-1 보험", "1장 생활 > 1-1 보험 > 산재보험");
+        assertThat(pages).allSatisfy(chunk ->
+                assertThat(chunk.pageEnd() - chunk.pageStart() + 1).isLessThanOrEqualTo(DocumentChunker.MERGE_MAX_PAGES));
+    }
+
+    /**
+     * 08 p5~7: 별표 쪽은 쪽 전체 글자가 본문보다 커서(83 → 100) 표 칸("결혼이민(F-6)")이 강조된 제목으로 보였다.
+     * 쪽 기준 크기로 보면 표 칸은 제목이 아니고, "[별표 2] …" 머리 줄과 그 아래 제목 줄이 한 제목이 된다.
+     */
+    @Test
+    void appendixTitleBecomesHeadingAndTableCellsOnLargerPageDoNot() {
+        String article = "제4조(자격 취득) 국내체류 외국인등은 입국일부터 6개월이 지난 날에 지역가입자의 자격을 얻는다. ";
+        List<ContentBlock> blocks = new java.util.ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            blocks.add(plain(article + "다만 공단이 정하는 경우에는 그러하지 아니하다.", 4, 83));
+        }
+        blocks.addAll(List.of(
+                plain("[별표 1] <신설 2018.12.18.>", 5, 100),
+                plain("재외국민 및 외국인 지역가입자의 제출서류(제4조제4항 관련)", 5, 117),
+                plain("구분 제출서류", 5, 100),
+                plain("○ 가족관계나 혼인·이혼사실을 확인할 수 있는 서류(세대원인 경우에 한정한다)", 5, 100),
+                plain("○ 소득 및 재산의 정도를 확인할 수 있는 다음의 서류", 5, 100),
+                plain("○ 외국인등록사실증명원", 5, 100),
+                plain("영주(F-5)", 5, 100),
+                plain("○ 「장애인복지법」에 따라 등록된 장애인임을 증명할 수", 5, 100),
+                plain("결혼이민(F-6)", 5, 100),
+                plain("있는 서류 등(보험료 경감을 신청하는 경우만 해당한다)", 5, 100),
+                plain("그 밖의 체류자격 ○ 외국인등록사실증명원", 5, 100),
+                plain("[별표 2] <개정 2019.7.11., 개정 2021.2.26., 개정 2021.10.14>", 6, 100),
+                plain("지역보험료 산정 기준(제6조제1항 관련)", 6, 117),
+                plain("1. 재외국민 및 외국인인 지역가입자의 보험료는 세대 단위로 내국인인 지역가입자와 동일한 기준에 따라 산정한다.", 6, 100),
+                plain("2) 체류자격이 종교(D-6)인 경우: 100분의 30", 6, 100),
+                plain("4) 체류자격이 기타(G-1)인 경우: 100분의 30", 6, 100)));
+
+        List<Chunk> chunks = chunker.splitBlocks(blocks, DOC, Source.PLAIN);
+
+        assertThat(chunks).extracting(Chunk::title).contains(
+                "[별표 1] 재외국민 및 외국인 지역가입자의 제출서류(제4조제4항 관련)",
+                "[별표 2] 지역보험료 산정 기준(제6조제1항 관련)");
+        assertThat(chunks).extracting(Chunk::title).noneMatch(title -> title.contains("결혼이민(F-6)")
+                || title.contains("영주(F-5)") || title.contains("<개정"));
+        Chunk religion = chunks.stream().filter(chunk -> chunk.content().contains("종교(D-6)")).findFirst().orElseThrow();
+        assertThat(religion.title()).isEqualTo("[별표 2] 지역보험료 산정 기준(제6조제1항 관련)");
+    }
+
+    /** "[별표1의2] 의 24. 거주(F-2) 타목의 …" 처럼 대괄호 뒤에 본문이 이어지면 별표 제목이 아니다 */
+    @Test
+    void appendixCitationInBodyIsNotHeading() {
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                plain("영 주(F-5)", 479, 24),
+                plain("- 신청일 이전 2년부터 심사 결정일까지 「출입국관리법 시행령」", 479, 12),
+                plain("[별표1의2] 의 24. 거주(F-2) 타목의 체류자격으로 체류할 것", 479, 12),
+                plain("* 신청일 전 이혼 후 다시 재결합한 경우 혼인관계 계속성 불인정", 479, 11)), DOC, Source.PLAIN);
+
+        assertThat(chunks).extracting(Chunk::title).containsOnly("영 주(F-5)");
+    }
+
+    /** 문서 첫 제목이 앞 3쪽 안에서 가장 큰 글자면 표지 제목: 아래 제목의 경로에서 뺀다 (같은 글자의 제목이 다시 나와도) */
+    @Test
+    void coverTitleIsLeftOutOfLowerTitles() {
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                tagged("비자 내비게이터", 1, 30, true),
+                tagged("법무부 출입국·외국인정책본부가 만든 안내서입니다.", 1, 10, false),
+                tagged("비자 내비게이터", 2, 30, true),
+                tagged("01 비자의 개요", 3, 16, true),
+                tagged("비자는 외국인이 입국할 때 필요한 허가입니다.", 3, 10, false)), DOC, Source.TAGGED);
+
+        assertThat(chunks).extracting(Chunk::title).containsExactly("비자 내비게이터", "01 비자의 개요");
+    }
+
+    /** "3.1.3." 처럼 점이 여러 개인 번호는 제목 번호이고, 숫자 개수로 단계가 갈린다 */
+    @Test
+    void decimalSectionNumbersAreHeadingsWithLevels() {
+        List<Chunk> chunks = chunker.split(List.of(page(12, """
+                3.1. 근로
+                근로 조건을 설명합니다.
+                3.1.2. 4대 보험
+                외국인근로자도 4대 보험에 가입합니다.
+                """)), DOC);
+
+        assertThat(chunks).extracting(Chunk::title).containsExactly("3.1. 근로", "3.1. 근로 > 3.1.2. 4대 보험");
+    }
+
+    /** 조각이 "※ …" 처럼 다음 줄로 이어지는 짧은 머리 문장으로 끝나면 그 문장은 다음 조각으로 넘긴다 */
+    @Test
+    void leadInLineMovesToNextChunk() {
+        String first = IntStream.rangeClosed(1, 20)
+                .mapToObj(i -> "고용보험 " + i + "번 문장은 가입 대상을 설명합니다.")
+                .collect(Collectors.joining(" "));
+        String second = IntStream.rangeClosed(1, 8)
+                .mapToObj(i -> "비교표 " + i + "번 문장은 보험별 가입 방법입니다.")
+                .collect(Collectors.joining(" "));
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                new TextLine("1. 보험", 13, true),
+                new TextLine(first, 13, true),
+                new TextLine("※ 외국인근로자에게 적용되는", 13, true),
+                new TextLine(second, 13, true)), DOC, Source.TAGGED);
+
+        assertThat(chunks).hasSize(2);
+        assertThat(chunks.get(0).body()).doesNotContain("※");
+        assertThat(chunks.get(1).body()).startsWith("※ 외국인근로자에게 적용되는\n비교표 1번");
+    }
+
+    /**
+     * 05 p480: 체류관리 표의 칸 이름이 값 줄 사이에 끼어 있던 것을 "칸 이름: 값" 행으로 바꾸고,
+     * 앞 하위 자격 제목이 아니라 자격 제목 바로 아래 "체류관리" 로 둔다. 표가 끝나면 다음 상자 제목("코로나19 …")은 자격 아래로.
+     */
+    @Test
+    void stayManagementTableRowsGetLabelsAndQualificationTitle() {
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                plain("영 주(F-5)", 478, 24),
+                plain("17. 외국인투자기업의 연구개발 인력〔F-5-26〕", 478, 12),
+                plain("3) 영주(F-5-28)자격을 가진 사람의 미성년 자녀(F-5-29)", 479, 12),
+                plain("◦ 신청인의 부 또는 모(영주자격을 가진 사람) 요건", 479, 12),
+                plain("- 신청인의 영주 신청일 기준 최소 2년 이전에 영주(F-5-28) 자격을 취득하여 계속 유지할 것", 480, 12),
+                plain("다. 심사서류", 480, 12),
+                plain("◦ 가족관계 등 입증 서류(국내 출생인 경우 국내 출생증명서)", 480, 12),
+                plain("체류기간", 480, 12),
+                plain("해당사항 없음", 480, 12),
+                plain("연장허가", 480, 12),
+                plain("출국한 날부터 2년 이내에 재입국하고자 하는 자에 대하여는 재입국허가", 480, 12),
+                plain("면제", 480, 12),
+                plain("재입국허가 출국한 날부터 2년을 초과하고자 하는 경우 기간만료 전에 재외공관", 480, 12),
+                plain("에서 재입국허가 연장 필요(허가기간 3월 이내)", 480, 12),
+                plain("- 공관장의 허가범위 : 출국한날부터 2년이 만료되는 시점부터 3월 이내", 480, 12),
+                plain("외국인등록", 480, 12),
+                plain("신청서(별지 34호 서식), 표준규격사진 1매, 수수료", 480, 12),
+                plain("체류지 입증서류", 480, 12),
+                new TextLine("코로나19 관련 영주(F-5)자격 상실자 구제 기준 알림", 481, false, 18, false, true),
+                plain("□ 구제 대상", 481, 15),
+                plain("코로나 19로 인해 재입국허가(면제)기간이 도과되어 영주자격이 상실된 자", 481, 14)), DOC, Source.PLAIN);
+
+        Chunk table = chunks.stream().filter(chunk -> chunk.content().contains("공관장")).findFirst().orElseThrow();
+        assertThat(table.title()).isEqualTo("영 주(F-5) > 체류관리");
+        assertThat(table.body().lines()).containsExactly(
+                "체류기간 연장허가: 해당사항 없음",
+                "재입국허가: 출국한 날부터 2년 이내에 재입국하고자 하는 자에 대하여는 재입국허가 면제 "
+                        + "출국한 날부터 2년을 초과하고자 하는 경우 기간만료 전에 재외공관 에서 재입국허가 연장 필요(허가기간 3월 이내) "
+                        + "- 공관장의 허가범위 : 출국한날부터 2년이 만료되는 시점부터 3월 이내",
+                "외국인등록: 신청서(별지 34호 서식), 표준규격사진 1매, 수수료 체류지 입증서류");
+        assertThat(chunks).extracting(Chunk::title)
+                .anyMatch(title -> title.startsWith("영 주(F-5) > 코로나19 관련 영주(F-5)자격 상실자 구제 기준 알림"))
+                .noneMatch(title -> title.contains("체류관리 >"));
+    }
+
+    /** 자격 제목이 없는 곳(앞쪽 수수료 표 등)의 칸 이름은 행으로만 바꾸고 "체류관리" 제목은 넣지 않는다 */
+    @Test
+    void stayTableWithoutQualificationGetsNoSyntheticTitle() {
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                plain("체류자격 부여", 5, 12),
+                plain("8만원", 5, 12),
+                plain("재입국허가", 5, 12),
+                plain("3만원", 5, 12)), DOC, Source.PLAIN);
+
+        assertThat(chunks).extracting(Chunk::title).containsOnly(DOC);
+    }
+
     @Test
     void emptyTextGivesNoChunks() {
         assertThat(chunker.split(List.of(page(1, "  \n "), page(2, "")), DOC)).isEmpty();
@@ -510,6 +817,11 @@ class DocumentChunkerTest {
     /** 태그 없는 PDF 의 줄 (글자 크기 pt) */
     private static TextLine plain(String text, int page, float fontSize) {
         return new TextLine(text, page, false, fontSize, false, false);
+    }
+
+    /** 태그 PDF 의 문단 (글자 크기 pt, 굵기) */
+    private static TextLine tagged(String text, int page, float fontSize, boolean bold) {
+        return new TextLine(text, page, true, fontSize, bold, false);
     }
 
     private static String body(Chunk chunk) {
