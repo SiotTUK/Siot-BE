@@ -1,5 +1,5 @@
 # Siot Backend 실행 환경 (backend + PostgreSQL(pgvector) + Redis)
-# 프론트엔드 컨테이너는 별도 담당자가 관리한다. 통합 방법: docs/compose-integration.md
+# 운영 VM 은 web 프로필(Caddy)도 띄운다: 프론트엔드 정적 파일 + /api 프록시 + HTTPS (docs/deployment.md)
 #
 # 사용법:
 #   cp .env.example .env   # 값 수정
@@ -97,6 +97,24 @@ services:
       redis:
         condition: service_healthy
 
+  # 운영 웹 서버 (VM .env 의 COMPOSE_PROFILES=web 일 때만 뜬다).
+  # 한 도메인에서 프론트엔드(./frontend 의 빌드 결과)를 서빙하고 /api 는 backend 로 넘긴다.
+  # 같은 출처라 세션 쿠키·CSRF 가 그대로 동작한다. SITE_ADDRESS 가 도메인이면 Let's Encrypt 인증서를 자동 발급한다
+  caddy:
+    image: caddy:2.10.2-alpine
+    profiles: ["web"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./frontend:/srv:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+
   # 개발용 메일 서버 (운영에서는 띄우지 않는다): docker compose --profile dev up -d
   mailpit:
     image: axllent/mailpit:v1.33.1
@@ -110,3 +128,29 @@ volumes:
   postgres-data:
   redis-data:
   document-data:
+  caddy-data:
+  caddy-config:
+
+configs:
+  caddyfile:
+    content: |
+      ${SITE_ADDRESS:-:80} {
+        encode zstd gzip
+
+        # API·헬스 체크·API 문서는 백엔드로 (X-Forwarded-* 는 Caddy 가 붙인다)
+        @backend path /api/* /actuator/health /actuator/health/* /swagger-ui.html /swagger-ui/* /v3/api-docs /v3/api-docs/*
+        handle @backend {
+          reverse_proxy backend:8080
+        }
+
+        # 그 외는 프론트엔드 (SPA: 없는 경로는 index.html)
+        handle {
+          root * /srv
+          @assets path /assets/*
+          header @assets Cache-Control "public, max-age=31536000, immutable"
+          @pages not path /assets/*
+          header @pages Cache-Control "no-cache"
+          try_files {path} /index.html
+          file_server
+        }
+      }
