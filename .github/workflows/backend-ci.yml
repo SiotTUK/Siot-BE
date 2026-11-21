@@ -141,9 +141,10 @@ jobs:
               sudo sed -i 's#^BACKEND_IMAGE=.*#BACKEND_IMAGE=$IMAGE:$TAG#' $DEPLOY_DIR/.env
               $COMPOSE pull -q backend
               $COMPOSE up -d --no-build
+              # 배포가 끝나면 48시간 지난 미사용 이미지(이전 sha- 태그 포함)를 지운다. 직전 버전은 보통 남아 롤백할 수 있다
               for i in \$(seq 1 36); do
                 if curl -fsS localhost:8080/actuator/health/readiness >/dev/null 2>&1; then
-                  echo 'Deployed $TAG'; sudo docker image prune -f >/dev/null; exit 0
+                  echo 'Deployed $TAG'; sudo docker image prune -af --filter until=48h >/dev/null; exit 0
                 fi
                 sleep 5
               done
