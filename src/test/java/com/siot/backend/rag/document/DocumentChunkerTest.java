@@ -796,6 +796,182 @@ class DocumentChunkerTest {
         assertThat(chunks).extracting(Chunk::title).containsOnly(DOC);
     }
 
+    /** 05 p713~718: 묶음 문서 표제와 지역이 깊은 절의 제목에도 남는다. 부제는 제목 자리를 차지하지 않는다 */
+    @Test
+    void bundledDocumentTitleAndRegionStayInTitle() {
+        List<Chunk> chunks = bundled(
+                plain("광역형 비자 시범사업", 713, 27),
+                plain("사증발급 및 체류관리지침 제정(안)", 713, 27),
+                plain("Ⅰ 시범사업 개요", 716, 20),
+                plain("1. 목적", 716, 17),
+                plain(filler("시범사업 목적"), 716, 12),
+                plain("Ⅱ 지자체별 요건 및 심사기준 - 유학", 718, 20),
+                plain("1. 서울특별시", 718, 16.7f),
+                plain("□ 시간제 취업 허용시간 확대", 718, 15),
+                plain("3) 강화", 718, 14),
+                plain("한국어능력 기준을 충족하지 못하면 주중 10시간 이내로 허용합니다.", 718, 12));
+
+        assertThat(chunkWith(chunks, "주중 10시간 이내").title())
+                .isEqualTo("광역형 비자 시범사업 > Ⅱ 지자체별 요건 및 심사기준 - 유학 > 1. 서울특별시 > 3) 강화");
+        // 제목에서 빠진 중간 제목은 본문에 남는다
+        assertThat(chunkWith(chunks, "주중 10시간 이내").body()).contains("□ 시간제 취업 허용시간 확대");
+        assertThat(chunks).extracting(Chunk::title).noneMatch(title -> title.contains("제정(안)"));
+        assertThat(chunks).extracting(Chunk::content).anyMatch(content -> content.contains("제정(안)"));
+    }
+
+    /** 05 p726, p745: 앞 내용이 문장으로 끝나지 않아도 더 큰 "5." 와 "Ⅲ" 은 제목. 지역이 다른 짧은 절은 합치지 않는다 */
+    @Test
+    void largerNumberedHeadingsStartRegionAndSectionAfterUnfinishedLine() {
+        List<Chunk> chunks = bundled(
+                plain("광역형 비자 시범사업", 713, 27),
+                plain("Ⅱ 지자체별 요건 및 심사기준 - 유학", 718, 20),
+                plain("4. 광주광역시", 725, 16.7f),
+                plain("○ 광주 대상은 인공지능 학과이고 제출서류는 기존 지침", 725, 12),
+                plain("사증발급 및 체류관리 지침 적용", 725, 12),
+                plain("5. 강원특별자치도", 725, 16.7f),
+                plain("○ 강원 대상은 바이오헬스 학과입니다.", 725, 12),
+                plain("□ 쿼터 : 250명", 725, 15),
+                plain("Ⅲ 지자체별 요건 및 특례 - 특정활동", 725, 20),
+                plain("3. 경기도", 725, 16.7f),
+                plain("○ 경기 대상은 산업기술인력과 요양보호사입니다.", 725, 12));
+
+        Chunk gwangju = chunkWith(chunks, "광주 대상");
+        assertThat(gwangju.title()).contains("4. 광주광역시");
+        assertThat(gwangju.content()).doesNotContain("강원 대상");
+        assertThat(chunkWith(chunks, "강원 대상").title()).contains("5. 강원특별자치도");
+        assertThat(chunkWith(chunks, "경기 대상").title())
+                .isEqualTo("광역형 비자 시범사업 > Ⅲ 지자체별 요건 및 특례 - 특정활동 > 3. 경기도");
+    }
+
+    /** 05 p592~611: 본문과 같은 크기여도 묶음 문서 안의 로마 숫자는 절이고, 앞 절의 "동반가족"이 남지 않는다 */
+    @Test
+    void romanSectionInBundledDocumentClearsPreviousSection() {
+        List<Chunk> chunks = bundled(
+                plain("지역특화형비자 체류제도 주요내용 알림", 590, 18),
+                plain("Ⅰ. 지역특화형비자 사업 개요", 590, 15),
+                plain("󰊴 동반가족", 590, 15),
+                plain(filler("동반가족 요건"), 590, 12),
+                plain("❍ 외국인등록증은 우편으로 받을 수 없고", 590, 12),
+                new TextLine("Ⅲ. 지역특화 숙련기능인력(E-7-4R) 인구감소지역 및 인구감소관심지역", 590, false, 15, false, true),
+                plain("󰊱 체류자격 변경", 590, 15),
+                plain("숙련기능인력은 점수제 기준을 충족해야 합니다.", 590, 12));
+
+        assertThat(chunkWith(chunks, "점수제 기준을").title())
+                .startsWith("지역특화형비자 체류제도 주요내용 알림 > Ⅲ. 지역특화 숙련기능인력(E-7-4R)")
+                .doesNotContain("동반가족");
+    }
+
+    /** 05 p764~765: 붙임은 묶음 문서 바로 아래. 앞 서식의 수신처("… 귀하")가 상위 제목이 되지 않는다 */
+    @Test
+    void attachmentInBundledDocumentStartsBelowItsTitle() {
+        List<Chunk> chunks = bundled(
+                plain("광역형 비자 시범사업", 713, 27),
+                plain("충청남도지사 귀하", 764, 20),
+                plain("참여 확인서를 제출합니다.", 764, 12),
+                plain("붙임 8 특정활동 광역형 비자 적용 대상 직종", 765, 16),
+                plain("조선용접공을 포함한 직종입니다.", 765, 12));
+
+        assertThat(chunkWith(chunks, "조선용접공").title())
+                .isEqualTo("광역형 비자 시범사업 > 붙임 8 특정활동 광역형 비자 적용 대상 직종");
+    }
+
+    /** 05 p777~782: 상자 번호가 "2." 아래인 지침에서는 "2." 가 제목에 남고, 다음 "4." 에서 상자가 빠진다 */
+    @Test
+    void boxNumberFollowsLevelUsedInThatBundledDocument() {
+        List<Chunk> chunks = bundled(
+                plain("K-STAR 비자트랙 제도 안내 매뉴얼", 775, 20),
+                plain("Ⅱ. K-STAR 거주(F-2-7S)", 776, 15),
+                plain("2. 자격요건", 777, 15),
+                plain("󰊱 품행단정", 777, 15),
+                plain(filler("품행단정 요건"), 777, 12),
+                plain("4. 제출서류", 778, 15),
+                plain("여권과 통합신청서를 제출합니다.", 778, 12));
+
+        assertThat(chunkWith(chunks, "품행단정 요건 1번").title()).contains("2. 자격요건", "󰊱 품행단정");
+        assertThat(chunkWith(chunks, "여권과 통합신청서").title())
+                .isEqualTo("K-STAR 비자트랙 제도 안내 매뉴얼 > Ⅱ. K-STAR 거주(F-2-7S) > 4. 제출서류");
+    }
+
+    /** 05 p756: 내용 없이 바로 밀려난 제목도 글자가 남는다 */
+    @Test
+    void emptyHeadingInBundledDocumentKeepsText() {
+        List<Chunk> chunks = bundled(
+                plain("광역형 비자 시범사업", 713, 27),
+                plain("Ⅲ 지자체별 요건 및 특례", 745, 20),
+                plain("경남 특례를 설명합니다.", 755, 12),
+                plain("붙임 문서", 756, 39),
+                plain("붙임 1 지자체 추천서", 757, 16),
+                plain("추천 대상을 적습니다.", 757, 12));
+
+        assertThat(chunks).extracting(Chunk::content).anyMatch(content -> content.contains("붙임 문서"));
+    }
+
+    /** 05 p525~526, p672~673: 짧은 꼬리와 표제 앞 부제가 문서 경계를 넘지 않는다 */
+    @Test
+    void chunksDoNotCrossBundledDocuments() {
+        List<Chunk> chunks = bundled(
+                plain("국내 성장 기반 외국인 청소년 체류제도 알림", 659, 19),
+                plain("Ⅳ 참고사항", 672, 20),
+                plain("구직 계획 작성", 672, 12),
+                plain("- 첨단산업 분야 최우수인재 -", 673, 20),
+                plain("톱티어(Top-Tier) 사증발급 및 체류관리 지침", 673, 21),
+                plain("톱티어 제도의 목적을 설명합니다.", 673, 12));
+
+        Chunk previous = chunkWith(chunks, "구직 계획 작성");
+        assertThat(previous.title()).startsWith("국내 성장 기반 외국인 청소년 체류제도 알림");
+        assertThat(previous.pageEnd()).isEqualTo(672);
+        assertThat(chunkWith(chunks, "첨단산업 분야").title()).startsWith("톱티어(Top-Tier)");
+    }
+
+    /** 05 p481: 자격 장 안의 상자 제목("… 알림")은 묶음 문서 표제가 아니어서 다음 자격 장을 덮지 않는다 */
+    @Test
+    void noticeBoxInsideQualificationChapterIsNotBundledDocument() {
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                plain("영 주(F-5)", 478, 24),
+                plain(filler("영주 요건"), 478, 12),
+                plain("코로나19 관련 영주(F-5)자격 상실자 구제 기준 알림", 481, 18),
+                plain("재입국허가 기간이 지난 사람을 구제합니다.", 481, 12),
+                plain("결혼이민(F-6)", 482, 20),
+                plain("국민의 배우자에게 부여합니다.", 482, 12)), DOC, Source.PLAIN);
+
+        assertThat(chunkWith(chunks, "국민의 배우자").title()).isEqualTo("결혼이민(F-6)");
+    }
+
+    /** 05 p36~40: 두 줄로 나뉜 칸 이름 "시간제취업 / 활동 허가" 가 제목이 되고, 다음 칸에서 끝난다 */
+    @Test
+    void partTimeWorkRowDoesNotInheritSpouseHeading() {
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                plain("유 학(D-2)", 35, 20),
+                plain(filler("유학 자격"), 35, 12),
+                plain("3. 유학생(D-2) 배우자(F-3) 체류자격외 활동 허가", 36, 12),
+                plain("❍ 동반(F-3)자격 지침에 따름", 36, 12),
+                plain("시간제취업 가. 기본원칙", 37, 12),
+                plain("활동 허가 ❍ 학생이 통상적으로 하는 활동에 한정합니다.", 37, 12),
+                plain("다. 허용범위", 37, 12),
+                plain("한국어 기준을 충족한 학사는 주중 25시간까지 허용합니다.", 37, 12),
+                plain("시간제취업 라. 허가 기준 등", 39, 12),
+                plain("활동 허가 ❍ 성적이 낮으면 제한합니다.", 39, 12),
+                plain("근무처의 ❍ 해당사항 없음", 40, 12),
+                plain("변경․추가 ※ 소속 변경은 신고로 처리합니다.", 40, 12)), DOC, Source.PLAIN);
+
+        Chunk hours = chunkWith(chunks, "주중 25시간");
+        assertThat(hours.title()).startsWith("유 학(D-2) > 시간제취업 활동 허가").doesNotContain("배우자");
+        assertThat(chunkWith(chunks, "성적이 낮으면").title()).startsWith("유 학(D-2) > 시간제취업 활동 허가");
+        // 짧은 배우자 규정 한 줄은 시간제취업 조각으로 넘어가지 않는다
+        assertThat(chunkWith(chunks, "동반(F-3)자격").title()).contains("배우자(F-3)");
+        assertThat(chunkWith(chunks, "소속 변경은").title()).isEqualTo("유 학(D-2)");
+    }
+
+    /** 자격 제목이 없으면 칸 이름을 떼지 않는다 (제목으로도 못 넣어 글자가 사라진다) */
+    @Test
+    void partTimeWorkLabelWithoutQualificationKeepsText() {
+        List<Chunk> chunks = chunker.splitBlocks(List.of(
+                plain("시간제취업 가. 기본원칙", 5, 12),
+                plain("활동 허가 ❍ 학생이 통상적으로 하는 활동에 한정합니다.", 5, 12)), DOC, Source.PLAIN);
+
+        assertThat(chunks.getFirst().content()).contains("시간제취업", "활동 허가");
+    }
+
     @Test
     void emptyTextGivesNoChunks() {
         assertThat(chunker.split(List.of(page(1, "  \n "), page(2, "")), DOC)).isEmpty();
@@ -822,6 +998,24 @@ class DocumentChunkerTest {
     /** 태그 PDF 의 문단 (글자 크기 pt, 굵기) */
     private static TextLine tagged(String text, int page, float fontSize, boolean bold) {
         return new TextLine(text, page, true, fontSize, bold, false);
+    }
+
+    /** 마지막 체류자격 장 뒤에 묶음 문서가 붙은 문서 (본문 12pt) */
+    private List<Chunk> bundled(TextLine... annex) {
+        List<ContentBlock> blocks = new java.util.ArrayList<>(List.of(
+                plain("관광취업(H-1)", 522, 20), plain(filler("관광취업 안내"), 522, 12)));
+        blocks.addAll(List.of(annex));
+        return chunker.splitBlocks(blocks, DOC, Source.PLAIN);
+    }
+
+    private static String filler(String subject) {
+        return IntStream.rangeClosed(1, 18)
+                .mapToObj(i -> subject + " " + i + "번 문장은 본문 내용을 설명합니다.")
+                .collect(Collectors.joining(" "));
+    }
+
+    private static Chunk chunkWith(List<Chunk> chunks, String text) {
+        return chunks.stream().filter(chunk -> chunk.body().contains(text)).findFirst().orElseThrow();
     }
 
     private static String body(Chunk chunk) {

@@ -30,6 +30,8 @@ import java.util.regex.Pattern;
  *     <li>제목 단계는 문서에서 처음 나온 순서로 정한다 (처음 보는 모양은 그때 제목 경로의 바로 아래 단계).
  *         같거나 높은 단계의 제목이 나오면 그 아래 단계 제목은 모두 지운다. 글자 크기를 알면 큰 제목이 작은 제목 아래에 들지 않는다.
  *         최상위 제목(장)이 나오면 그 아래 단계를 새로 정하고, 장 제목과 같은 모양의 제목은 늘 새 장이다</li>
+ *     <li>PLAIN 에서 앞 줄보다 {@value #LARGER_RATIO}배 이상 큰 "Ⅲ"·"5." 제목은 앞 내용이 끝나지 않았어도 제목이다</li>
+ *     <li>05 체류 매뉴얼 구조에 맞춘 규칙: 뒤에 묶인 지침의 표제({@link BundledDocuments}), 시간제취업 칸({@link PartTimeRow})</li>
  *     <li>PLAIN 에서 쪽 오른쪽 끝까지 찬 줄은 제목이 아니고, 그 다음 줄도 새 블록이 아니다 (줄바꿈된 문장)</li>
  *     <li>표는 1차로 문단 기준으로 다룬다. 숫자·짧은 칸이 반복되는 줄이 이어지면 한 덩어리로 묶고 {@link Chunk#tableLike()} 로 표시한다</li>
  *     <li>태그 PDF 에서 따로 떨어진 기호·괄호 줄("※", "(", ")")은 앞뒤 줄에 붙인다</li>
@@ -54,6 +56,8 @@ public class DocumentChunker {
     static final int APPENDIX_HEADING_MAX = 60;
     /** 조각 첫 줄 제목 경로의 최대 길이. 넘으면 위 단계부터 뺀다 */
     static final int TITLE_MAX = 80;
+    /** 묶음 문서 안의 제목 경로 최대 길이. 넘으면 아래 단계부터 빼서 표제·절·지역을 남긴다 */
+    static final int BUNDLED_TITLE_MAX = 100;
     /** 형제 절을 묶은 조각의 최대 쪽 수 (출처 쪽 범위가 넓어지지 않게) */
     static final int MERGE_MAX_PAGES = 2;
     /** 이어지는 머리 문장("※ …", "… 다음과 같다:")으로 보는 최대 길이 */
@@ -74,6 +78,8 @@ public class DocumentChunker {
     static final double PAGE_EMPHASIS_RATIO = 1.05;
     private static final int MIN_BUDGET = 200;
     private static final int TITLE_LEVELS = 3;
+    /** 묶음 문서 제목에서 늘 남기는 위 단계 수 (표제, 절, 지역) */
+    private static final int BUNDLED_TOP_LEVELS = 3;
 
     private static final Pattern SENTENCE_END = Pattern.compile("[.!?。！？]$");
     private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[.!?。！？])\\s+");
@@ -145,6 +151,11 @@ public class DocumentChunker {
         NUM_PAREN("^\\d{1,2}\\)\\s*", false),
         PAREN_NUM("^\\(\\d{1,2}\\)\\s*", false),
         CIRCLED("^[①-⑳]\\s*", false),
+        /** 아래 넷은 글자로 정하지 않고 {@link BundledDocuments} 가 붙인다: 표제, 로마 숫자 절, 상자 번호, 붙임 */
+        BUNDLE_TITLE(null, false),
+        BUNDLE_SECTION(null, false),
+        BUNDLE_BOX(null, false),
+        BUNDLE_ATTACHMENT(null, false),
         NONE(null, false);
 
         final Pattern pattern;
@@ -153,6 +164,25 @@ public class DocumentChunker {
         Marker(String regex, boolean strong) {
             this.pattern = regex == null ? null : Pattern.compile(regex);
             this.strong = strong;
+        }
+
+        /** 앞뒤 줄과 상관없이 제목 */
+        boolean bundled() {
+            return this == BUNDLE_TITLE || this == BUNDLE_SECTION || this == BUNDLE_BOX || this == BUNDLE_ATTACHMENT;
+        }
+
+        /** 단계까지 정해진 제목. 상자 번호는 지침마다 "1." 의 위·아래가 달라서 처음 나온 순서로 정한다 */
+        boolean fixedLevel() {
+            return bundled() && this != BUNDLE_BOX;
+        }
+
+        /** 묶음 문서 안의 정해진 제목이 바로 아래에 들어갈 수 있는 제목 */
+        boolean canContain(Marker child) {
+            return switch (child) {
+                case BUNDLE_ATTACHMENT -> this == BUNDLE_TITLE;
+                case BUNDLE_SECTION -> this == BUNDLE_TITLE || this == CHAPTER;
+                default -> false;
+            };
         }
 
         static Marker of(String line) {
@@ -242,9 +272,32 @@ public class DocumentChunker {
     }
 
     /**
+     * 제목 경로 (위 단계부터, 문서 이름 제외).
+     *
+     * @param bundled 맨 위가 묶음 문서 표제
+     */
+    private record HeadingPath(List<String> texts, boolean bundled) {
+        static final HeadingPath EMPTY = new HeadingPath(List.of(), false);
+
+        static HeadingPath of(Deque<Line> path) {
+            return new HeadingPath(path.stream().map(Line::text).toList(),
+                    !path.isEmpty() && path.getFirst().marker() == Marker.BUNDLE_TITLE);
+        }
+
+        int size() {
+            return texts.size();
+        }
+
+        /** 맨 아래 단계를 뺀 경로. 비어 있으면 null */
+        HeadingPath parent() {
+            return texts.isEmpty() ? null : new HeadingPath(texts.subList(0, texts.size() - 1), bundled);
+        }
+    }
+
+    /**
      * 절: 제목 경로(위 단계부터, 문서 이름 제외)와 조각 첫 줄 제목, 순서대로의 문단({@link Paragraph})·표({@link TableBlock})
      */
-    private record Section(List<String> path, String title, List<Object> items) {
+    private record Section(HeadingPath path, String title, List<Object> items) {
     }
 
     /**
@@ -256,10 +309,10 @@ public class DocumentChunker {
      * @param lastPath 마지막으로 넣은 절의 경로 (묶지 않은 조각은 path)
      * @param continuation 절의 첫 조각이 아니다 (앞 조각에서 이어지는 꼬리)
      */
-    private record Draft(List<String> path, String title, List<Unit> units, boolean structuredTable, boolean overlap,
-                         boolean group, List<String> lastPath, boolean continuation) {
+    private record Draft(HeadingPath path, String title, List<Unit> units, boolean structuredTable, boolean overlap,
+                         boolean group, HeadingPath lastPath, boolean continuation) {
 
-        Draft(List<String> path, String title, List<Unit> units, boolean structuredTable, boolean overlap) {
+        Draft(HeadingPath path, String title, List<Unit> units, boolean structuredTable, boolean overlap) {
             this(path, title, units, structuredTable, overlap, false, path, false);
         }
 
@@ -326,7 +379,8 @@ public class DocumentChunker {
         // 글자 크기를 아는 출처(PLAIN, TAGGED)는 강조·단계 판단에 쓴다
         List<Line> lines = toLines(prepared, source != null);
         if (source == Source.PLAIN) {
-            lines = StayTable.rewrite(lines);
+            lines = PartTimeRow.rewrite(StayTable.rewrite(lines));
+            lines = BundledDocuments.mark(lines, BodyStyle.of(prepared).medianSize());
         }
         boolean[] headings = findHeadings(lines, rules);
         // 표지 제목: 앞 3쪽의 가장 큰 첫 제목, 그리고 절반 넘게 경로 맨 앞에 붙는 제목 (부제가 이어지면 그것도)
@@ -876,6 +930,177 @@ public class DocumentChunker {
         }
     }
 
+    /**
+     * 05 체류 매뉴얼 뒤에 통째로 묶인 지침 6개 (목차 36~41: 동포, 지역특화형, 청소년, 톱티어, 광역형, K-STAR).
+     * 특례 조각에 어느 지침인지 남지 않으면 일반 규정으로 읽히므로 표제를 다음 표제 전까지 경로 맨 위에 고정한다.
+     * <ul>
+     *     <li>표제: 마지막 체류자격 장 뒤, 쪽 맨 위(또는 "- 부제 -" 바로 아래)의 큰 글자이고 매뉴얼·지침·알림·시범사업으로 끝남.
+     *         그 자격 코드가 든 상자 제목("코로나19 관련 영주(F-5)… 알림")은 아니다</li>
+     *     <li>표제 안에서는 글자 크기가 본문과 같아도 로마 숫자는 절, 상자 번호(󰊱)도 제목, "붙임 3"·"별첨 2"·"참고 1"은 표제 바로 아래.
+     *         위 단계를 제목에 고정하므로, 이 줄들을 놓치면 앞 절 이름이 다음 절 내용에 붙는다</li>
+     * </ul>
+     */
+    static final class BundledDocuments {
+
+        /** 본문보다 이 배수 이상 큰 표제·자격 장 제목 */
+        static final float TITLE_RATIO = 1.5f;
+        static final int SECTION_MAX = 60;
+        private static final Pattern TITLE = Pattern.compile("(?:매뉴얼|메뉴얼|지침|알림|시범사업)$");
+        private static final Pattern BOX = Pattern.compile("^[\\x{F02B1}-\\x{F02BA}]");
+        private static final Pattern ATTACHMENT = Pattern.compile(
+                "^(?:【\\s*)?(?:붙임|별첨|참고)\\s*[0-9０-９]{1,2}(?:-\\d)?(?:\\s*】|\\s|$)");
+
+        static List<Line> mark(List<Line> lines, float median) {
+            if (median <= 0) {
+                return lines;
+            }
+            float titleSize = median * TITLE_RATIO;
+            int lastChapter = -1;
+            for (int i = 0; i < lines.size(); i++) {
+                Line line = lines.get(i);
+                if (line.pageStart() && line.marker() == Marker.NONE && line.emphasized()
+                        && line.fontSize() >= titleSize && StayTable.QUALIFICATION.matcher(line.text()).find()) {
+                    lastChapter = i;
+                }
+            }
+            if (lastChapter < 0) {
+                return lines;
+            }
+            Matcher code = StayTable.QUALIFICATION.matcher(lines.get(lastChapter).text());
+            String chapterCode = code.find() ? StayTable.normalize(code.group()) : "";
+
+            List<Line> out = new ArrayList<>(lines.subList(0, lastChapter + 1));
+            boolean inside = false;
+            for (int i = lastChapter + 1; i < lines.size(); i++) {
+                Line line = lines.get(i);
+                Line previous = lines.get(i - 1);
+                boolean belowSubtitle = previous.pageStart() && previous.page() == line.page()
+                        && BULLET.matcher(previous.text()).find();
+                if ((line.pageStart() || belowSubtitle) && line.page() > COVER_MAX_PAGE
+                        && line.marker() == Marker.NONE && line.emphasized() && line.fontSize() >= titleSize
+                        && line.text().length() <= HEADING_MAX && TITLE.matcher(line.text()).find()
+                        && !StayTable.normalize(line.text()).contains(chapterCode)) {
+                    // 표제 앞 부제는 새 문서의 내용
+                    out.add(belowSubtitle ? out.size() - 1 : out.size(), withMarker(line, Marker.BUNDLE_TITLE));
+                    inside = true;
+                    continue;
+                }
+                Line next = i + 1 < lines.size() ? lines.get(i + 1) : null;
+                out.add(inside ? withMarker(line, markerInside(line, previous, next)) : line);
+            }
+            return out;
+        }
+
+        private static Marker markerInside(Line line, Line previous, Line next) {
+            String text = line.text();
+            if (text.length() > SECTION_MAX || TOC_LINE.matcher(text).find()) {
+                return line.marker();
+            }
+            if (line.marker() == Marker.ROMAN && line.emphasized()) {
+                return Marker.BUNDLE_SECTION;
+            }
+            if ((line.pageStart() || line.emphasized()) && ATTACHMENT.matcher(text).find()) {
+                return Marker.BUNDLE_ATTACHMENT;
+            }
+            // 상자 번호가 이어지면 목록 (표지의 "내용")
+            if (line.emphasized() && !line.fullWidth() && text.length() <= HEADING_MAX && BOX.matcher(text).find()
+                    && !BOX.matcher(previous.text()).find() && (next == null || !BOX.matcher(next.text()).find())) {
+                return Marker.BUNDLE_BOX;
+            }
+            return line.marker();
+        }
+    }
+
+    /**
+     * 05 체류 매뉴얼 유학(D-2)의 "시간제취업 / 활동 허가" 칸 (p37~40).
+     * 왼쪽 칸 이름이 쪽마다 값 앞 두 줄에 붙어 나와 제목이 되지 못하고, 앞의 배우자(F-3) 제목이 일반 규정에 붙는다.
+     * 이름을 떼어 자격 제목 바로 아래 제목으로 넣고, 다음 칸 이름이나 자격 장에서 끝낸다. 칸 안의 "가." 는 제목이 될 수 있다.
+     */
+    static final class PartTimeRow {
+
+        static final String TITLE = "시간제취업 활동 허가";
+        private static final String FIRST = "시간제취업";
+        private static final String SECOND = "활동허가";
+
+        static List<Line> rewrite(List<Line> lines) {
+            List<Line> out = new ArrayList<>(lines.size());
+            boolean underQualification = false;
+            boolean open = false;
+            for (int i = 0; i < lines.size(); i++) {
+                Line line = lines.get(i);
+                Line next = i + 1 < lines.size() ? lines.get(i + 1) : null;
+                boolean qualification = line.emphasized() && StayTable.QUALIFICATION.matcher(line.text()).find();
+                underQualification |= qualification;
+
+                String first = underQualification ? StayTable.rest(line.text(), FIRST) : null;
+                String second = first == null || next == null || next.page() != line.page()
+                        ? null : StayTable.rest(next.text(), SECOND);
+                if (second != null) {
+                    if (!open) {
+                        out.add(new Line(TITLE, line.page(), true, line.pageStart(), Marker.NONE, false, false, null,
+                                line.fontSize(), false, false, false, true));
+                        open = true;
+                    }
+                    addValue(out, line, first, true);
+                    addValue(out, next, second, false);
+                    i++;
+                    continue;
+                }
+                if (open && (qualification || line.synthetic() || startsNextRow(line, next))) {
+                    out.add(new Line("", line.page(), true, false, Marker.NONE, false, false, null, 0, false, false,
+                            false, true));
+                    open = false;
+                }
+                if (open && line.marker() == Marker.HANGUL_DOT) {
+                    // "나. 대 상": 앞 줄이 문장으로 끝나지 않고 칸 끝까지 찼어도 새 블록
+                    if (out.getLast().fullWidth()) {
+                        out.set(out.size() - 1, startingBlock(out.getLast(), out.getLast().blankBefore()));
+                    }
+                    line = startingBlock(line, true);
+                }
+                out.add(line);
+            }
+            return out;
+        }
+
+        private static void addValue(List<Line> out, Line line, String value, boolean first) {
+            if (!value.isEmpty()) {
+                out.add(new Line(value, line.page(), first || line.blankBefore(), first && line.pageStart(),
+                        Marker.of(value), false, false, null, line.fontSize(), line.bold(), line.emphasized(),
+                        line.fullWidth(), false));
+            }
+        }
+
+        private static Line startingBlock(Line line, boolean blankBefore) {
+            return new Line(line.text(), line.page(), blankBefore, line.pageStart(), line.marker(), line.table(),
+                    line.header(), line.tableBlock(), line.fontSize(), line.bold(), line.emphasized(), false,
+                    line.synthetic());
+        }
+
+        /** 두 줄로 나뉜 다음 칸 이름 ("근무처의 …" / "변경․추가 …") */
+        private static boolean startsNextRow(Line line, Line next) {
+            if (next == null) {
+                return false;
+            }
+            for (StayTable.Label label : StayTable.LABELS) {
+                if (label.second() != null && StayTable.rest(line.text(), label.first()) != null
+                        && StayTable.rest(next.text(), label.second()) != null) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static Line withMarker(Line line, Marker marker) {
+        if (marker == line.marker()) {
+            return line;
+        }
+        // 정해진 제목은 표 줄·이어지는 줄로 보지 않는다
+        return new Line(line.text(), line.page(), true, line.pageStart(), marker, false, false, null,
+                line.fontSize(), line.bold(), line.emphasized(), false, false);
+    }
+
     private static boolean isPlainTitle(Line line, int page) {
         return line != null && line.page() == page && line.tableBlock() == null
                 && line.marker() == Marker.NONE && isHeadingCandidate(line, Rules.LENIENT);
@@ -948,6 +1173,11 @@ public class DocumentChunker {
         // 앞에서부터: 제목은 앞 내용이 끝난 뒤, 또는 제목이 될 수 있는 줄 바로 뒤에 온다
         boolean[] canStart = new boolean[n];
         for (int i = 0; i < n; i++) {
+            if (lines.get(i).marker().bundled()) {
+                candidate[i] = true;
+                canStart[i] = true;
+                continue;
+            }
             canStart[i] = startsBlock(lines, i, rules)
                     || (i > 0 && candidate[i - 1] && (canStart[i - 1] || lines.get(i - 1).marker().strong)
                     && followsHeading(lines.get(i - 1), lines.get(i)));
@@ -956,8 +1186,12 @@ public class DocumentChunker {
         // 뒤에서부터: "2. 신청 / 가. 기한 / 본문" 처럼 제목이 이어지면 다음 줄이 제목이어도 된다
         for (int i = n - 1; i >= 0; i--) {
             Line line = lines.get(i);
-            if (line.synthetic()) {
+            if (line.synthetic() || line.marker().bundled()) {
                 heading[i] = true;
+                continue;
+            }
+            // 표제 바로 아래 번호 없는 줄은 부제 ("사증발급 및 체류관리지침 제정(안)")
+            if (i > 0 && lines.get(i - 1).marker() == Marker.BUNDLE_TITLE && line.marker() == Marker.NONE) {
                 continue;
             }
             if (i + 1 >= n || !candidate[i]) {
@@ -1099,6 +1333,11 @@ public class DocumentChunker {
             return true;
         }
         Line prev = lines.get(i - 1);
+        // PLAIN: 앞 줄보다 큰 "Ⅲ"·"5." 는 앞 내용이 문장으로 끝나지 않았어도 새 제목 ("□ 쿼터 : 250명 / Ⅲ …")
+        if (rules.strict() && (line.marker() == Marker.ROMAN || line.marker() == Marker.NUM_DOT)
+                && line.emphasized() && isSmaller(prev, line)) {
+            return true;
+        }
         // PLAIN: 앞 줄이 오른쪽 끝까지 차고 문장이 끝나지 않았으면 이어지는 줄 (쪽이 바뀌어도)
         // 단, 새 쪽 첫 줄이 강조된 줄이면 장 제목 ("… 장 귀하" 로 끝난 서식 쪽 다음의 "기술연수(D-3)")
         if (rules.strict() && prev.fullWidth() && !SENTENCE_END.matcher(prev.text()).find()
@@ -1139,7 +1378,8 @@ public class DocumentChunker {
         List<Section> sections = new ArrayList<>();
         Deque<Line> path = new ArrayDeque<>();
         Map<String, Integer> levels = new HashMap<>();
-        Section section = new Section(List.of(), fallbackTitle, new ArrayList<>());
+        Map<String, Integer> levelsBeforeRow = null;
+        Section section = new Section(HeadingPath.EMPTY, fallbackTitle, new ArrayList<>());
         sections.add(section);
         Paragraph paragraph = null;
         Line prev = null;
@@ -1153,11 +1393,16 @@ public class DocumentChunker {
                         path.removeLast();
                     }
                     path.removeLast();
-                    section = new Section(pathTexts(path), path.isEmpty() ? fallbackTitle : title(path),
+                    if (levelsBeforeRow != null) {
+                        levels.clear();
+                        levels.putAll(levelsBeforeRow);
+                    }
+                    section = new Section(HeadingPath.of(path), path.isEmpty() ? fallbackTitle : title(path),
                             new ArrayList<>());
                     sections.add(section);
                     paragraph = null;
                 }
+                levelsBeforeRow = null;
                 prev = line;
                 continue;
             }
@@ -1170,9 +1415,36 @@ public class DocumentChunker {
                     path.removeLast();
                 }
                 int parentLevel = path.isEmpty() ? 0 : levels.get(shapeKey(path.peekLast()));
+                if (line.text().equals(PartTimeRow.TITLE)) {
+                    // 칸 안의 "가."·"(1)" 은 칸 제목 아래 단계로 새로 정하고, 칸이 끝나면 되돌린다
+                    levelsBeforeRow = new HashMap<>(levels);
+                    levels.keySet().retainAll(path.stream().map(DocumentChunker::shapeKey).toList());
+                }
                 levels.put(shapeKey(line), parentLevel + 1);
                 path.addLast(line);
-                section = new Section(pathTexts(path), title(path), new ArrayList<>());
+                section = new Section(HeadingPath.of(path), title(path), new ArrayList<>());
+                sections.add(section);
+                paragraph = null;
+                prev = line;
+                continue;
+            }
+            if (headings[i] && line.marker().fixedLevel()) {
+                if (line.marker() == Marker.BUNDLE_TITLE) {
+                    path.clear();
+                } else {
+                    while (!path.isEmpty() && !path.peekLast().marker().canContain(line.marker())) {
+                        path.removeLast();
+                    }
+                }
+                keepEmptyHeading(sections, path, i > 0 && headings[i - 1] ? prev : null);
+                path.addLast(line);
+                // 정해진 제목마다 그 아래 단계를 새로 센다: 앞 절에서 배운 단계가 이 절의 제목을 밀어내지 않게
+                levels.clear();
+                int depth = 0;
+                for (Line heading : path) {
+                    levels.put(shapeKey(heading), depth++);
+                }
+                section = new Section(HeadingPath.of(path), title(path), new ArrayList<>());
                 sections.add(section);
                 paragraph = null;
                 prev = line;
@@ -1182,7 +1454,7 @@ public class DocumentChunker {
                 // 표지 제목(과 같은 글자의 제목)은 제목 경로에 넣지 않는다: 그 조각의 첫 줄로만 쓰고, 다음 제목부터 새로 단계를 센다
                 path.clear();
                 levels.clear();
-                section = new Section(List.of(), line.text(), new ArrayList<>());
+                section = new Section(HeadingPath.EMPTY, line.text(), new ArrayList<>());
                 sections.add(section);
                 paragraph = null;
                 prev = line;
@@ -1190,27 +1462,43 @@ public class DocumentChunker {
             }
             if (headings[i]) {
                 // 글자가 더 큰 제목은 더 작은 제목 아래에 들지 않는다 ("방문동거(F-1)" 20pt 아래의 "영 주(F-5)" 24pt)
-                while (!path.isEmpty() && isSmaller(path.peekLast(), line)) {
+                // 표제는 다음 표제 전까지, 붙임은 다음 붙임 전까지 남는다 (서식 제목이 더 커도)
+                while (!path.isEmpty() && path.peekLast().marker() != Marker.BUNDLE_TITLE
+                        && path.peekLast().marker() != Marker.BUNDLE_ATTACHMENT && isSmaller(path.peekLast(), line)) {
                     path.removeLast();
                 }
                 // 장 제목과 같은 모양이면 새 장 (붙임 서식의 큰 글자 "학교 변경 동의서" 아래로 "기술연수(D-3)" 가 들지 않게).
                 // 장 번호 제목("PART 1.", "제2장")은 늘 새 장 (표지의 큰 글자 아래로 들지 않게)
                 if (Integer.valueOf(1).equals(levels.get(shapeKey(line))) || line.marker() == Marker.CHAPTER
                         || startsQualificationChapter(path, line)) {
-                    path.clear();
+                    while (!path.isEmpty() && path.peekLast().marker() != Marker.BUNDLE_TITLE) {
+                        path.removeLast();
+                    }
                 }
                 int parentLevel = path.isEmpty() ? 0 : levels.get(shapeKey(path.peekLast()));
                 int level = levels.computeIfAbsent(shapeKey(line), key -> parentLevel + 1);
-                while (!path.isEmpty() && levels.get(shapeKey(path.peekLast())) >= level) {
+                boolean bundled = !path.isEmpty() && path.getFirst().marker() == Marker.BUNDLE_TITLE;
+                // 묶음 문서: 제목 바로 밑 제목은 그 자식 ("1. 서울특별시 / □ 대상")
+                if (bundled && level <= parentLevel && path.peekLast() == prev && !sameShape(prev, line)) {
+                    level = parentLevel + 1;
+                    levels.put(shapeKey(line), level);
+                }
+                while (!path.isEmpty() && path.peekLast().marker() != Marker.BUNDLE_TITLE
+                        && levels.get(shapeKey(path.peekLast())) >= level) {
                     path.removeLast();
                 }
                 if (path.isEmpty()) {
                     // 최상위 제목(장)마다 그 아래 단계를 새로 정한다: 장마다 번호 체계가 달라도 앞 장의 단계가 남지 않게
                     levels.clear();
                     levels.put(shapeKey(line), 1);
+                } else if (path.peekLast().marker() == Marker.BUNDLE_TITLE) {
+                    levels.clear();
+                    levels.put(shapeKey(path.peekLast()), 0);
+                    levels.put(shapeKey(line), 1);
                 }
+                keepEmptyHeading(sections, path, i > 0 && headings[i - 1] ? prev : null);
                 path.addLast(line);
-                section = new Section(pathTexts(path), title(path), new ArrayList<>());
+                section = new Section(HeadingPath.of(path), title(path), new ArrayList<>());
                 sections.add(section);
                 paragraph = null;
                 prev = line;
@@ -1236,11 +1524,28 @@ public class DocumentChunker {
     }
 
     /**
+     * 묶음 문서에서 내용 없이 바로 밀려난 제목(간지 "붙임 문서", 서식 끝 "추천기관 (직 인)")은 앞 절의 본문으로 남긴다.
+     *
+     * @param previous 바로 앞 줄이 제목일 때 그 줄, 아니면 null
+     */
+    private static void keepEmptyHeading(List<Section> sections, Deque<Line> path, Line previous) {
+        if (previous == null || previous.synthetic() || sections.size() < 2 || path.isEmpty()
+                || path.getFirst().marker() != Marker.BUNDLE_TITLE
+                || path.stream().anyMatch(heading -> heading == previous)) {
+            return;
+        }
+        Paragraph kept = new Paragraph(false);
+        kept.add(previous);
+        sections.get(sections.size() - 2).items().add(kept);
+    }
+
+    /**
      * 번호 없는 체류자격 제목("영 주(F-5)", "비전문취업(E-9)")은 늘 새 장이다 (05 는 자격마다 장이 시작된다).
      * 서식 제목 "K-point E74 고용기업 추천서" 나 앞 자격 아래로 들지 않게 한다. 번호 있는 "3) 영주(F-5-28)…" 는 아니다
      */
     private static boolean startsQualificationChapter(Deque<Line> path, Line line) {
-        return !path.isEmpty() && line.marker() == Marker.NONE && StayTable.QUALIFICATION.matcher(line.text()).find();
+        return !path.isEmpty() && path.getFirst().marker() != Marker.BUNDLE_TITLE
+                && line.marker() == Marker.NONE && StayTable.QUALIFICATION.matcher(line.text()).find();
     }
 
     /** 글자 크기를 둘 다 알고, a 가 b 보다 확실히({@value #LARGER_RATIO}배 이상) 작다. 13pt 와 12pt 는 같은 크기로 본다 */
@@ -1278,12 +1583,8 @@ public class DocumentChunker {
         return end - start + 1 >= TABLE_MIN_ROWS;
     }
 
-    private static List<String> pathTexts(Deque<Line> path) {
-        return path.stream().map(Line::text).toList();
-    }
-
     private static String title(Deque<Line> path) {
-        return title(pathTexts(path), null);
+        return title(HeadingPath.of(path), null);
     }
 
     /**
@@ -1300,7 +1601,7 @@ public class DocumentChunker {
             }
             total++;
             if (section.path().size() >= 2) {
-                counts.merge(section.path().getFirst(), 1, Integer::sum);
+                counts.merge(section.path().texts().getFirst(), 1, Integer::sum);
             }
         }
         if (total < MAJORITY_MIN_SECTIONS) {
@@ -1349,11 +1650,15 @@ public class DocumentChunker {
 
     /**
      * 조각 첫 줄 제목: 가까운 {@value #TITLE_LEVELS}단계 ("상위 &gt; 하위"). {@value #TITLE_MAX}자를 넘으면 위 단계부터 뺀다.
-     * 경로가 비면 fallback (문서 이름)
+     * 경로가 비면 fallback (문서 이름). 묶음 문서 안은 {@link #shownInBundle}
      */
-    static String title(List<String> path, String fallback) {
+    private static String title(HeadingPath headingPath, String fallback) {
+        List<String> path = headingPath.texts();
         if (path.isEmpty()) {
             return fallback;
+        }
+        if (headingPath.bundled()) {
+            return String.join(" > ", shownInBundle(path));
         }
         int from = Math.max(0, path.size() - TITLE_LEVELS);
         String title = String.join(" > ", path.subList(from, path.size()));
@@ -1362,6 +1667,21 @@ public class DocumentChunker {
             title = String.join(" > ", path.subList(from, path.size()));
         }
         return title;
+    }
+
+    /**
+     * 묶음 문서의 제목에 보일 단계: 위 {@value #BUNDLED_TOP_LEVELS}단계(표제·절·지역)와 마지막 단계.
+     * {@value #BUNDLED_TITLE_MAX}자를 넘으면 아래 단계부터 뺀다. 뺀 단계는 본문 첫 줄에 남긴다 ({@link #packItems}).
+     */
+    private static List<String> shownInBundle(List<String> path) {
+        List<String> shown = new ArrayList<>(path.subList(0, Math.min(BUNDLED_TOP_LEVELS, path.size())));
+        if (path.size() > BUNDLED_TOP_LEVELS) {
+            shown.add(path.getLast());
+        }
+        while (shown.size() > 1 && String.join(" > ", shown).length() > BUNDLED_TITLE_MAX) {
+            shown.removeLast();
+        }
+        return shown;
     }
 
     // ---------------------------------------------------------------- 조각
@@ -1376,13 +1696,22 @@ public class DocumentChunker {
     }
 
     private static void packItems(Section section, List<Draft> drafts) {
-        List<String> path = section.path();
+        HeadingPath path = section.path();
         String title = section.title();
         int titleLength = title == null ? 0 : title.length() + 1;
         int budget = Math.max(MIN_BUDGET, MAX - titleLength);
         int target = Math.max(MIN_BUDGET / 2, TARGET - titleLength);
 
         List<Unit> units = new ArrayList<>();
+        if (path.bundled() && !section.items().isEmpty()) {
+            List<String> omitted = new ArrayList<>(path.texts());
+            shownInBundle(path.texts()).forEach(omitted::remove);
+            if (!omitted.isEmpty()) {
+                int page = section.items().getFirst() instanceof Paragraph first
+                        ? first.linePages.getFirst() : ((TableBlock) section.items().getFirst()).firstPage();
+                units.add(new Unit(String.join(" > ", omitted), page, page, false));
+            }
+        }
         for (Object item : section.items()) {
             if (item instanceof Paragraph paragraph) {
                 units.addAll(toUnits(paragraph, budget));
@@ -1399,7 +1728,7 @@ public class DocumentChunker {
      * 표 하나를 한 조각으로 (한 줄에 한 행, 행마다 열 이름). 길면 행 경계에서 나눈다.
      * 행마다 열 이름이 붙어 있어 앞 조각 없이도 읽히므로 겹치지 않는다.
      */
-    private static void packTable(TableBlock table, List<String> path, String title, int budget, List<Draft> drafts) {
+    private static void packTable(TableBlock table, HeadingPath path, String title, int budget, List<Draft> drafts) {
         List<Unit> current = new ArrayList<>();
         for (TableRow row : table.rows()) {
             Paragraph rowText = new Paragraph(true);
@@ -1421,7 +1750,7 @@ public class DocumentChunker {
      * 문단을 목표 길이로 묶는다. 조각이 다음 줄로 이어지는 짧은 머리 문장("※ 외국인근로자에게 적용되는",
      * "… 다음과 같다:")으로 끝나면 그 문장은 다음 조각으로 넘긴다.
      */
-    private static void packText(List<Unit> units, List<String> path, String title, int budget, int target,
+    private static void packText(List<Unit> units, HeadingPath path, String title, int budget, int target,
                                  List<Draft> drafts) {
         List<Unit> current = new ArrayList<>();
         boolean overlap = false;
@@ -1478,7 +1807,8 @@ public class DocumentChunker {
     /**
      * 짧은 조각을 합친다 (표 조각은 그대로).
      * <ul>
-     *     <li>본문이 {@value #TINY_BODY}자 미만이고 문장으로 끝나지 않으며 다음 조각이 다른 절이면 다음 절 첫 조각 앞에 붙인다 (표지·간지)</li>
+     *     <li>본문이 {@value #TINY_BODY}자 미만이고 문장으로 끝나지 않으며 다음 조각이 다른 절이면 다음 절 첫 조각 앞에 붙인다 (표지·간지).
+     *         적용 대상이 바뀌는 곳({@link #sameScope})은 넘지 않는다</li>
      *     <li>본문이 {@value #MIN_BODY}자 미만이면 같은 절의 다음 조각과, 합쳐서 {@value #MAX}자를 넘으면 앞 조각과 합친다.
      *         합칠 때 뒤 조각 앞의 겹침은 뺀다</li>
      * </ul>
@@ -1492,7 +1822,8 @@ public class DocumentChunker {
             if (!draft.structuredTable()) {
                 int body = draft.bodyLength();
                 if (body < TINY_BODY && next != null && !next.structuredTable()
-                        && !sameSection(next, draft) && !endsSentence(draft)) {
+                        && !sameSection(next, draft) && !endsSentence(draft)
+                        && sameScope(draft.path(), next.path())) {
                     Draft combined = next.withUnits(concat(draft.units(), next.units()), false);
                     if (combined.contentLength() <= MAX) {
                         queue.set(i + 1, combined);
@@ -1527,7 +1858,8 @@ public class DocumentChunker {
     /**
      * 같은 부모 제목 아래의 이웃한 형제 절을 한 조각으로 묶는다 (표 조각은 그대로).
      * <ul>
-     *     <li>바로 위 부모 경로가 같아야 한다. 부모가 없거나(문서 이름) 최상위 제목(장)뿐이면 묶지 않는다</li>
+     *     <li>바로 위 부모 경로가 같아야 한다. 부모가 없거나(문서 이름) 최상위 제목(장)뿐이면 묶지 않는다.
+     *         묶음 문서는 표제 아래 한 단계(절)뿐이어도 묶지 않는다 (지역이 섞이지 않게)</li>
      *     <li>합쳐서 목표 {@value #TARGET}자 이하, 또는 한쪽 본문이 {@value #MIN_BODY}자 미만이고 합쳐서 {@value #MAX}자 이하</li>
      *     <li>합친 조각은 {@value #MERGE_MAX_PAGES}쪽 안 (출처 쪽 범위가 넓어지지 않게)</li>
      *     <li>첫 줄은 부모 경로, 하위 제목은 본문 안에 줄로 남긴다. 같은 절이 길어 나뉜 다음 조각은 겹침을 빼고 잇는다</li>
@@ -1556,8 +1888,9 @@ public class DocumentChunker {
             return null;
         }
         boolean sameSection = previous.group() && draft.path().equals(previous.lastPath());
-        List<String> parent = previous.group() ? previous.path() : parentOf(previous.path());
-        if (parent == null || parent.size() < 2 || !sameSection && !parent.equals(parentOf(draft.path()))) {
+        HeadingPath parent = previous.group() ? previous.path() : previous.path().parent();
+        if (parent == null || parent.size() < (parent.bundled() ? 3 : 2)
+                || !sameSection && !parent.equals(draft.path().parent())) {
             return null;
         }
         List<Unit> units = new ArrayList<>();
@@ -1582,16 +1915,25 @@ public class DocumentChunker {
         return fits && pages <= MERGE_MAX_PAGES ? combined : null;
     }
 
-    private static List<String> parentOf(List<String> path) {
-        return path.isEmpty() ? null : path.subList(0, path.size() - 1);
+    /** 짧은 조각을 다음 절로 넘겨도 적용 대상이 같은지: 같은 묶음 문서·절·지역, 같은 시간제취업 칸 안팎 */
+    private static boolean sameScope(HeadingPath from, HeadingPath to) {
+        if (from.bundled() != to.bundled()
+                || from.texts().contains(PartTimeRow.TITLE) != to.texts().contains(PartTimeRow.TITLE)) {
+            return false;
+        }
+        if (!from.bundled()) {
+            return true;
+        }
+        int shared = Math.min(BUNDLED_TOP_LEVELS, from.size());
+        return to.size() >= shared && from.texts().subList(0, shared).equals(to.texts().subList(0, shared));
     }
 
     /** 앞 조각에서 이어지는 꼬리를 묶을 때 하위 제목 줄 끝에 붙인다 (꼬리 내용을 그 제목의 첫 내용으로 읽지 않게) */
     static final String CONTINUED = " (이어서)";
 
     /** 묶은 조각 안의 하위 제목 줄: 부모 경로 아래 부분. 절의 꼬리면 "… (이어서)" */
-    private static Unit headingUnit(List<String> path, List<String> parent, int page, boolean continuation) {
-        String text = String.join(" > ", path.subList(parent.size(), path.size()));
+    private static Unit headingUnit(HeadingPath path, HeadingPath parent, int page, boolean continuation) {
+        String text = String.join(" > ", path.texts().subList(parent.size(), path.size()));
         return new Unit(continuation ? text + CONTINUED : text, page, page, false);
     }
 
