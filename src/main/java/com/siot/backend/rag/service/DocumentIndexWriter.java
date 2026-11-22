@@ -18,6 +18,7 @@ import java.util.List;
 /**
  * ADM-04 [INDEX]: 조각 저장과 버전 전환을 한 트랜잭션으로 한다.
  * 이전 현재 버전을 먼저 내리고(flush) 새 버전을 현재 버전으로 올린다 (문서당 현재 버전 1개 unique 인덱스).
+ * 내린 버전 조각은 글만 남기고 임베딩은 비운다 (예전 답변 출처는 남기고, 검색 대상 행이 쌓이지 않게).
  * 중간에 실패하면 저장한 조각까지 모두 되돌아가고 이전 버전이 그대로 검색된다.
  */
 @Service
@@ -53,6 +54,7 @@ public class DocumentIndexWriter {
                 .ifPresent(current -> {
                     current.release();
                     versionRepository.flush();
+                    chunkRepository.clearEmbeddings(current.getId());
                 });
         version.complete(OffsetDateTime.now(clock));
     }
