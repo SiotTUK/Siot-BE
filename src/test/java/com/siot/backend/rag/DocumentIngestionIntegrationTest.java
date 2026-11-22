@@ -9,6 +9,7 @@ import com.siot.backend.rag.ai.RetrievedChunk;
 import com.siot.backend.rag.document.TaggedTestPdf;
 import com.siot.backend.rag.document.TestPdfs;
 import com.siot.backend.rag.domain.DocumentChunk;
+import com.siot.backend.rag.repository.DocumentChunkRepository;
 import com.siot.backend.rag.service.ChunkRetriever;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,6 +78,9 @@ class DocumentIngestionIntegrationTest {
 
     @Autowired
     ChunkRetriever chunkRetriever;
+
+    @Autowired
+    DocumentChunkRepository chunkRepository;
 
     @MockitoBean
     DocumentEmbedder documentEmbedder;
@@ -310,6 +314,16 @@ class DocumentIngestionIntegrationTest {
         assertThat(searchedVersionNos(name)).isNotEmpty().containsOnly(2);
         assertThat(chunkCount(documentId, 1)).isEqualTo(2);
         assertThat(chunkCount(documentId, 2)).isEqualTo(2);
+        // 이전 버전 조각은 글만 남기고 임베딩은 비운다
+        assertThat(embeddedChunkCount(documentId, 1)).isZero();
+        assertThat(embeddedChunkCount(documentId, 2)).isEqualTo(2);
+        Long oldChunkId = jdbcTemplate.queryForObject("""
+                SELECT min(c.chunk_id) FROM document_chunk c JOIN document_version v ON v.document_version_id = c.document_version_id
+                WHERE v.document_id = ? AND v.version_no = 1""", Long.class, documentId);
+        DocumentChunk oldChunk = chunkRepository.findById(oldChunkId).orElseThrow();
+        assertThat(oldChunk.getEmbedding()).isNull();
+        assertThat(oldChunk.getContent()).isNotBlank();
+        assertThat(oldChunk.getPageStart()).isNotNull();
 
         // 같은 파일 새 버전 업로드는 계속 막는다
         mockMvc.perform(multipart("/api/admin/documents/{id}/versions", documentId)
@@ -409,6 +423,47 @@ class DocumentIngestionIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    /**
+     * CB-14: 옛 버전 조각 60개가 현재 조각 5개보다 질문에 가까워도 현재 조각 5개가 나온다
+     * (HNSW 는 후보 40개를 먼저 뽑아서, 이런 경우 결과가 0개였다).
+     * 이미 쌓인 옛 버전 임베딩을 비우는 마이그레이션은 현재·실패·처리 중 버전 조각을 건드리지 않는다.
+     */
+    @Test
+    void currentChunksAreFoundEvenWhenStaleChunksAreCloserAndMigrationClearsOnlyStale() throws Exception {
+        String name = "Stale Guide " + UUID.randomUUID();
+        Long documentId = jdbcTemplate.queryForObject(
+                "INSERT INTO document (name, source_url) VALUES (?, ?) RETURNING document_id", Long.class, name, SOURCE_URL);
+        long stale = version(documentId, 1, "COMPLETED", false);
+        long current = version(documentId, 2, "COMPLETED", true);
+        long failed = version(documentId, 3, "FAILED", false);
+        long processing = version(documentId, 4, "PROCESSING", false);
+        for (int i = 0; i < 60; i++) {
+            chunk(stale, i, 0.01 + i * 0.001);
+        }
+        for (int i = 0; i < 5; i++) {
+            chunk(current, i, 0.6 + i * 0.001);
+            chunk(failed, i, 0.02);
+            chunk(processing, i, 0.03);
+        }
+
+        assertThat(searchedVersionIds(name, angle(0))).hasSize(5).containsOnly(current);
+
+        String script = new String(new org.springframework.core.io.ClassPathResource(MIGRATION).getInputStream()
+                .readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        jdbcTemplate.execute(script);
+
+        assertThat(embeddedChunks(stale)).isZero();
+        assertThat(embeddedChunks(current)).isEqualTo(5);
+        assertThat(embeddedChunks(failed)).isEqualTo(5);
+        assertThat(embeddedChunks(processing)).isEqualTo(5);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_chunk WHERE document_version_id = ? AND content <> ''", Integer.class, stale))
+                .isEqualTo(60);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_document_chunk_embedding'", Integer.class)).isZero();
+        assertThat(searchedVersionIds(name, angle(0))).hasSize(5).containsOnly(current);
+    }
+
     @Test
     void deactivatedDocumentLeavesSearch() throws Exception {
         String name = "Inactive Guide " + UUID.randomUUID();
@@ -491,6 +546,55 @@ class DocumentIngestionIntegrationTest {
     }
 
     /** 이 문서에서 검색되는 조각 내용 (두 축 모두로 검색) */
+    /** 이미 쌓인 옛 버전 임베딩을 비우는 마이그레이션 (다시 실행해도 된다) */
+    private static final String MIGRATION = "db/migration/V2026_11_23_0823__clear_stale_chunk_embeddings.sql";
+
+    private int embeddedChunkCount(long documentId, int versionNo) {
+        return jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM document_chunk c JOIN document_version v ON v.document_version_id = c.document_version_id
+                WHERE v.document_id = ? AND v.version_no = ? AND c.embedding IS NOT NULL""",
+                Integer.class, documentId, versionNo);
+    }
+
+    private long version(long documentId, int versionNo, String status, boolean current) {
+        return jdbcTemplate.queryForObject("""
+                INSERT INTO document_version (document_id, version_no, file_storage_key, processing_status, is_current)
+                VALUES (?, ?, 'test', ?, ?) RETURNING document_version_id""",
+                Long.class, documentId, versionNo, status, current);
+    }
+
+    /** 5·6번 축 평면의 단위 벡터 (다른 테스트의 0·1번 축 조각과 겹치지 않게) */
+    private static float[] angle(double radians) {
+        float[] vector = new float[DocumentChunk.EMBEDDING_DIMENSION];
+        vector[5] = (float) Math.cos(radians);
+        vector[6] = (float) Math.sin(radians);
+        return vector;
+    }
+
+    private void chunk(long versionId, int chunkNo, double radians) {
+        jdbcTemplate.update("""
+                INSERT INTO document_chunk (document_version_id, chunk_no, page_start, page_end, content, embedding)
+                VALUES (?, ?, 1, 1, 'chunk', CAST(? AS vector))""",
+                versionId, chunkNo + 1, java.util.Arrays.toString(angle(radians)).replace(" ", ""));
+    }
+
+    private int embeddedChunks(long versionId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_chunk WHERE document_version_id = ? AND embedding IS NOT NULL",
+                Integer.class, versionId);
+    }
+
+    private List<Long> searchedVersionIds(String documentName, float[] query) {
+        List<Long> versionIds = new ArrayList<>();
+        for (RetrievedChunk chunk : chunkRetriever.search(query, 5)) {
+            if (documentName.equals(chunk.documentName())) {
+                versionIds.add(jdbcTemplate.queryForObject(
+                        "SELECT document_version_id FROM document_chunk WHERE chunk_id = ?", Long.class, chunk.chunkId()));
+            }
+        }
+        return versionIds;
+    }
+
     private List<String> searchContents(String documentName) {
         List<String> contents = new ArrayList<>();
         for (int axis = 0; axis < 2; axis++) {

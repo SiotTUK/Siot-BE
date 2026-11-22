@@ -9,7 +9,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * CB-14: 질문 벡터와 가장 가까운 문서 조각을 찾는다 (pgvector 코사인 거리, HNSW 인덱스).
+ * CB-14: 질문 벡터와 가장 가까운 문서 조각을 찾는다 (pgvector 코사인 거리, 인덱스 없이 정확 검색).
+ * HNSW 근사 검색은 후보 40개를 먼저 뽑은 뒤 조건으로 걸러서, 가장 가까운 현재 조각을 놓칠 수 있어 쓰지 않는다.
  * <p>
  * 검색 대상: 사용 중인 문서(document.is_active)의 현재 버전(document_version.is_current) 중
  * 반영이 끝난(processing_status = 'COMPLETED') 버전의 조각이며, 같은 임베딩 모델로 만든 것.
