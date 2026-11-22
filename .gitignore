@@ -44,3 +44,7 @@ logs/
 
 ### 업로드 문서 (DOCUMENT_STORAGE_DIR 기본값) ###
 data/
+
+### CB-01 평가·고지서 테스트 결과 ###
+cb01_result_*.csv
+bill_results/
