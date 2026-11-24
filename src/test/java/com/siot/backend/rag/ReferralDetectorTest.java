@@ -49,6 +49,77 @@ class ReferralDetectorTest {
         assertThat(ReferralDetector.detect(text)).contains(ReferralTopic.MEDICAL);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            // CB01-TAX-09·10
+            "저는 단일세율이랑 일반세율 중에 뭐가 더 유리한가요?",
+            "For me, which is better: the flat rate or the regular rate?",
+            "对我来说，单一税率和一般税率哪个更有利？",
+            "Đối với tôi, thuế suất cố định hay thuế suất thông thường có lợi hơn?",
+            "제 경우 이번 연말정산에서 환급을 얼마나 받을까요?",
+            "In my case, how much refund will I get from this year-end settlement?",
+            "我这次年终结算能退多少税？",
+            "Trường hợp của tôi, đợt quyết toán này tôi được hoàn bao nhiêu thuế?"
+    })
+    void detectsTaxJudgment(String text) {
+        assertThat(ReferralDetector.detect(text)).contains(ReferralTopic.TAX);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            // CB01-WORK-09
+            "사장님이 갑자기 나가라고 했는데 이거 부당해고인가요?",
+            "My boss suddenly told me to leave. Is this unfair dismissal?",
+            "老板突然叫我走人，这是不当解雇吗？",
+            "Ông chủ đột nhiên bảo tôi nghỉ việc, đây có phải sa thải trái phép không?",
+            "3달째 월급을 못 받았어요",
+            "My employer hasn't paid me for two months"
+    })
+    void detectsLaborJudgment(String text) {
+        assertThat(ReferralDetector.detect(text)).contains(ReferralTopic.LABOR);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            // CB01-WORK-10
+            "일하다가 다쳤는데 산재로 인정받을 수 있을까요?",
+            "I got hurt at work. Can it be recognized as an industrial accident?",
+            "我工作时受伤了，能被认定为工伤吗？",
+            "Tôi bị thương khi làm việc, có được công nhận là tai nạn lao động không?"
+    })
+    void detectsWorkInjury(String text) {
+        assertThat(ReferralDetector.detect(text)).contains(ReferralTopic.WORK_INJURY);
+    }
+
+    /** CB-01 세금·노동 정보 질문 (TAX-01~08, WORK-01~08 일부) 에는 붙이지 않는다 */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "주민세는 언제, 얼마나 내나요?",
+            "When do I pay the resident tax, and how much is it?",
+            "居民税什么时候交，交多少？",
+            "Thuế cư trú nộp khi nào và bao nhiêu?",
+            "외국인 근로자는 19% 단일세율을 적용받을 수 있나요?",
+            "Can foreign workers apply the 19% flat tax rate?",
+            "外国劳动者可以适用19%单一税率吗？",
+            "Người lao động nước ngoài có được áp dụng thuế suất cố định 19% không?",
+            "외국인도 거주자가 될 수 있나요? 기준이 뭔가요?",
+            "Can a foreigner be a tax resident? What is the standard?",
+            "연말정산은 언제 하나요?",
+            "회사를 그만두면 연말정산은 어떻게 되나요?",
+            "What happens to my year-end tax settlement if I quit my job?",
+            "辞职的话年终结算怎么办？",
+            "Nếu nghỉ việc thì quyết toán thuế cuối năm thế nào?",
+            "E-9 근로자는 회사를 몇 번까지 옮길 수 있나요?",
+            "Lao động E-9 được đổi nơi làm việc tối đa bao nhiêu lần?",
+            "퇴직금은 어떻게 보장되나요? 출국만기보험이 뭔가요?",
+            "How is my severance pay guaranteed? What is departure guarantee insurance?",
+            "연장근로는 일주일에 최대 몇 시간이고 수당은 얼마인가요?",
+            "What is the maximum overtime per week, and how much is overtime pay?"
+    })
+    void ignoresTaxAndWorkInformationQuestions(String text) {
+        assertThat(ReferralDetector.detect(text)).isEmpty();
+    }
+
     @Test
     void detectsSeveralTopicsInOrder() {
         assertThat(ReferralDetector.detect("불법체류면 비자 받을 수 있나요? 처벌받나요?"))

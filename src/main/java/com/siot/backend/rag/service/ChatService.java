@@ -54,7 +54,7 @@ import java.util.stream.Collectors;
  * 챗봇 대화 (CB-03, CB-16) 와 질문 처리 파이프라인.
  * <ol>
  *   <li>개인정보 가리기 (CB-05) → 질문 저장</li>
- *   <li>앞 대화가 있으면 질문을 검색용 독립 질문으로 바꾸기 (CB-07)</li>
+ *   <li>앞 대화가 있으면 독립 질문으로 (CB-07), 외국어 질문이면 한국어로 검색어 바꾸기 (CB-14)</li>
  *   <li>질문 임베딩 → 관련 문서 조각 검색 (CB-14)</li>
  *   <li>가장 관련 높은 조각이 기준보다 낮으면 답변하지 않고 문의처 안내 (CB-12)</li>
  *   <li>검색된 조각만 근거로 Gemini 답변 생성 (CB-13). 앞 대화도 함께 넘긴다 (CB-07).
@@ -256,7 +256,7 @@ public class ChatService {
         log.info("Chatbot answered: status={} took={}ms", outcome.status(), nanos / 1_000_000);
         // CB-09: 응급 관련 질문이면 답변과 함께 119/112 를 보여 준다
         boolean emergency = EmergencyDetector.isEmergency(question);
-        // CB-11: 비자 발급 가능 여부·법률·의료 판단 질문이면 고정 안내와 담당 기관을 함께 보여 준다
+        // CB-11: 비자 발급 가능 여부·법률·의료·세금·노동 판단 질문이면 고정 안내와 담당 기관을 함께 보여 준다
         List<ReferralTopic> referralTopics = ReferralDetector.detect(question);
 
         // CB-10: 관련 페이지는 답변과 함께 저장해 대화 기록에서 같은 링크를 보여 준다
@@ -315,7 +315,7 @@ public class ChatService {
     private Outcome answer(String question, String language, List<ChatTurn> history) {
         List<RetrievedChunk> relevant = List.of();
         try {
-            String searchQuery = searchQuery(question, history);
+            String searchQuery = searchQuery(question, language, history);
             float[] vector = queryEmbedder.embedQuery(searchQuery);
             List<RetrievedChunk> chunks = chunkRetriever.search(vector, properties.topK());
             // CB-12: 관련도가 기준 미만인 조각은 근거로 쓰지 않는다
@@ -365,11 +365,11 @@ public class ChatService {
     }
 
     /**
-     * CB-07: 앞 대화가 있으면 검색용 독립 질문으로 바꾼다.
-     * 바꾸기에 실패하면 직전 질문을 앞에 붙여 검색한다 (주제를 놓치지 않도록).
+     * 검색어. 앞 대화가 있으면 독립 질문으로 (CB-07), 외국어 질문이면 한국어로 (CB-14) 바꾼다.
+     * 바꾸기에 실패하면 앞 대화가 있을 때는 직전 질문을 앞에 붙여 (주제를 놓치지 않도록), 없으면 원래 질문으로 검색한다.
      */
-    private String searchQuery(String question, List<ChatTurn> history) {
-        if (history.isEmpty()) {
+    private String searchQuery(String question, String language, List<ChatTurn> history) {
+        if (history.isEmpty() && "ko".equals(language)) {
             return question;
         }
         try {
@@ -379,7 +379,10 @@ public class ChatService {
                 return PiiMasker.mask(rewritten.strip()).text();
             }
         } catch (AiUnavailableException e) {
-            log.warn("Chatbot query rewrite failed, falling back to previous question: {}", e.getMessage());
+            log.warn("Chatbot query rewrite failed, searching with the original question: {}", e.getMessage());
+        }
+        if (history.isEmpty()) {
+            return question;
         }
         return history.get(history.size() - 1).question() + "\n" + question;
     }
