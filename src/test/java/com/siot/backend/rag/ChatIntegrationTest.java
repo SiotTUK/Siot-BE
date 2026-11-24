@@ -389,17 +389,23 @@ class ChatIntegrationTest {
     void foreignQuestionIsSearchedInKoreanAndAnsweredWithOriginal() throws Exception {
         Cookie session = signup();
         long conversationId = startConversation(session, "en");
-        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_REGISTRATION));
+        // 한국어 검색어와 원래 질문이 서로 다른 조각을 찾는 경우
+        when(queryEmbedder.embedQuery("외국인등록은 언제까지 해야 하나요?")).thenReturn(axis(AXIS_REGISTRATION));
+        when(queryEmbedder.embedQuery("By when do I have to register as a foreigner?")).thenReturn(axis(AXIS_CAR_TAX));
         when(answerGenerator.generate(anyString(), anyString(), anyList(), anyList()))
                 .thenReturn("Within 90 days of entry.");
         when(queryRewriter.rewrite(eq("By when do I have to register as a foreigner?"), eq(List.of())))
                 .thenReturn("외국인등록은 언제까지 해야 하나요?");
 
+        // 두 검색 결과를 모두 근거로 (한국어 검색어 결과 먼저)
         ask(session, conversationId, "By when do I have to register as a foreigner?")
-                .andExpect(jsonPath("$.data.answer.answerStatus").value("ANSWERED"));
+                .andExpect(jsonPath("$.data.answer.answerStatus").value("ANSWERED"))
+                .andExpect(jsonPath("$.data.answer.sources[0].pageStart").value(12))
+                .andExpect(jsonPath("$.data.answer.sources[1].pageStart").value(30));
 
-        // 검색만 한국어로, 답변은 원래 질문으로
+        // 검색은 한국어 검색어와 원래 질문으로, 답변은 원래 질문으로
         verify(queryEmbedder).embedQuery("외국인등록은 언제까지 해야 하나요?");
+        verify(queryEmbedder).embedQuery("By when do I have to register as a foreigner?");
         verify(answerGenerator).generate(eq("By when do I have to register as a foreigner?"), eq("en"), anyList(),
                 eq(List.of()));
     }

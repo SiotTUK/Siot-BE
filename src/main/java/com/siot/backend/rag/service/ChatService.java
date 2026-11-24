@@ -54,7 +54,8 @@ import java.util.stream.Collectors;
  * 챗봇 대화 (CB-03, CB-16) 와 질문 처리 파이프라인.
  * <ol>
  *   <li>개인정보 가리기 (CB-05) → 질문 저장</li>
- *   <li>앞 대화가 있으면 독립 질문으로 (CB-07), 외국어 질문이면 한국어로 검색어 바꾸기 (CB-14)</li>
+ *   <li>앞 대화가 있으면 독립 질문으로 (CB-07), 외국어 질문이면 한국어로 검색어 바꾸기 (CB-14).
+ *       외국어 첫 질문은 원래 질문으로도 검색해 결과를 번갈아 합친다</li>
  *   <li>질문 임베딩 → 관련 문서 조각 검색 (CB-14)</li>
  *   <li>가장 관련 높은 조각이 기준보다 낮으면 답변하지 않고 문의처 안내 (CB-12)</li>
  *   <li>검색된 조각만 근거로 Gemini 답변 생성 (CB-13). 앞 대화도 함께 넘긴다 (CB-07).
@@ -315,16 +316,21 @@ public class ChatService {
     private Outcome answer(String question, String language, List<ChatTurn> history) {
         List<RetrievedChunk> relevant = List.of();
         try {
-            String searchQuery = searchQuery(question, language, history);
-            float[] vector = queryEmbedder.embedQuery(searchQuery);
-            List<RetrievedChunk> chunks = chunkRetriever.search(vector, properties.topK());
-            // CB-12: 관련도가 기준 미만인 조각은 근거로 쓰지 않는다
-            relevant = chunks.stream()
-                    .filter(c -> c.relevance() >= properties.minRelevance())
-                    .toList();
+            List<List<RetrievedChunk>> results = new ArrayList<>();
+            double best = -1;
+            for (String searchQuery : searchQueries(question, language, history)) {
+                List<RetrievedChunk> chunks = chunkRetriever.search(queryEmbedder.embedQuery(searchQuery),
+                        properties.topK());
+                if (!chunks.isEmpty()) {
+                    best = Math.max(best, chunks.get(0).relevance());
+                }
+                // CB-12: 관련도가 기준 미만인 조각은 근거로 쓰지 않는다
+                results.add(chunks.stream().filter(c -> c.relevance() >= properties.minRelevance()).toList());
+            }
+            relevant = interleave(results);
             if (relevant.isEmpty()) {
                 log.info("Chatbot no evidence: best relevance={}",
-                        chunks.isEmpty() ? "none" : String.format("%.3f", chunks.get(0).relevance()));
+                        best < 0 ? "none" : String.format("%.3f", best));
                 return Outcome.of(ChatbotMessages.noEvidence(language), AnswerStatus.NO_EVIDENCE, List.of());
             }
 
@@ -366,25 +372,52 @@ public class ChatService {
 
     /**
      * 검색어. 앞 대화가 있으면 독립 질문으로 (CB-07), 외국어 질문이면 한국어로 (CB-14) 바꾼다.
+     * 외국어 첫 질문은 원래 질문으로도 검색한다: 한국어 검색어만 쓰면 번역된 단어에 끌려
+     * 원래 질문으로는 찾던 조각을 놓치는 경우가 있다 (CB-01 STAY-01).
      * 바꾸기에 실패하면 앞 대화가 있을 때는 직전 질문을 앞에 붙여 (주제를 놓치지 않도록), 없으면 원래 질문으로 검색한다.
+     *
+     * @return 검색어 1~2개 (한국어 검색어 먼저, 중복 없음)
      */
-    private String searchQuery(String question, String language, List<ChatTurn> history) {
+    private List<String> searchQueries(String question, String language, List<ChatTurn> history) {
         if (history.isEmpty() && "ko".equals(language)) {
-            return question;
+            return List.of(question);
         }
+        String rewritten = null;
         try {
-            String rewritten = queryRewriter.rewrite(question, history);
-            if (rewritten != null && !rewritten.isBlank()) {
+            String result = queryRewriter.rewrite(question, history);
+            if (result != null && !result.isBlank()) {
                 // 모델이 개인정보를 되살려 쓰는 일이 없도록 한 번 더 가린다
-                return PiiMasker.mask(rewritten.strip()).text();
+                rewritten = PiiMasker.mask(result.strip()).text();
             }
         } catch (AiUnavailableException e) {
             log.warn("Chatbot query rewrite failed, searching with the original question: {}", e.getMessage());
         }
-        if (history.isEmpty()) {
-            return question;
+        if (!history.isEmpty()) {
+            return List.of(rewritten != null ? rewritten
+                    : history.get(history.size() - 1).question() + "\n" + question);
         }
-        return history.get(history.size() - 1).question() + "\n" + question;
+        return rewritten == null || rewritten.equals(question) ? List.of(question) : List.of(rewritten, question);
+    }
+
+    /**
+     * 검색 결과를 순위대로 번갈아 합친다 (같은 조각은 한 번만). 언어가 다른 검색어끼리는 관련도 값의 크기를
+     * 바로 비교하기 어려워서, 관련도 순으로 합치면 한쪽 결과만 근거로 남을 수 있다.
+     */
+    static List<RetrievedChunk> interleave(List<List<RetrievedChunk>> results) {
+        if (results.size() == 1) {
+            return results.get(0);
+        }
+        List<RetrievedChunk> merged = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
+        int longest = results.stream().mapToInt(List::size).max().orElse(0);
+        for (int rank = 0; rank < longest; rank++) {
+            for (List<RetrievedChunk> result : results) {
+                if (rank < result.size() && seen.add(result.get(rank).chunkId())) {
+                    merged.add(result.get(rank));
+                }
+            }
+        }
+        return merged;
     }
 
     /** 최근 N턴 (오래된 것부터). 답변은 근거로 답한 경우만 넣는다 */

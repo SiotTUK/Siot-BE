@@ -120,6 +120,24 @@ class ReferralDetectorTest {
         assertThat(ReferralDetector.detect(text)).isEmpty();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "이 임대차 계약서에 그대로 서명해도 괜찮을까요?",
+            "Should I sign this contract?",
+            "这份租房合同我直接签字可以吗？",
+            "Tôi ký hợp đồng thuê nhà này luôn có được không?",
+            "Chủ nhà không trả lại tiền đặt cọc, nếu kiện thì tôi có thắng không?"
+    })
+    void detectsContractAndLawsuitJudgment(String text) {
+        assertThat(ReferralDetector.detect(text)).contains(ReferralTopic.LEGAL);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Will my visa be extended?", "我的签证能延长吗？", "以我的情况能换永住权吗？"})
+    void detectsVisaJudgmentWithoutFirstPersonVerb(String text) {
+        assertThat(ReferralDetector.detect(text)).contains(ReferralTopic.VISA);
+    }
+
     @Test
     void detectsSeveralTopicsInOrder() {
         assertThat(ReferralDetector.detect("불법체류면 비자 받을 수 있나요? 처벌받나요?"))
@@ -143,6 +161,10 @@ class ReferralDetectorTest {
             "Can I get an extension on my phone bill?",
             "怎么办理外国人登录？",
             "Điều kiện tham gia sự kiện là gì?",
+            "Nếu không đủ điều kiện thì sao?",
+            "Đăng ký hợp đồng điện thoại online được không?",
+            "Can I sign up for the Korean class online?",
+            "哪里能买到感冒的食物吗",
             ""
     })
     void ignoresInformationQuestions(String text) {

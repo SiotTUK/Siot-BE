@@ -39,7 +39,7 @@ public final class ReferralDetector {
             // ko
             "가능성", "거절", "불허", "떨어", "나올까", "승인", "자격이 되", "자격이 있",
             // zh
-            "有资格", "批准", "拒签", "被拒",
+            "有资格", "批准", "拒签", "被拒", "我的情况",
             // vi
             "đủ điều kiện", "bị từ chối");
 
@@ -51,12 +51,15 @@ public final class ReferralDetector {
             // vi
             "có được", "được không", "có thể", "có bị");
 
+    /** zh: "能延长吗·能换永住权吗" 처럼 能 과 吗 사이에 동사가 들어가는 표현 */
+    private static final Pattern VISA_WEAK_CUES_ZH = Pattern.compile("能[^，,。？?！!\\s]{1,8}吗");
+
     private static final Pattern VISA_STRONG_CUES_EN = Pattern.compile(
             "\\b(am i|eligib\\w*|qualify|approved|denied|rejected|refused)\\b",
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern VISA_WEAK_CUES_EN = Pattern.compile(
-            "\\b(can i|could i|will i|would i|possible)\\b", Pattern.CASE_INSENSITIVE);
+            "\\b((can|could|will|would) (i|my)|possible)\\b", Pattern.CASE_INSENSITIVE);
 
     /** 서류·절차를 묻는 단어 */
     private static final List<String> PROCEDURE_WORDS = List.of(
@@ -78,15 +81,24 @@ public final class ReferralDetector {
             // ko ("불법체류" 같은 명사는 제외하고 판단을 묻는 표현만)
             "불법인가", "불법이에요", "불법이야", "불법일까", "불법인지", "합법", "위법", "고소", "고발", "소송", "변호사",
             "처벌", "벌금을 내야", "벌금 받", "재판", "형사", "민사", "무효인가", "무효인지", "손해배상", "법적으로", "법적 책임",
+            "이길 수", "이길까", "이기나요", "승소", "패소",
+            // ko: 계약서를 대신 검토해 달라는 질문
+            "서명해도", "사인해도", "도장 찍어도", "계약해도 괜찮", "계약해도 될까", "계약해도 되나",
             // zh
-            "违法", "合法", "犯法", "起诉", "诉讼", "律师", "处罚", "判刑", "法院", "赔偿",
-            // vi ("kiện" 은 "điều kiện"(조건)·"sự kiện"(행사)에 들어 있어 제외)
-            "hợp pháp", "phạm pháp", "khởi kiện", "bị kiện", "kiện tụng", "luật sư", "xử phạt", "tòa án", "bồi thường");
+            "违法", "合法", "犯法", "起诉", "诉讼", "律师", "处罚", "判刑", "法院", "赔偿", "能赢", "会赢", "胜诉",
+            "签字可以", "签字没问题", "签了没问题", "可以签吗", "能签吗", "直接签",
+            // vi ("kiện" 은 "điều kiện"(조건)·"sự kiện"(행사)에 들어 있어 단독으로는 제외)
+            "hợp pháp", "phạm pháp", "khởi kiện", "bị kiện", "kiện tụng", "luật sư", "xử phạt", "tòa án", "bồi thường",
+            "nếu kiện", "đi kiện", "thắng kiện", "có thắng không", "kiện ra tòa");
 
     private static final Pattern LEGAL_EN = Pattern.compile(
             "\\b(illegal|legally|is it legal|lawsuit|sue|sued|lawyer|attorney|court|punish(ed|ment)?|"
-                    + "criminal record|prosecut\\w*|liable|liability)\\b",
+                    + "criminal record|prosecut\\w*|liable|liability|"
+                    + "(okay|ok|safe|fine|alright) (for me )?to sign|(should|can) i (just )?sign (this|the|it|my|a))\\b",
             Pattern.CASE_INSENSITIVE);
+
+    /** vi: "ký hợp đồng ... có được không" (계약서에 서명해도 되는지). "đăng ký hợp đồng"(계약 등록)은 제외 */
+    private static final Pattern LEGAL_SIGN_VI = Pattern.compile("(?<!đăng )ký hợp đồng.*(được không|có nên|có sao)");
 
     // ---------------------------------------------------------------- MEDICAL
 
@@ -95,7 +107,7 @@ public final class ReferralDetector {
             "증상", "진단", "아파요", "아픈데", "아프고", "아파서", "열이 나", "열이나", "기침", "두통", "복통",
             "약을 먹", "약 먹", "복용", "부작용", "처방", "무슨 병", "병인가", "병인지", "수술해야", "치료해야", "임신",
             // zh
-            "症状", "诊断", "疼", "痛", "发烧", "咳嗽", "吃药", "药物", "副作用", "处方", "怀孕", "生病",
+            "症状", "诊断", "感冒药", "退烧药", "止痛药", "这个药", "疼", "痛", "发烧", "咳嗽", "吃药", "药物", "副作用", "处方", "怀孕", "生病",
             // vi
             "triệu chứng", "chẩn đoán", "bị đau", "đau đầu", "đau bụng", "bị sốt", "uống thuốc", "tác dụng phụ",
             "đơn thuốc", "mang thai", "bị bệnh");
@@ -182,7 +194,8 @@ public final class ReferralDetector {
         if (visaTopic && isVisaJudgment(lower, normalized)) {
             topics.add(ReferralTopic.VISA);
         }
-        if (containsAny(lower, LEGAL_PHRASES) || LEGAL_EN.matcher(normalized).find()) {
+        if (containsAny(lower, LEGAL_PHRASES) || LEGAL_EN.matcher(normalized).find()
+                || LEGAL_SIGN_VI.matcher(lower).find()) {
             topics.add(ReferralTopic.LEGAL);
         }
         if (containsAny(lower, MEDICAL_PHRASES) || MEDICAL_EN.matcher(normalized).find()) {
@@ -205,7 +218,8 @@ public final class ReferralDetector {
         if (containsAny(lower, VISA_STRONG_CUES) || VISA_STRONG_CUES_EN.matcher(normalized).find()) {
             return true;
         }
-        boolean weakCue = containsAny(lower, VISA_WEAK_CUES) || VISA_WEAK_CUES_EN.matcher(normalized).find();
+        boolean weakCue = containsAny(lower, VISA_WEAK_CUES) || VISA_WEAK_CUES_EN.matcher(normalized).find()
+                || VISA_WEAK_CUES_ZH.matcher(normalized).find();
         boolean procedure = containsAny(lower, PROCEDURE_WORDS) || PROCEDURE_WORDS_EN.matcher(normalized).find();
         return weakCue && !procedure;
     }
