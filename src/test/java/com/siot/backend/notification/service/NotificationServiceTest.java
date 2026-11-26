@@ -100,4 +100,20 @@ class NotificationServiceTest {
         assertThat(res.enabled()).isFalse();
         assertThat(res.leadDays()).isEqualTo(14);
     }
+
+    @Test
+    @DisplayName("알림 설정: 모르는 종류·범위 밖 일수는 400 (저장하지 않는다)")
+    void updatePreference_rejectsUnknownKindAndBadLeadDays() {
+        for (NotificationPreferenceUpdateRequest bad : List.of(
+                new NotificationPreferenceUpdateRequest("PROMOTION", true, 0),
+                new NotificationPreferenceUpdateRequest("x".repeat(40), true, 0),
+                new NotificationPreferenceUpdateRequest("TAX", true, -1),
+                new NotificationPreferenceUpdateRequest("TAX", true, 400))) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> notificationService.updatePreference(1L, bad))
+                    .isInstanceOf(com.siot.backend.global.exception.BusinessException.class)
+                    .extracting(e -> ((com.siot.backend.global.exception.BusinessException) e).getErrorCode())
+                    .isEqualTo(com.siot.backend.global.exception.ErrorCode.INVALID_INPUT);
+        }
+        org.mockito.Mockito.verify(preferenceRepository, org.mockito.Mockito.never()).save(any());
+    }
 }

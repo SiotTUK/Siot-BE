@@ -16,8 +16,11 @@ public record ContentReportResponse(
         @Schema(description = "행사 ID", example = "null")
         Long eventId,
 
-        @Schema(description = "가이드 ID", example = "1")
+        @Schema(description = "생활수칙 항목 ID", example = "1")
         Long guideId,
+        @Schema(description = "신고 대상 종류: EVENT(행사) / RULE(생활수칙). 대상을 지웠으면 null (제목은 targetTitleSnapshot)",
+                nullable = true, example = "RULE")
+        String targetType,
 
         @Schema(description = "신고 대상 제목", example = "외국인등록")
         String targetTitleSnapshot,
@@ -28,7 +31,7 @@ public record ContentReportResponse(
         @Schema(description = "신고 당시 화면 언어", example = "ko")
         String language,
 
-        @Schema(description = "신고 사유", example = "정보 오류")
+        @Schema(description = "신고 사유: TRANSLATION(번역 오류) / CONTENT(내용 오류) / OTHER(기타)", example = "CONTENT")
         String reason,
 
         @Schema(description = "상세 설명")
@@ -58,6 +61,7 @@ public record ContentReportResponse(
                 r.getReporterUserId(),
                 r.getEventId(),
                 r.getGuideId(),
+                r.getEventId() != null ? "EVENT" : r.getGuideId() != null ? "RULE" : null,
                 r.getTargetTitleSnapshot(),
                 r.getQuotedText(),
                 r.getLanguage(),

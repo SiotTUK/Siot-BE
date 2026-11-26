@@ -53,23 +53,35 @@ public class GuideTranslationGenerator {
                 for (int i = 0; i < docs.size(); i++) {
                     translatedDocs.add(docs.get(i).getOrDefault(lang, ko.getDocs().get(i)));
                 }
+                // 번역문은 원문보다 길 수 있다 (예: 베트남어). DB 칸 길이를 넘으면 커밋 때 요청 전체가 실패하므로 자른다
                 tr.update(
-                        titles.get(lang),
+                        truncate(titles.get(lang), VARCHAR_DEFAULT),
                         summaries.get(lang),
                         contents.get(lang),
-                        badges.get(lang),
+                        truncate(badges.get(lang), BADGE_LENGTH),
                         places.get(lang),
                         translatedDocs,
-                        fees.get(lang),
-                        laws.get(lang),
+                        truncate(fees.get(lang), VARCHAR_DEFAULT),
+                        truncate(laws.get(lang), VARCHAR_DEFAULT),
                         penalties.get(lang),
-                        sourceNames.get(lang)
+                        truncate(sourceNames.get(lang), VARCHAR_DEFAULT)
                 );
                 guideTranslationRepository.save(tr);
             }
         } catch (Exception e) {
             log.warn("Auto translation failed for guide {}: {}", guideId, e.getMessage());
         }
+    }
+
+    /** guide_translation 의 VARCHAR 칸 길이 (title·fee·law·source_name 은 기본 255, badge 는 100) */
+    static final int VARCHAR_DEFAULT = 255;
+    static final int BADGE_LENGTH = 100;
+
+    static String truncate(String value, int max) {
+        if (value == null || value.length() <= max) {
+            return value;
+        }
+        return value.substring(0, max - 1) + "…";
     }
 
     private Map<String, String> translateSafely(String text) {

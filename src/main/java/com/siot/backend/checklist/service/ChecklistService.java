@@ -238,7 +238,9 @@ public class ChecklistService {
      */
     @Transactional
     public void updateProgress(Long userId, String code, ChecklistProgressUpdateRequest request) {
+        // 완료 체크는 체크리스트·생활 변화 할 일만 (생활수칙·지운 항목은 없음)
         Guide guide = guideRepository.findByCode(code)
+                .filter(g -> !g.isDeleted() && !"RULE".equals(g.getKind()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.GUIDE_NOT_FOUND));
 
         String periodKey = request.periodKey() != null ? request.periodKey() : ChecklistProgress.ONCE;

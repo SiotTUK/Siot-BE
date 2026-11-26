@@ -131,8 +131,18 @@ public class NotificationService {
      */
     @Transactional
     public NotificationPreferenceResponse updatePreference(Long userId, NotificationPreferenceUpdateRequest request) {
-        String kind = request.kind().toUpperCase();
+        // 알림 종류는 정해진 5가지만 (스케줄러가 읽는 값). 모르는 값을 저장하면 아무 효과 없이 쌓이고, 30자를 넘으면 DB 오류
+        String kind = request.kind() == null ? "" : request.kind().strip().toUpperCase(Locale.ROOT);
+        if (!DEFAULT_KINDS.contains(kind)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "kind 는 " + String.join(", ", DEFAULT_KINDS) + " 중 하나입니다.");
+        }
+        if (request.enabled() == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "enabled 는 필수입니다.");
+        }
         int leadDays = request.leadDays() != null ? request.leadDays() : 0;
+        if (leadDays < 0 || leadDays > 365) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "leadDays 는 0~365 입니다.");
+        }
 
         NotificationPreference preference = preferenceRepository.findByKindAndUserId(kind, userId)
                 .map(existing -> {

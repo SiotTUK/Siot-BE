@@ -208,4 +208,23 @@ class ChecklistServiceTest {
         assertThat(item.warning()).isTrue();
         assertThat(item.warningMessage()).contains("외국인등록");
     }
+
+    @Test
+    @DisplayName("완료 체크는 체크리스트 항목만: 생활수칙·지운 항목은 404 (CHK-07)")
+    void updateProgress_rejectsRuleAndDeletedGuides() {
+        Guide rule = Guide.create("RUL-01", "RULE", ItemType.INFO, "쓰레기 배출", 1, null, false);
+        given(guideRepository.findByCode("RUL-01")).willReturn(Optional.of(rule));
+        Guide deleted = Guide.create("CL-99", "CHECKLIST", ItemType.REQUIRED, "기초 행정", 1, null, false);
+        deleted.softDelete(1L, java.time.OffsetDateTime.now());
+        given(guideRepository.findByCode("CL-99")).willReturn(Optional.of(deleted));
+        var request = new com.siot.backend.checklist.dto.ChecklistProgressUpdateRequest(null, ProgressStatus.DONE);
+
+        for (String code : List.of("RUL-01", "CL-99")) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> checklistService.updateProgress(1L, code, request))
+                    .isInstanceOf(com.siot.backend.global.exception.BusinessException.class)
+                    .extracting(e -> ((com.siot.backend.global.exception.BusinessException) e).getErrorCode())
+                    .isEqualTo(com.siot.backend.global.exception.ErrorCode.GUIDE_NOT_FOUND);
+        }
+        org.mockito.Mockito.verify(progressRepository, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+    }
 }

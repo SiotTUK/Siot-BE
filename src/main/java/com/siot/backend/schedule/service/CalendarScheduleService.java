@@ -93,7 +93,7 @@ public class CalendarScheduleService {
      * 회원 정보를 묻지 않으므로 개인 일정은 넣지 않고, 납부 대상은 각 일정의 대상 설명으로 보여 준다.
      */
     public List<ScheduleResponse> getYearlySchedules(int year, String language) {
-        String targetLang = (language != null && !language.isBlank()) ? language : "ko";
+        String targetLang = SupportedLanguages.orDefault(language);
         List<ScheduleResponse> result = commonSchedules(
                 calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(
                         LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)),
@@ -108,8 +108,10 @@ public class CalendarScheduleService {
         for (CalendarSchedule cs : schedules) {
             String title = cs.getKind();
             if (cs.getGuideId() != null) {
+                // 번역이 없으면 한국어 제목 (COM-02). 내부 코드(TAX_CAR 등)를 제목으로 보여 주지 않는다
                 GuideTranslation tr = guideTranslationRepository
                         .findByGuideIdAndLanguage(cs.getGuideId(), targetLang)
+                        .or(() -> guideTranslationRepository.findByGuideIdAndLanguage(cs.getGuideId(), "ko"))
                         .orElse(null);
                 if (tr != null) title = tr.getTitle();
             }
@@ -189,7 +191,7 @@ public class CalendarScheduleService {
         CalendarSchedule cs = calendarScheduleRepository.findById(scheduleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SCHEDULE_NOT_FOUND));
 
-        String targetLang = (language != null && !language.isBlank()) ? language : "ko";
+        String targetLang = SupportedLanguages.orDefault(language);
         String title = cs.getKind();
         String summary = null;
         String content = null;

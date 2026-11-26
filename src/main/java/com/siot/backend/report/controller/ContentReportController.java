@@ -2,6 +2,8 @@ package com.siot.backend.report.controller;
 
 import com.siot.backend.auth.security.MemberPrincipal;
 import com.siot.backend.global.common.ApiResponse;
+import com.siot.backend.global.config.openapi.ApiErrorCodes;
+import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.global.config.openapi.SuccessStatus;
 import com.siot.backend.report.dto.ContentReportRequest;
 import com.siot.backend.report.dto.ContentReportResponse;
@@ -27,8 +29,11 @@ public class ContentReportController {
     private final ContentReportService contentReportService;
 
     @Operation(summary = "콘텐츠 오류 신고 접수 (COM-01)",
-            description = "체크리스트, 생활수칙, 행사 등 정보의 오류나 수정 필요 사항을 접수합니다.")
+            description = "행사(eventId) 또는 생활수칙(guideId) 중 하나의 잘못된 설명·번역을 신고합니다. "
+                    + "문제가 있는 문장(quotedText)과 사유(TRANSLATION 번역 오류 / CONTENT 내용 오류 / OTHER 기타)는 필수이고, "
+                    + "화면 언어(language)를 함께 저장합니다. 대상이 없거나 지워졌으면 404, 대상이 둘 다 없거나 둘 다 있으면 400.")
     @SuccessStatus(value = 201, description = "신고 접수 완료")
+    @ApiErrorCodes({ErrorCode.INVALID_INPUT, ErrorCode.EVENT_NOT_FOUND, ErrorCode.GUIDE_NOT_FOUND})
     @PostMapping
     public ResponseEntity<ApiResponse<ContentReportResponse>> createReport(
             @AuthenticationPrincipal MemberPrincipal principal,

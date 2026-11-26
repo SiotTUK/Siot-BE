@@ -272,4 +272,23 @@ class CalendarScheduleServiceTest {
             assertThat(item.dDay()).isEqualTo(42L);
         });
     }
+
+    @Test
+    @DisplayName("공통 일정 제목은 번역이 없으면 한국어 제목 (내부 코드 TAX_CAR 를 보여 주지 않는다, COM-02)")
+    void yearlySchedules_fallBackToKoreanTitle() {
+        CalendarSchedule car = CalendarSchedule.create(10L, "TAX_CAR", LocalDate.of(2027, 6, 16), LocalDate.of(2027, 6, 30),
+                "자동차 보유자", null, true, null);
+        given(calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(any(), any()))
+                .willReturn(List.of(car));
+        given(guideTranslationRepository.findByGuideIdAndLanguage(10L, "vi")).willReturn(Optional.empty());
+        given(guideTranslationRepository.findByGuideIdAndLanguage(10L, "ko")).willReturn(Optional.of(
+                GuideTranslation.create(10L, "ko", "자동차세 납부", null, "본문", null, null, Collections.emptyList(),
+                        null, null, null, null)));
+
+        assertThat(calendarScheduleService.getYearlySchedules(2027, "vi"))
+                .singleElement().satisfies(r -> assertThat(r.title()).isEqualTo("자동차세 납부"));
+        // 지원하지 않는 언어는 한국어로
+        assertThat(calendarScheduleService.getYearlySchedules(2027, "ja"))
+                .singleElement().satisfies(r -> assertThat(r.title()).isEqualTo("자동차세 납부"));
+    }
 }

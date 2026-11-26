@@ -88,4 +88,25 @@ class GuideTranslationGeneratorTest {
         assertThat(en.getSummary()).isNull();
         assertThat(en.getDocs()).containsExactly("Passport");
     }
+
+    @Test
+    @DisplayName("번역문이 DB 칸보다 길면 자른다 (배지 100자, 제목 255자) — 커밋 때 요청 전체가 실패하지 않게")
+    void truncatesTranslationsToColumnLength() {
+        GuideTranslation ko = GuideTranslation.create(7L, "ko", "제목", null, null, "입국 후 90일 이내", null,
+                List.of(), null, null, null, null);
+        given(translator.translateAll(anyString())).willAnswer(inv -> {
+            String longText = "x".repeat(300);
+            return Map.of("en", longText, "zh", longText, "vi", longText);
+        });
+        given(guideTranslationRepository.findByGuideIdAndLanguage(any(), anyString())).willReturn(Optional.empty());
+
+        generator.regenerate(ko);
+
+        ArgumentCaptor<GuideTranslation> captor = ArgumentCaptor.forClass(GuideTranslation.class);
+        verify(guideTranslationRepository, times(3)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(t -> {
+            assertThat(t.getBadge()).hasSize(100).endsWith("…");
+            assertThat(t.getTitle()).hasSize(255);
+        });
+    }
 }

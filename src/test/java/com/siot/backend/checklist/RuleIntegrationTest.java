@@ -17,6 +17,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -176,6 +177,96 @@ class RuleIntegrationTest {
         create(code, category, "제목", "본문", false).andExpect(status().isCreated());
         update(code, null, "제목", "").andExpect(status().isBadRequest());
         update(code, "  ", "제목", "본문").andExpect(status().isBadRequest());
+    }
+
+    /** COM-01 생활수칙 오류 신고 → ADM-07 처리. 잘못된 입력은 500 이 아니라 400·404 */
+    @Test
+    void ruleErrorReportIsValidatedAndProcessed() throws Exception {
+        create(code, category, "분리배출 방법", "본문", false).andExpect(status().isCreated());
+        long guideId = jdbcTemplate.queryForObject("SELECT guide_id FROM guide WHERE code = ?", Long.class, code);
+
+        String reportJson = """
+                {"guideId": %d, "quotedText": "EN wrong sentence", "language": "en", "reason": "TRANSLATION"}
+                """.formatted(guideId);
+        String body = mockMvc.perform(post("/api/reports").cookie(user).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(reportJson))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.targetType").value("RULE"))
+                .andExpect(jsonPath("$.data.targetTitleSnapshot").value("분리배출 방법"))
+                .andExpect(jsonPath("$.data.language").value("en"))
+                .andExpect(jsonPath("$.data.status").value("RECEIVED"))
+                .andReturn().getResponse().getContentAsString();
+        int reportId = com.jayway.jsonpath.JsonPath.read(body, "$.data.reportId");
+
+        // 지원하지 않는 언어·사유, 인용 문장 없음 → 400 (이전에는 언어가 DB CHECK 에 걸려 500)
+        report("{\"guideId\": " + guideId + ", \"quotedText\": \"x\", \"language\": \"ja\", \"reason\": \"OTHER\"}")
+                .andExpect(status().isBadRequest());
+        report("{\"guideId\": " + guideId + ", \"quotedText\": \"x\", \"reason\": \"정보 오류\"}")
+                .andExpect(status().isBadRequest());
+        report("{\"guideId\": " + guideId + ", \"quotedText\": \" \", \"reason\": \"OTHER\"}")
+                .andExpect(status().isBadRequest());
+        // 대상 없음 → 400, 없는 항목 → 404 (이전에는 외래키 위반 500)
+        report("{\"quotedText\": \"x\", \"reason\": \"OTHER\"}").andExpect(status().isBadRequest());
+        report("{\"guideId\": 999999999, \"quotedText\": \"x\", \"reason\": \"OTHER\"}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("GUIDE_NOT_FOUND"));
+
+        // ADM-07: 확인 중 → 처리 완료, 모르는 상태는 400
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .patch("/api/admin/reports/{id}", reportId).cookie(admin).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\": \"IN_REVIEW\", \"adminMemo\": \"확인 중\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("IN_REVIEW"));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .patch("/api/admin/reports/{id}", reportId).cookie(admin).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\": \"DONE\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/admin/reports").param("status", "in_review").cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[*].reportId", hasItem(reportId)));
+        mockMvc.perform(get("/api/admin/reports").param("status", "DONE").cookie(admin))
+                .andExpect(status().isBadRequest());
+    }
+
+    /** 잘못된 입력이 DB 제약(CHECK·길이)에 걸려 500 이 되지 않고 400 으로 막히는지 */
+    @Test
+    void invalidInputsAreRejectedBeforeTheDatabase() throws Exception {
+        // 체크리스트 회차 키: 형식이 틀리거나 10자를 넘으면 400 (이전에는 DB CHECK 위반 500)
+        for (String periodKey : List.of("2026/11", "2026-13", "abcdefghijk")) {
+            mockMvc.perform(put("/api/members/me/checklist/CL-01").cookie(user).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"periodKey\": \"" + periodKey + "\", \"status\": \"DONE\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(put("/api/members/me/checklist/CL-01").cookie(user).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\": \"DONE\"}"))
+                .andExpect(status().isNoContent());
+
+        // 생활수칙: 출처 링크는 http(s) 만, 배지는 100자까지 (이전에는 javascript: 저장, 101자는 500)
+        mockMvc.perform(post("/api/admin/rules").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"%s","category":"%s","title":"t","content":"c","sourceUrl":"javascript:alert(1)"}
+                                """.formatted(code, category)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/admin/rules").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"%s","category":"%s","title":"t","content":"c","badge":"%s"}
+                                """.formatted(code, category, "가".repeat(101))))
+                .andExpect(status().isBadRequest());
+
+        // 알림 설정: 모르는 종류는 400
+        mockMvc.perform(put("/api/members/me/notifications/preferences/PROMOTION").cookie(user).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"enabled\": false}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/members/me/notifications/preferences/tax").cookie(user).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"enabled\": false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.kind").value("TAX"));
+    }
+
+    private ResultActions report(String json) throws Exception {
+        return mockMvc.perform(post("/api/reports").cookie(user).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(json));
     }
 
     @Test

@@ -52,7 +52,7 @@ public class ChecklistController {
     public ResponseEntity<Void> updateProgress(
             @AuthenticationPrincipal MemberPrincipal principal,
             @Parameter(description = "항목 코드 (CL-01, LC-01-1 …)") @PathVariable String code,
-            @RequestBody ChecklistProgressUpdateRequest request) {
+            @Valid @RequestBody ChecklistProgressUpdateRequest request) {
 
         checklistService.updateProgress(principal.getId(), code, request);
         return ResponseEntity.noContent().build();
