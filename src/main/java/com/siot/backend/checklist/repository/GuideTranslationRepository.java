@@ -15,4 +15,7 @@ public interface GuideTranslationRepository extends JpaRepository<GuideTranslati
     List<GuideTranslation> findByGuideIdInAndLanguage(Collection<Long> guideIds, String language);
 
     List<GuideTranslation> findByGuideId(Long guideId);
+
+    /** 관리자 생활수칙 목록: 항목별 번역 언어 */
+    List<GuideTranslation> findByGuideIdIn(Collection<Long> guideIds);
 }

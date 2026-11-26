@@ -9,6 +9,7 @@ import com.siot.backend.checklist.domain.GuideTranslation;
 import com.siot.backend.checklist.domain.MemberLifeChange;
 import com.siot.backend.checklist.domain.ProgressStatus;
 import com.siot.backend.checklist.repository.ChecklistProgressRepository;
+import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.checklist.repository.MemberLifeChangeRepository;
 import com.siot.backend.member.domain.AppUser;
@@ -42,6 +43,7 @@ public class NotificationService {
     private final GuideTranslationRepository guideTranslationRepository;
     private final ChecklistProgressRepository checklistProgressRepository;
     private final MemberLifeChangeRepository memberLifeChangeRepository;
+    private final GuideRepository guideRepository;
     /** 한국 시간 (ClockConfig) */
     private final Clock clock;
 
@@ -54,7 +56,15 @@ public class NotificationService {
      */
     public PageResponse<NotificationResponse> getNotifications(Long userId, Pageable pageable) {
         Page<Notification> page = notificationRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
-        return PageResponse.from(page, NotificationResponse::from);
+        // 항목 상세로 가려면 code 가 필요하다 (NTF-04): 이 페이지의 항목을 한 번에 읽는다
+        List<Long> guideIds = page.getContent().stream()
+                .map(Notification::getGuideId).filter(Objects::nonNull).distinct().toList();
+        Map<Long, Guide> guides = guideIds.isEmpty() ? Map.of()
+                : guideRepository.findAllById(guideIds).stream()
+                .collect(java.util.stream.Collectors.toMap(Guide::getId, g -> g));
+        // Map.of() 와 toMap 결과는 get(null) 에서 NPE 가 날 수 있어 guideId 없는 알림은 따로 처리한다
+        return PageResponse.from(page, n -> NotificationResponse.from(n,
+                n.getGuideId() == null ? null : guides.get(n.getGuideId())));
     }
 
     /**
@@ -76,7 +86,9 @@ public class NotificationService {
         if (notification.getReadAt() == null) {
             notification.markRead();
         }
-        return NotificationResponse.from(notification);
+        Guide guide = notification.getGuideId() == null ? null
+                : guideRepository.findById(notification.getGuideId()).orElse(null);
+        return NotificationResponse.from(notification, guide);
     }
 
     /**

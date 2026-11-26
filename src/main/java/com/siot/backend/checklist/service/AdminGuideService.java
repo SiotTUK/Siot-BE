@@ -3,6 +3,8 @@ package com.siot.backend.checklist.service;
 import com.siot.backend.checklist.domain.Guide;
 import com.siot.backend.checklist.domain.GuideTranslation;
 import com.siot.backend.checklist.domain.GuideTranslationId;
+import com.siot.backend.checklist.dto.GuideInfoResponse;
+import com.siot.backend.checklist.dto.GuideInfoUpdateRequest;
 import com.siot.backend.checklist.dto.GuideTranslationResponse;
 import com.siot.backend.checklist.dto.GuideTranslationUpdateRequest;
 import com.siot.backend.checklist.repository.GuideRepository;
@@ -71,6 +73,18 @@ public class AdminGuideService {
             notificationService.createNoticeChangedNotifications(guide);
         }
         return toResponse(guide, translation);
+    }
+
+    /**
+     * 출처 링크·문의 전화를 바꾼다 (NTF-07 관리자 검토 후 수정, CHK-06 표시 값). 보내지 않은 값은 그대로, 빈 문자열은 지운다.
+     * 언어와 상관없는 항목 값이라 문구(언어별) 저장과 따로 둔다.
+     */
+    @Transactional
+    public GuideInfoResponse updateInfo(Long adminId, String code, GuideInfoUpdateRequest request) {
+        Guide guide = findGuide(code);
+        guide.updateSourceAndContact(request.sourceUrl(), request.contact(), adminId, OffsetDateTime.now(clock));
+        return new GuideInfoResponse(guide.getCode(), guide.getKind(), guide.getSourceUrl(), guide.getContact(),
+                guide.getUpdatedAt());
     }
 
     private Guide findGuide(String code) {

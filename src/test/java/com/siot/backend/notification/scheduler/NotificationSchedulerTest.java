@@ -187,7 +187,9 @@ class NotificationSchedulerTest {
 
         notificationScheduler.generateRegistrationNotifications();
 
-        assertThat(savedNotification().getKind()).isEqualTo("REGISTRATION");
+        Notification saved = savedNotification();
+        assertThat(saved.getKind()).isEqualTo("REGISTRATION");
+        assertThat(saved.getGuideId()).isEqualTo(CL01_GUIDE_ID); // 누르면 외국인등록 상세로 (NTF-04)
         verify(preferenceRepository).findByKindAndUserId("CHECKLIST_DEADLINE", USER_ID);
         verify(preferenceRepository, never()).findByKindAndUserId(eq("STAY_EXPIRY"), anyLong());
     }

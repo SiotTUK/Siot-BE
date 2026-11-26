@@ -1,6 +1,7 @@
 package com.siot.backend.checklist.service;
 
 import com.siot.backend.checklist.domain.*;
+import com.siot.backend.checklist.dto.AdminRuleSummaryResponse;
 import com.siot.backend.checklist.dto.RuleCreateRequest;
 import com.siot.backend.checklist.dto.RuleResponse;
 import com.siot.backend.checklist.dto.RuleUpdateRequest;
@@ -13,6 +14,7 @@ import com.siot.backend.rag.domain.GuideDocumentReference;
 import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,22 +41,24 @@ public class AdminRuleService {
      */
     @Transactional
     public RuleResponse createRule(Long adminId, RuleCreateRequest request) {
-        if (guideRepository.findByCode(request.code()).filter(g -> !g.isDeleted()).isPresent()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        String code = request.code().strip();
+        String category = request.category().strip();
+        // guide.code 는 삭제한 행까지 unique 다. 삭제한 생활수칙의 코드도 다시 쓸 수 없다
+        // (이미 보낸 알림·오류 신고가 그 행을 가리키므로 되살려 덮어쓰지 않는다, RUL-11)
+        if (guideRepository.findByCode(code).isPresent()) {
+            throw new BusinessException(ErrorCode.DUPLICATE_GUIDE_CODE);
         }
 
         OffsetDateTime now = OffsetDateTime.now(clock);
-        Guide guide = Guide.create(
-                request.code(),
-                "RULE",
-                ItemType.INFO,
-                request.category(),
-                request.sortOrder(),
-                null,
-                request.faq()
-        );
-        guide.updateRule(request.category(), request.sortOrder(), request.faq(), request.contact(), request.sourceUrl(), adminId, now);
-        guide = guideRepository.save(guide);
+        Guide guide = Guide.create(code, "RULE", ItemType.INFO, category, request.sortOrder(), null, request.faq());
+        guide.updateRule(category, request.sortOrder(), request.faq(), blankToNull(request.contact()),
+                blankToNull(request.sourceUrl()), adminId, now);
+        try {
+            guide = guideRepository.saveAndFlush(guide);
+        } catch (DataIntegrityViolationException e) {
+            // 위 확인과 저장 사이에 같은 코드가 들어온 경우
+            throw new BusinessException(ErrorCode.DUPLICATE_GUIDE_CODE);
+        }
 
         // 한국어 기본 번역본 저장
         GuideTranslation ko = GuideTranslation.create(guide.getId(), "ko");
@@ -91,7 +95,8 @@ public class AdminRuleService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.GUIDE_NOT_FOUND));
 
         OffsetDateTime now = OffsetDateTime.now(clock);
-        guide.updateRule(request.category(), request.sortOrder() != null ? request.sortOrder() : guide.getSortOrder(),
+        String category = request.category() != null ? request.category().strip() : null; // null = 그대로
+        guide.updateRule(category, request.sortOrder() != null ? request.sortOrder() : guide.getSortOrder(),
                 request.faq() != null ? request.faq() : guide.isFaq(),
                 request.contact(), request.sourceUrl(), adminId, now);
         guide.recordEdit(adminId, request.noticeChanged(), now);
@@ -122,6 +127,53 @@ public class AdminRuleService {
         }
 
         return toRuleResponse(guide, ko);
+    }
+
+    /**
+     * ADM-06: 관리자 생활수칙 목록. 카테고리 → 정렬 순서 → 코드 순.
+     *
+     * @param category       카테고리 (한국어). 비우면 전체
+     * @param keyword        코드 또는 한국어 제목에 들어 있는 글자 (대소문자 무시). 비우면 전체
+     * @param includeDeleted true 면 삭제한 생활수칙도 넣는다
+     */
+    @Transactional(readOnly = true)
+    public List<AdminRuleSummaryResponse> getRules(String category, String keyword, boolean includeDeleted) {
+        String categoryFilter = blankToNull(category);
+        String needle = keyword == null || keyword.isBlank() ? null : keyword.strip().toLowerCase(Locale.ROOT);
+
+        List<Guide> rules = guideRepository.findByKindOrderBySortOrderAsc("RULE").stream()
+                .filter(g -> includeDeleted || !g.isDeleted())
+                .filter(g -> categoryFilter == null || categoryFilter.equals(g.getCategory()))
+                .toList();
+        if (rules.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, List<GuideTranslation>> translations = guideTranslationRepository
+                .findByGuideIdIn(rules.stream().map(Guide::getId).toList()).stream()
+                .collect(java.util.stream.Collectors.groupingBy(GuideTranslation::getGuideId));
+
+        return rules.stream()
+                .map(g -> toSummary(g, translations.getOrDefault(g.getId(), List.of())))
+                .filter(r -> needle == null || r.code().toLowerCase(Locale.ROOT).contains(needle)
+                        || (r.title() != null && r.title().toLowerCase(Locale.ROOT).contains(needle)))
+                .sorted(Comparator.comparing(AdminRuleSummaryResponse::category, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparingInt(AdminRuleSummaryResponse::sortOrder)
+                        .thenComparing(AdminRuleSummaryResponse::code))
+                .toList();
+    }
+
+    private static AdminRuleSummaryResponse toSummary(Guide guide, List<GuideTranslation> translations) {
+        String title = translations.stream().filter(t -> "ko".equals(t.getLanguage()))
+                .map(GuideTranslation::getTitle).findFirst().orElse(guide.getCode());
+        Set<String> languages = new HashSet<>();
+        translations.forEach(t -> languages.add(t.getLanguage()));
+        List<String> translated = com.siot.backend.translation.Translator.TARGET_LANGUAGES.stream()
+                .filter(languages::contains).toList();
+        List<String> missing = com.siot.backend.translation.Translator.TARGET_LANGUAGES.stream()
+                .filter(lang -> !languages.contains(lang)).toList();
+        return new AdminRuleSummaryResponse(guide.getCode(), guide.getCategory(), title, guide.getSortOrder(),
+                guide.isFaq(), guide.isDeleted(), guide.getDeletedAt(), guide.getUpdatedAt(),
+                guide.getNoticeChangedAt(), translated, missing);
     }
 
     /**

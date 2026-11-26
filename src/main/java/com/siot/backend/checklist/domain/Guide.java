@@ -104,6 +104,16 @@ public class Guide {
         this.updatedAt = now;
     }
 
+    /**
+     * 출처 링크·문의 전화를 바꾼다 (NTF-07 관리자 검토 후 수정). null 이면 그대로, 빈 문자열이면 지운다.
+     */
+    public void updateSourceAndContact(String sourceUrl, String contact, Long adminId, OffsetDateTime now) {
+        if (sourceUrl != null) this.sourceUrl = sourceUrl.isBlank() ? null : sourceUrl.strip();
+        if (contact != null) this.contact = contact.isBlank() ? null : contact.strip();
+        this.updatedBy = adminId;
+        this.updatedAt = now;
+    }
+
     public void updateRule(String category, int sortOrder, boolean faq, String contact, String sourceUrl, Long adminId, OffsetDateTime now) {
         if (category != null) this.category = category;
         this.sortOrder = sortOrder;

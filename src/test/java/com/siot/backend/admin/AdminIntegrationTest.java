@@ -319,6 +319,41 @@ class AdminIntegrationTest {
                 String.class, guideId)).isEqualTo("English title");
     }
 
+    /** NTF-07: 체크리스트 항목의 출처 링크·문의 전화도 관리자가 고친다 */
+    @Test
+    void adminUpdatesGuideSourceUrlAndContact() throws Exception {
+        Cookie admin = login(ADMIN_EMAIL);
+        String code = "T-" + ThreadLocalRandom.current().nextInt(100_000, 999_999);
+        jdbcTemplate.update("INSERT INTO guide (code, kind, contact, source_url) VALUES (?, 'CHECKLIST', '1345', 'https://old.example')", code);
+
+        // 보낸 값만 바꾼다
+        patchGuide(admin, code, "{\"sourceUrl\":\" https://www.hikorea.go.kr \"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sourceUrl").value("https://www.hikorea.go.kr"))
+                .andExpect(jsonPath("$.data.contact").value("1345"))
+                .andExpect(jsonPath("$.data.updatedAt").isNotEmpty());
+        assertThat(jdbcTemplate.queryForObject("SELECT updated_by FROM guide WHERE code = ?", Long.class, code))
+                .isEqualTo(memberId(ADMIN_EMAIL));
+
+        // 빈 문자열은 지운다
+        patchGuide(admin, code, "{\"contact\":\"\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.contact").doesNotExist())
+                .andExpect(jsonPath("$.data.sourceUrl").value("https://www.hikorea.go.kr"));
+
+        // 링크 형식, 없는 항목, 일반 회원
+        patchGuide(admin, code, "{\"sourceUrl\":\"javascript:alert(1)\"}").andExpect(status().isBadRequest());
+        patchGuide(admin, "NO-SUCH-CODE", "{\"contact\":\"1\"}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("GUIDE_NOT_FOUND"));
+        patchGuide(signup(newEmail()), code, "{\"contact\":\"1\"}").andExpect(status().isForbidden());
+    }
+
+    private ResultActions patchGuide(Cookie session, String code, String json) throws Exception {
+        return mockMvc.perform(patch("/api/admin/guides/{code}", code).cookie(session).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
     @Test
     void savingGuideTextValidatesInput() throws Exception {
         Cookie admin = login(ADMIN_EMAIL);

@@ -60,13 +60,15 @@ class NoticeChangedNotificationTest {
     private ChecklistProgressRepository checklistProgressRepository;
     @Mock
     private MemberLifeChangeRepository memberLifeChangeRepository;
+    @Mock
+    private com.siot.backend.checklist.repository.GuideRepository guideRepository;
 
     private NotificationService notificationService;
 
     @BeforeEach
     void setUp() {
         notificationService = new NotificationService(notificationRepository, preferenceRepository, appUserRepository,
-                guideTranslationRepository, checklistProgressRepository, memberLifeChangeRepository,
+                guideTranslationRepository, checklistProgressRepository, memberLifeChangeRepository, guideRepository,
                 Clock.fixed(NOW.toInstant(), ClockConfig.KST));
         lenient().when(notificationRepository.existsByUserIdAndSourceKey(anyLong(), anyString())).thenReturn(false);
         lenient().when(preferenceRepository.findByKindAndUserId(anyString(), anyLong())).thenReturn(Optional.empty());
@@ -135,5 +137,33 @@ class NoticeChangedNotificationTest {
         notificationService.createNoticeChangedNotifications(guide);
 
         verifyNoInteractions(appUserRepository, notificationRepository);
+    }
+
+    // ---------------------------------------------------------------- NTF-04 알림 → 상세 페이지 이동
+
+    private static Notification notification(Long eventId, Long guideId, Long scheduleId) {
+        return Notification.create(1L, "TEST", eventId, guideId, scheduleId, null, "k" + eventId + guideId + scheduleId,
+                1, NOW, "ko", "제목", "본문", null);
+    }
+
+    @Test
+    @DisplayName("알림 목록은 이동할 화면(linkType)과 대상(linkCode)을 준다: 행사·항목 code·세금 상세·생활 달력")
+    void notificationsCarryLinkTarget() {
+        Guide rule = Guide.create("RUL-03", "RULE", ItemType.INFO, "교통질서", 1, null, false);
+        ReflectionTestUtils.setField(rule, "id", 30L);
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        given(notificationRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+                .willReturn(new org.springframework.data.domain.PageImpl<>(List.of(
+                        notification(500L, null, null),
+                        notification(null, 30L, null),
+                        notification(null, null, 7L),
+                        notification(null, null, null),
+                        notification(null, 99L, null)), pageable, 5)); // 99: 지워진 항목
+        given(guideRepository.findAllById(List.of(30L, 99L))).willReturn(List.of(rule));
+
+        var content = notificationService.getNotifications(1L, pageable).content();
+
+        assertThat(content).extracting(r -> r.linkType() + ":" + r.linkCode()).containsExactly(
+                "EVENT:500", "RULE:RUL-03", "SCHEDULE:7", "CALENDAR:null", "CALENDAR:null");
     }
 }

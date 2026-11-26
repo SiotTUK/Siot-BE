@@ -198,7 +198,8 @@ public class NotificationScheduler {
 
                 LocalDate deadline = user.getEntryDate().plusDays(90);
                 NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
-                save(user, "REGISTRATION", null, null, null, sourceKey,
+                // 알림을 누르면 외국인등록 항목 상세로 간다 (NTF-04)
+                save(user, "REGISTRATION", null, registrationGuideId.orElse(null), null, sourceKey,
                         String.format(m.registrationTitle(), leadDays),
                         String.format(m.registrationBody(), deadline, leadDays));
             }
