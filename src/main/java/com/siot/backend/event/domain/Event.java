@@ -282,6 +282,18 @@ public class Event {
         return true;
     }
 
+    /**
+     * 일정(시작일·종료일·시작시각·종료시각)을 한 문자열로 만든다. 알림 신청자의 마지막 안내 일정과 비교한다 (NTF-02).
+     * 형식 "시작일|종료일|시작시각|종료시각", 없는 값은 빈 칸.
+     */
+    public String scheduleSnapshot() {
+        return String.join("|", text(startsOn), text(endsOn), text(startsAt), text(endsAt));
+    }
+
+    private static String text(Object value) {
+        return value == null ? "" : value.toString();
+    }
+
     /** 내용이 바뀌었다 (번역을 다시 만든다, COM-02) */
     public void increaseRevision() {
         revision++;

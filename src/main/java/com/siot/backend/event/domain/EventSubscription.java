@@ -26,6 +26,10 @@ public class EventSubscription {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    /** NTF-02 마지막으로 안내한 행사 일정 ({@link Event#scheduleSnapshot()}). null = 아직 기록 전 */
+    @Column(name = "schedule_snapshot", length = 100)
+    private String scheduleSnapshot;
+
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
@@ -40,6 +44,11 @@ public class EventSubscription {
 
     public void enable() {
         this.enabled = true;
+    }
+
+    /** 신청하거나 변경을 안내한 시점의 일정을 기록한다 (NTF-02) */
+    public void recordSchedule(String snapshot) {
+        this.scheduleSnapshot = snapshot;
     }
 
     public void disable() {

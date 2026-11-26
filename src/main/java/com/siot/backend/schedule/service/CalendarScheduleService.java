@@ -15,6 +15,7 @@ import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.rag.domain.GuideDocumentReference;
 import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
 import com.siot.backend.schedule.domain.CalendarSchedule;
+import com.siot.backend.schedule.dto.MonthlyTodoResponse;
 import com.siot.backend.schedule.dto.ScheduleResponse;
 import com.siot.backend.schedule.dto.TaxDetailResponse;
 import com.siot.backend.schedule.repository.CalendarScheduleRepository;
@@ -59,6 +60,32 @@ public class CalendarScheduleService {
 
         result.sort(Comparator.comparing(ScheduleResponse::startsOn));
         return result;
+    }
+
+    /**
+     * CAL-02 메인의 이번 달 할일: 이번 달 일정 중 마감이 지나지 않은 것과 남은 일수.
+     * 남은 것이 없으면 다음 달 일정을 보여 준다. 마감 임박 순.
+     *
+     * @param today 오늘 (한국 시간)
+     */
+    public MonthlyTodoResponse getMonthlyTodos(Long userId, String language, LocalDate today) {
+        List<MonthlyTodoResponse.Item> items = todoItems(
+                getMonthlySchedules(userId, today.getYear(), today.getMonthValue(), language), today);
+        if (!items.isEmpty()) {
+            return new MonthlyTodoResponse(today.getYear(), today.getMonthValue(), false, items);
+        }
+        LocalDate next = today.plusMonths(1);
+        return new MonthlyTodoResponse(next.getYear(), next.getMonthValue(), true,
+                todoItems(getMonthlySchedules(userId, next.getYear(), next.getMonthValue(), language), today));
+    }
+
+    private static List<MonthlyTodoResponse.Item> todoItems(List<ScheduleResponse> schedules, LocalDate today) {
+        return schedules.stream()
+                .map(s -> new MonthlyTodoResponse.Item(s,
+                        java.time.temporal.ChronoUnit.DAYS.between(today, s.endsOn() != null ? s.endsOn() : s.startsOn())))
+                .filter(item -> item.dDay() >= 0)
+                .sorted(Comparator.comparingLong(MonthlyTodoResponse.Item::dDay))
+                .toList();
     }
 
     /**

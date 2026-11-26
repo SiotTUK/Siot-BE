@@ -3,9 +3,14 @@ package com.siot.backend.notification.service;
 import com.siot.backend.global.common.PageResponse;
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.checklist.domain.ChecklistProgress;
 import com.siot.backend.checklist.domain.Guide;
 import com.siot.backend.checklist.domain.GuideTranslation;
+import com.siot.backend.checklist.domain.MemberLifeChange;
+import com.siot.backend.checklist.domain.ProgressStatus;
+import com.siot.backend.checklist.repository.ChecklistProgressRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
+import com.siot.backend.checklist.repository.MemberLifeChangeRepository;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.notification.domain.EmailDeliveryStatus;
@@ -22,6 +27,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -34,6 +40,10 @@ public class NotificationService {
     private final NotificationPreferenceRepository preferenceRepository;
     private final AppUserRepository appUserRepository;
     private final GuideTranslationRepository guideTranslationRepository;
+    private final ChecklistProgressRepository checklistProgressRepository;
+    private final MemberLifeChangeRepository memberLifeChangeRepository;
+    /** 한국 시간 (ClockConfig) */
+    private final Clock clock;
 
     /** CHECKLIST_DEADLINE: 외국인등록 등 체크리스트 마감 알림 (NTF-08) */
     private static final List<String> DEFAULT_KINDS =
@@ -125,7 +135,13 @@ public class NotificationService {
     }
 
     /**
-     * NTF-07: 안내 내용 변경 알림 발송 (대상 회원에게 인앱/이메일 알림 생성)
+     * NTF-07: 안내 내용 변경 알림 (인앱 + 인증된 이메일).
+     * 대상은 기준 날짜를 입력했고 그 항목을 완료·해당 없음으로 표시하지 않은 회원이다.
+     * <ul>
+     *   <li>체크리스트(CL-xx): 입국일을 입력한 회원. 1회성 항목의 완료 기록으로 거른다</li>
+     *   <li>생활 변화 할 일(LC-xx-n): 그 생활 변화(이사일 등)를 등록한 회원. 그 회차(기준일)의 완료 기록으로 거른다</li>
+     *   <li>생활수칙: 기준 날짜가 없으므로 알림을 보내지 않는다 (상세 화면의 변경 표시만)</li>
+     * </ul>
      */
     @Transactional
     public void createNoticeChangedNotifications(Guide guide) {
@@ -133,50 +149,69 @@ public class NotificationService {
             return;
         }
 
-        List<AppUser> allUsers = appUserRepository.findAll();
-
-        for (AppUser user : allUsers) {
+        for (NoticeTarget target : noticeTargets(guide)) {
+            AppUser user = target.user();
             if (isPreferenceDisabled(user.getId(), "NOTICE_CHANGED")) {
+                continue;
+            }
+            if (isChecklistClosed(user.getId(), guide.getId(), target.periodKey())) {
                 continue;
             }
 
             // 변경 시점마다 1회 발송되도록 타임스탬프 결합
             String sourceKey = String.format("notice_changed:%d:%d:%d",
                     guide.getId(), user.getId(), guide.getNoticeChangedAt().toEpochSecond());
-
             if (notificationRepository.existsByUserIdAndSourceKey(user.getId(), sourceKey)) {
                 continue;
             }
 
-            String titleText = guide.getCode();
-            GuideTranslation tr = guideTranslationRepository.findByGuideIdAndLanguage(guide.getId(), user.getLanguage())
+            String titleText = guideTranslationRepository.findByGuideIdAndLanguage(guide.getId(), user.getLanguage())
                     .or(() -> guideTranslationRepository.findByGuideIdAndLanguage(guide.getId(), "ko"))
-                    .orElse(null);
-            if (tr != null) {
-                titleText = tr.getTitle();
-            }
-
-            String title = String.format("[안내 내용 변경] %s", titleText);
-            String body = String.format("'%s'의 중요 안내 내용(준비물, 수수료, 신청 기한 등)이 변경되었습니다. 변경된 최신 정보를 확인해 주세요.", titleText);
+                    .map(GuideTranslation::getTitle)
+                    .orElse(guide.getCode());
+            NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
             EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
 
-            Notification notification = Notification.create(
-                    user.getId(),
-                    "NOTICE_CHANGED",
-                    null,
-                    guide.getId(),
-                    null,
-                    null,
-                    sourceKey,
-                    1,
-                    OffsetDateTime.now(),
-                    user.getLanguage(),
-                    title,
-                    body,
-                    emailStatus
-            );
-            notificationRepository.save(notification);
+            notificationRepository.save(Notification.create(
+                    user.getId(), "NOTICE_CHANGED", null, guide.getId(), null, null, sourceKey, 1,
+                    OffsetDateTime.now(clock), user.getLanguage(),
+                    String.format(m.noticeChangedTitle(), titleText),
+                    String.format(m.noticeChangedBody(), titleText),
+                    emailStatus));
         }
+    }
+
+    /** 알림 대상 회원과 완료 여부를 볼 회차 키 */
+    private record NoticeTarget(AppUser user, String periodKey) {
+    }
+
+    private List<NoticeTarget> noticeTargets(Guide guide) {
+        if ("CHECKLIST".equals(guide.getKind())) {
+            return appUserRepository.findByEntryDateIsNotNull().stream()
+                    .map(user -> new NoticeTarget(user, ChecklistProgress.ONCE))
+                    .toList();
+        }
+        if ("LIFE_CHANGE_TASK".equals(guide.getKind()) && guide.getLifeChangeCode() != null) {
+            List<NoticeTarget> targets = new ArrayList<>();
+            for (MemberLifeChange change : memberLifeChangeRepository.findByLifeChangeCode(guide.getLifeChangeCode())) {
+                if (change.getBaseDate() == null) {
+                    continue;
+                }
+                // 생활 변화 할 일의 회차 키 = 기준일
+                appUserRepository.findById(change.getUserId())
+                        .ifPresent(user -> targets.add(new NoticeTarget(user, change.getBaseDate().toString())));
+            }
+            return targets;
+        }
+        return List.of();
+    }
+
+    /** 그 회차를 완료(DONE) 또는 해당 없음(NOT_APPLICABLE)으로 표시했으면 true */
+    private boolean isChecklistClosed(Long userId, Long guideId, String periodKey) {
+        return checklistProgressRepository
+                .findByUserIdAndGuideIdAndPeriodKey(userId, guideId, periodKey)
+                .map(p -> p.getStatus() == ProgressStatus.DONE || p.getStatus() == ProgressStatus.NOT_APPLICABLE)
+                .orElse(false);
     }
 
     private boolean isPreferenceDisabled(Long userId, String kind) {

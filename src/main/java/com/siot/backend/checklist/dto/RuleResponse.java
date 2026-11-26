@@ -9,8 +9,10 @@ import java.util.List;
 public record RuleResponse(
         @Schema(description = "항목 코드", example = "RUL-01")
         String code,
-        @Schema(description = "카테고리", example = "쓰레기 배출")
+        @Schema(description = "카테고리 (한국어 원문, 목록 필터 값)", example = "쓰레기 배출")
         String category,
+        @Schema(description = "요청 언어의 카테고리명 (RUL-13). 번역이 없으면 한국어 원문", example = "Waste disposal")
+        String categoryName,
         @Schema(description = "제목", example = "음식물 쓰레기 배출 방법")
         String title,
         @Schema(description = "요약")

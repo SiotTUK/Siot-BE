@@ -4,6 +4,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.siot.backend.TestcontainersConfiguration;
 import com.siot.backend.auth.service.SignupVerificationService;
 import com.siot.backend.member.service.AdminBootstrap;
+import com.siot.backend.translation.Translator;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,14 +15,18 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -52,6 +57,10 @@ class AdminIntegrationTest {
 
     @Autowired
     AdminBootstrap adminBootstrap;
+
+    /** 실제 Gemini 를 부르지 않게 (COM-02 자동 번역). 기본값은 빈 결과 = 번역 실패 */
+    @MockitoBean
+    Translator translator;
 
     @BeforeEach
     void ensureAdminExists() throws Exception {
@@ -286,11 +295,25 @@ class AdminIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("SELECT notice_changed_at IS NOT NULL FROM guide WHERE guide_id = ?",
                 Boolean.class, guideId)).isTrue();
 
-        // 없던 언어는 새로 만든다
+        // 번역에 실패하면 (mock 기본값: 빈 결과) 한국어를 번역본으로 저장하지 않는다 → 화면은 원문 + '번역 준비 중'
         mockMvc.perform(get("/api/admin/guides/{code}/translations/en", code).cookie(admin))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("GUIDE_TRANSLATION_NOT_FOUND"));
+
+        // COM-02: 한국어 원문을 고치면 en/zh/vi 번역을 다시 만든다
+        given(translator.translateAll(anyString())).willAnswer(inv -> Map.of(
+                "en", "EN " + inv.getArgument(0), "zh", "ZH " + inv.getArgument(0), "vi", "VI " + inv.getArgument(0)));
+        saveGuide(admin, code, "ko", "다시 고친 제목", false).andExpect(status().isOk());
+        mockMvc.perform(get("/api/admin/guides/{code}/translations/en", code).cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value("EN 다시 고친 제목"))
+                .andExpect(jsonPath("$.data.docs[0]").value("EN 여권"));
+
+        // 관리자가 한 언어를 직접 고치면 그 언어만 바뀐다
         saveGuide(admin, code, "en", "English title", false).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT title FROM guide_translation WHERE guide_id = ? AND language = 'zh'",
+                String.class, guideId)).isEqualTo("ZH 다시 고친 제목");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT title FROM guide_translation WHERE guide_id = ? AND language = 'en'",
                 String.class, guideId)).isEqualTo("English title");

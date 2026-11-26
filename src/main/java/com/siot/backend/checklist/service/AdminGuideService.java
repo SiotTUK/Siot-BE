@@ -32,6 +32,7 @@ public class AdminGuideService {
     private final GuideTranslationRepository translationRepository;
     private final GuideDocumentReferenceRepository guideDocumentReferenceRepository;
     private final NotificationService notificationService;
+    private final GuideTranslationGenerator guideTranslationGenerator;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -61,6 +62,10 @@ public class AdminGuideService {
                 blankToNull(request.fee()), blankToNull(request.law()), blankToNull(request.penalty()),
                 blankToNull(request.sourceName()));
         translation = translationRepository.save(translation);
+        // COM-02: 한국어 원문을 고치면 en/zh/vi 번역을 다시 만든다 (다른 언어를 고치면 그 언어만 바뀐다)
+        if ("ko".equals(lang)) {
+            guideTranslationGenerator.regenerate(translation);
+        }
         guide.recordEdit(adminId, request.noticeChanged(), OffsetDateTime.now(clock));
         if (request.noticeChanged()) {
             notificationService.createNoticeChangedNotifications(guide);

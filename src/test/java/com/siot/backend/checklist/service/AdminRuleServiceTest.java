@@ -10,7 +10,6 @@ import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.notification.service.NotificationService;
 import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
-import com.siot.backend.translation.Translator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,7 +45,9 @@ class AdminRuleServiceTest {
     @Mock
     private NotificationService notificationService;
     @Mock
-    private Translator translator;
+    private GuideTranslationGenerator guideTranslationGenerator;
+    @Mock
+    private RuleCategoryService ruleCategoryService;
     @Spy
     private Clock clock = Clock.fixed(Instant.parse("2026-11-20T12:00:00Z"), ZoneId.of("Asia/Seoul"));
 
@@ -71,20 +72,19 @@ class AdminRuleServiceTest {
             return g;
         });
 
-        given(translator.translateAll(any())).willReturn(Map.of(
-                "en", "English Translation",
-                "zh", "Chinese Translation",
-                "vi", "Vietnamese Translation"
-        ));
-
         // when
         RuleResponse res = adminRuleService.createRule(adminId, req);
 
         // then
         assertThat(res.code()).isEqualTo("RUL-09");
         assertThat(res.title()).isEqualTo("대형 폐기물 스티커 배출 방법");
+        assertThat(res.categoryName()).isEqualTo("쓰레기 배출");
         verify(guideRepository).save(any(Guide.class));
         verify(guideTranslationRepository, org.mockito.Mockito.atLeastOnce()).save(any(GuideTranslation.class));
+        // RUL-13: 한국어 원문으로 en/zh/vi 번역, 카테고리명 번역
+        verify(guideTranslationGenerator).regenerate(org.mockito.ArgumentMatchers.argThat(
+                t -> "ko".equals(t.getLanguage()) && "대형 폐기물 스티커 배출 방법".equals(t.getTitle())));
+        verify(ruleCategoryService).ensureTranslations("쓰레기 배출");
     }
 
     @Test
@@ -113,6 +113,8 @@ class AdminRuleServiceTest {
         // then
         assertThat(res.code()).isEqualTo("RUL-01");
         verify(notificationService).createNoticeChangedNotifications(guide);
+        // COM-02: 원문이 바뀌면 번역을 다시 만든다
+        verify(guideTranslationGenerator).regenerate(any(GuideTranslation.class));
     }
 
     @Test

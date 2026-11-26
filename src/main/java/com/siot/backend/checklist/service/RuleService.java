@@ -2,6 +2,7 @@ package com.siot.backend.checklist.service;
 
 import com.siot.backend.checklist.domain.Guide;
 import com.siot.backend.checklist.domain.GuideTranslation;
+import com.siot.backend.checklist.dto.RuleCategoryResponse;
 import com.siot.backend.checklist.dto.RuleResponse;
 import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
@@ -27,6 +28,7 @@ public class RuleService {
     private final GuideRepository guideRepository;
     private final GuideTranslationRepository guideTranslationRepository;
     private final GuideDocumentReferenceRepository guideDocumentReferenceRepository;
+    private final RuleCategoryService ruleCategoryService;
 
     public List<RuleResponse> getFaqTop5(String language) {
         String targetLang = language != null && !language.isBlank() ? language : "ko";
@@ -48,8 +50,9 @@ public class RuleService {
                 .toList();
     }
 
-    public List<String> getCategories() {
-        return guideRepository.findDistinctCategoriesByKind("RULE");
+    /** RUL-12·RUL-13: 카테고리 목록과 요청 언어의 이름 */
+    public List<RuleCategoryResponse> getCategories(String language) {
+        return ruleCategoryService.getCategories(language);
     }
 
     public RuleResponse getRule(String code, String language) {
@@ -81,6 +84,7 @@ public class RuleService {
         return new RuleResponse(
                 guide.getCode(),
                 guide.getCategory(),
+                ruleCategoryService.nameOf(guide.getCategory(), language),
                 tr != null ? tr.getTitle() : guide.getCode(),
                 tr != null ? tr.getSummary() : null,
                 tr != null ? tr.getContent() : null,

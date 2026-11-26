@@ -1,5 +1,6 @@
 package com.siot.backend.event.service;
 
+import com.siot.backend.event.domain.Event;
 import com.siot.backend.event.domain.EventSubscription;
 import com.siot.backend.event.dto.EventSubscriptionResponse;
 import com.siot.backend.event.repository.EventRepository;
@@ -26,9 +27,8 @@ public class EventSubscriptionService {
      */
     @Transactional
     public EventSubscriptionResponse subscribe(Long userId, Long eventId) {
-        if (!eventRepository.existsById(eventId)) {
-            throw new BusinessException(ErrorCode.EVENT_NOT_FOUND);
-        }
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.EVENT_NOT_FOUND));
 
         EventSubscription subscription = subscriptionRepository.findByUserIdAndEventId(userId, eventId)
                 .map(existing -> {
@@ -36,6 +36,8 @@ public class EventSubscriptionService {
                     return existing;
                 })
                 .orElseGet(() -> subscriptionRepository.save(EventSubscription.of(userId, eventId, true)));
+        // 신청할 때 본 일정이 기준이다. 이후 바뀌면 변경 알림을 보낸다 (NTF-02)
+        subscription.recordSchedule(event.scheduleSnapshot());
 
         return EventSubscriptionResponse.from(subscription);
     }

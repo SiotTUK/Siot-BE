@@ -9,6 +9,8 @@ import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.checklist.repository.MemberLifeChangeRepository;
 import com.siot.backend.checklist.domain.MemberLifeChange;
+import com.siot.backend.event.domain.Event;
+import com.siot.backend.event.domain.EventSubscription;
 import com.siot.backend.event.repository.EventRepository;
 import com.siot.backend.event.repository.EventSubscriptionRepository;
 import com.siot.backend.event.repository.EventTranslationRepository;
@@ -368,5 +370,148 @@ class NotificationSchedulerTest {
         given(appUserRepository.findByEntryDateBetween(any(LocalDate.class), any(LocalDate.class)))
                 .willAnswer(inv -> entryDate.equals(inv.getArgument(0)) ? List.of(user) : List.of());
         return user;
+    }
+
+    // ---------------------------------------------------------------- 알림 문구 언어 (COM-02)
+
+    @Test
+    @DisplayName("알림 제목·본문은 회원의 화면 언어로 만든다")
+    void messagesUseMemberLanguage() {
+        AppUser user = user();
+        user.changeLanguage("en");
+        LocalDate targetExpiry = TODAY.plusDays(30);
+        given(appUserRepository.findImpendingStayUsers(any(LocalDate.class), any(LocalDate.class)))
+                .willAnswer(inv -> targetExpiry.equals(inv.getArgument(0)) ? List.of(user) : Collections.emptyList());
+
+        notificationScheduler.generateStayExpiryNotifications();
+
+        Notification saved = savedNotification();
+        assertThat(saved.getLocale()).isEqualTo("en");
+        assertThat(saved.getTitle()).isEqualTo("Stay expiry in 30 day(s)");
+        assertThat(saved.getBody()).contains(targetExpiry.toString()).doesNotContain("체류");
+    }
+
+    // ---------------------------------------------------------------- 행사 알림 (NTF-02)
+
+    private static final Long EVENT_ID = 500L;
+
+    private NotificationScheduler schedulerAt(java.time.LocalDateTime now) {
+        Clock clock = Clock.fixed(ZonedDateTime.of(now, ClockConfig.KST).toInstant(), ClockConfig.KST);
+        return new NotificationScheduler(appUserRepository, notificationRepository, preferenceRepository,
+                calendarScheduleRepository, guideTranslationRepository,
+                eventRepository, eventSubscriptionRepository, eventTranslationRepository, notificationDispatcher,
+                guideRepository, checklistProgressRepository, memberLifeChangeRepository, clock);
+    }
+
+    private Event event(LocalDate startsOn, java.time.LocalTime startsAt) {
+        Event event = Event.manual(1L);
+        ReflectionTestUtils.setField(event, "id", EVENT_ID);
+        event.editStartsOn(startsOn, false);
+        event.editStartsAt(startsAt, false);
+        return event;
+    }
+
+    /** 행사 알림 신청자 1명, 시작·마감·변경 후보는 비어 있게 */
+    private AppUser subscribed() {
+        AppUser user = user();
+        lenient().when(eventSubscriptionRepository.findByEventIdAndEnabledTrue(EVENT_ID))
+                .thenReturn(List.of(EventSubscription.of(USER_ID, EVENT_ID, true)));
+        lenient().when(appUserRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        lenient().when(eventRepository.findByStartsOnBetweenAndStatus(any(), any(), anyString())).thenReturn(List.of());
+        lenient().when(eventRepository.findByStatusAndApplicationDeadlineBetween(anyString(), any(), any())).thenReturn(List.of());
+        lenient().when(eventSubscriptionRepository.findEnabledForCurrentEvents(any())).thenReturn(List.of());
+        lenient().when(eventTranslationRepository.findByEventIdAndLanguage(anyLong(), anyString())).thenReturn(Optional.empty());
+        return user;
+    }
+
+    @Test
+    @DisplayName("시작 시각을 아는 행사는 시작 24시간 안에 들어오면 시작 알림을 보낸다")
+    void eventStart_within24Hours() {
+        subscribed();
+        Event event = event(TODAY.plusDays(1), java.time.LocalTime.of(14, 0));
+        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(1), "ACTIVE")).willReturn(List.of(event));
+
+        schedulerAt(TODAY.atTime(14, 0)).generateEventNotifications();
+
+        Notification saved = savedNotification();
+        assertThat(saved.getKind()).isEqualTo("EVENT");
+        assertThat(saved.getEventId()).isEqualTo(EVENT_ID);
+        assertThat(saved.getBody()).contains(TODAY.plusDays(1) + " 14:00");
+    }
+
+    @Test
+    @DisplayName("시작까지 24시간 넘게 남았으면 아직 보내지 않는다")
+    void eventStart_moreThan24Hours() {
+        subscribed();
+        Event event = event(TODAY.plusDays(1), java.time.LocalTime.of(14, 0));
+        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(1), "ACTIVE")).willReturn(List.of(event));
+
+        schedulerAt(TODAY.atTime(13, 0)).generateEventNotifications();
+
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("시작 시각을 모르는 행사는 전날 오전 9시 이후에 보내고, 자정에는 보내지 않는다")
+    void eventStart_dateOnly() {
+        subscribed();
+        Event event = event(TODAY.plusDays(1), null);
+        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(1), "ACTIVE")).willReturn(List.of(event));
+
+        schedulerAt(TODAY.atTime(0, 0)).generateEventNotifications();
+        verify(notificationRepository, never()).save(any());
+
+        schedulerAt(TODAY.atTime(9, 0)).generateEventNotifications();
+        verify(notificationRepository).save(any(Notification.class));
+    }
+
+    @Test
+    @DisplayName("신청 마감 24시간 안에 들어온 행사는 신청 마감 D-1 알림을 보낸다")
+    void eventApplicationDeadline() {
+        subscribed();
+        Event event = event(TODAY.plusDays(10), null);
+        OffsetDateTime deadline = ZonedDateTime.of(TODAY.plusDays(1).atTime(18, 0), ClockConfig.KST).toOffsetDateTime();
+        event.editApplicationDeadline(deadline, false);
+        given(eventRepository.findByStatusAndApplicationDeadlineBetween(eq("ACTIVE"), any(), any())).willReturn(List.of(event));
+
+        schedulerAt(TODAY.atTime(20, 0)).generateEventNotifications();
+
+        Notification saved = savedNotification();
+        assertThat(saved.getTitle()).contains("신청 마감");
+        assertThat(saved.getBody()).contains(TODAY.plusDays(1) + " 18:00");
+    }
+
+    @Test
+    @DisplayName("신청할 때 본 일정과 지금 일정이 다르면 변경 알림을 보내고 기준 일정을 갱신한다")
+    void eventScheduleChanged() {
+        subscribed();
+        Event event = event(TODAY.plusDays(10), java.time.LocalTime.of(10, 0));
+        EventSubscription subscription = EventSubscription.of(USER_ID, EVENT_ID, true);
+        subscription.recordSchedule(TODAY.plusDays(7) + "||10:00|");
+        given(eventSubscriptionRepository.findEnabledForCurrentEvents(TODAY)).willReturn(List.of(subscription));
+        given(eventRepository.findAllById(List.of(EVENT_ID))).willReturn(List.of(event));
+
+        notificationScheduler.generateEventNotifications();
+
+        Notification saved = savedNotification();
+        assertThat(saved.getTitle()).contains("일정이 변경");
+        assertThat(saved.getBody()).contains(TODAY.plusDays(10) + " 10:00");
+        assertThat(subscription.getScheduleSnapshot()).isEqualTo(event.scheduleSnapshot());
+        verify(eventSubscriptionRepository).save(subscription);
+    }
+
+    @Test
+    @DisplayName("기준 일정이 없는 (기능 전) 신청은 알림 없이 지금 일정을 기록한다")
+    void eventScheduleSnapshotBackfilled() {
+        subscribed();
+        Event event = event(TODAY.plusDays(10), null);
+        EventSubscription subscription = EventSubscription.of(USER_ID, EVENT_ID, true);
+        given(eventSubscriptionRepository.findEnabledForCurrentEvents(TODAY)).willReturn(List.of(subscription));
+        given(eventRepository.findAllById(List.of(EVENT_ID))).willReturn(List.of(event));
+
+        notificationScheduler.generateEventNotifications();
+
+        verify(notificationRepository, never()).save(any());
+        assertThat(subscription.getScheduleSnapshot()).isEqualTo(event.scheduleSnapshot());
     }
 }

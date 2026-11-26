@@ -38,6 +38,7 @@ public enum ErrorCode {
     CHAT_REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "검토 대상 답변을 찾을 수 없습니다."),
     GUIDE_NOT_FOUND(HttpStatus.NOT_FOUND, "항목을 찾을 수 없습니다."),
     GUIDE_TRANSLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "이 언어의 문구가 아직 없습니다."),
+    RULE_CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "생활수칙 카테고리를 찾을 수 없습니다."),
 
     // ---- 관리자: 문서 (ADM-02~04) ----
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "문서를 찾을 수 없습니다."),

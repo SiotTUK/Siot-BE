@@ -227,4 +227,49 @@ class CalendarScheduleServiceTest {
             assertThat(r.targetDescription()).contains("2099-06-30").doesNotContain("체류기간");
         });
     }
+
+    @Test
+    @DisplayName("이번 달 할일은 마감이 지나지 않은 이번 달 일정을 마감 임박 순으로 남은 일수와 준다 (CAL-02)")
+    void monthlyTodos_thisMonth() {
+        LocalDate today = LocalDate.of(2027, 6, 20);
+        CalendarSchedule past = CalendarSchedule.create(null, "TAX_RESIDENT", LocalDate.of(2027, 6, 1), LocalDate.of(2027, 6, 10),
+                "모든 주민", null, true, null);
+        CalendarSchedule car = CalendarSchedule.create(null, "TAX_CAR", LocalDate.of(2027, 6, 16), LocalDate.of(2027, 6, 30),
+                "자동차 보유자", null, true, null);
+        CalendarSchedule today_ = CalendarSchedule.create(null, "TAX_RESIDENT", LocalDate.of(2027, 6, 20), LocalDate.of(2027, 6, 20),
+                "모든 주민", null, true, null);
+        given(calendarScheduleRepository.findActiveOverlapping(LocalDate.of(2027, 6, 1), LocalDate.of(2027, 6, 30)))
+                .willReturn(List.of(past, car, today_));
+
+        com.siot.backend.schedule.dto.MonthlyTodoResponse result = calendarScheduleService.getMonthlyTodos(null, "ko", today);
+
+        assertThat(result.nextMonth()).isFalse();
+        assertThat(result.month()).isEqualTo(6);
+        assertThat(result.items()).extracting(com.siot.backend.schedule.dto.MonthlyTodoResponse.Item::dDay)
+                .containsExactly(0L, 10L);
+    }
+
+    @Test
+    @DisplayName("이번 달에 남은 일정이 없으면 다음 달 일정을 nextMonth=true 로 준다 (CAL-02)")
+    void monthlyTodos_fallsBackToNextMonth() {
+        LocalDate today = LocalDate.of(2027, 7, 20);
+        CalendarSchedule property = CalendarSchedule.create(null, "TAX_PROPERTY", LocalDate.of(2027, 7, 16), LocalDate.of(2027, 7, 19),
+                "주택 소유자", null, true, null);
+        CalendarSchedule resident = CalendarSchedule.create(null, "TAX_RESIDENT", LocalDate.of(2027, 8, 16), LocalDate.of(2027, 8, 31),
+                "모든 주민", null, true, null);
+        given(calendarScheduleRepository.findActiveOverlapping(LocalDate.of(2027, 7, 1), LocalDate.of(2027, 7, 31)))
+                .willReturn(List.of(property));
+        given(calendarScheduleRepository.findActiveOverlapping(LocalDate.of(2027, 8, 1), LocalDate.of(2027, 8, 31)))
+                .willReturn(List.of(resident));
+
+        com.siot.backend.schedule.dto.MonthlyTodoResponse result = calendarScheduleService.getMonthlyTodos(null, "ko", today);
+
+        assertThat(result.nextMonth()).isTrue();
+        assertThat(result.year()).isEqualTo(2027);
+        assertThat(result.month()).isEqualTo(8);
+        assertThat(result.items()).singleElement().satisfies(item -> {
+            assertThat(item.schedule().kind()).isEqualTo("TAX_RESIDENT");
+            assertThat(item.dDay()).isEqualTo(42L);
+        });
+    }
 }

@@ -2,6 +2,7 @@ package com.siot.backend.schedule.controller;
 
 import com.siot.backend.auth.security.MemberPrincipal;
 import com.siot.backend.global.common.ApiResponse;
+import com.siot.backend.schedule.dto.MonthlyTodoResponse;
 import com.siot.backend.schedule.dto.ScheduleResponse;
 import com.siot.backend.schedule.dto.TaxDetailResponse;
 import com.siot.backend.schedule.service.CalendarScheduleService;
@@ -46,6 +47,18 @@ public class CalendarScheduleController {
 
         List<ScheduleResponse> response = calendarScheduleService.getMonthlySchedules(userId, targetYear, targetMonth, language);
         return ResponseEntity.ok(ApiResponse.of(response));
+    }
+
+    @Operation(summary = "CAL-02 이번 달 할일",
+            description = "메인에 보여 줄 이번 달 일정 중 마감이 지나지 않은 것과 마감까지 남은 일수(dDay)를 마감 임박 순으로 줍니다. "
+                    + "이번 달에 남은 일정이 없으면 다음 달 일정을 nextMonth=true 로 줍니다. 로그인하면 개인 일정(체류 만료 등)도 넣습니다.")
+    @GetMapping("/this-month")
+    public ResponseEntity<ApiResponse<MonthlyTodoResponse>> getThisMonthTodos(
+            @AuthenticationPrincipal MemberPrincipal principal,
+            @Parameter(description = "언어 (ko/en/zh/vi). 생략 시 ko") @RequestParam(required = false) String language) {
+        Long userId = principal != null ? principal.getId() : null;
+        return ResponseEntity.ok(ApiResponse.of(
+                calendarScheduleService.getMonthlyTodos(userId, language, LocalDate.now(SEOUL_ZONE))));
     }
 
     @Operation(summary = "CAL-01 연간 일정 조회", description = "해당 연도의 전체 세금/생활 일정을 조회합니다.")

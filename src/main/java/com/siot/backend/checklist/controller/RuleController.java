@@ -1,5 +1,6 @@
 package com.siot.backend.checklist.controller;
 
+import com.siot.backend.checklist.dto.RuleCategoryResponse;
 import com.siot.backend.checklist.dto.RuleResponse;
 import com.siot.backend.checklist.service.RuleService;
 import com.siot.backend.global.common.ApiResponse;
@@ -44,10 +45,13 @@ public class RuleController {
         return ResponseEntity.ok(ApiResponse.of(list));
     }
 
-    @Operation(summary = "생활수칙 카테고리 목록 조회", description = "등록된 생활수칙의 카테고리 목록을 중복 없이 조회합니다.")
+    @Operation(summary = "RUL-12·RUL-13 생활수칙 카테고리 목록 조회",
+            description = "등록된 생활수칙의 카테고리를 중복 없이 조회합니다. category 는 목록 필터 값(한국어 원문), "
+                    + "name 은 요청 언어의 이름입니다. 번역이 없으면 한국어 원문과 translated=false (COM-02 '번역 준비 중').")
     @GetMapping("/categories")
-    public ResponseEntity<ApiResponse<List<String>>> getCategories() {
-        return ResponseEntity.ok(ApiResponse.of(ruleService.getCategories()));
+    public ResponseEntity<ApiResponse<List<RuleCategoryResponse>>> getCategories(
+            @Parameter(description = "언어 (ko/en/zh/vi). 생략 시 ko") @RequestParam(required = false) String language) {
+        return ResponseEntity.ok(ApiResponse.of(ruleService.getCategories(language)));
     }
 
     @Operation(summary = "생활수칙 단건 상세 조회")

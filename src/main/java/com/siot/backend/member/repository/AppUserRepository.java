@@ -38,4 +38,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
 
     @Query("SELECT u FROM AppUser u WHERE u.entryDate IS NOT NULL AND u.entryDate >= :startDate AND u.entryDate <= :endDate")
     java.util.List<AppUser> findByEntryDateBetween(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    /** NTF-07 체크리스트 안내 변경 알림 대상: 입국일을 입력한 회원 */
+    java.util.List<AppUser> findByEntryDateIsNotNull();
 }

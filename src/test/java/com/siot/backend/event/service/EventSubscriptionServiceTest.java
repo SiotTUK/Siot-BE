@@ -36,7 +36,9 @@ class EventSubscriptionServiceTest {
         Long userId = 1L;
         Long eventId = 10L;
 
-        given(eventRepository.existsById(eventId)).willReturn(true);
+        com.siot.backend.event.domain.Event event = com.siot.backend.event.domain.Event.manual(1L);
+        event.editStartsOn(java.time.LocalDate.of(2099, 5, 1), false);
+        given(eventRepository.findById(eventId)).willReturn(Optional.of(event));
         given(subscriptionRepository.findByUserIdAndEventId(userId, eventId))
                 .willReturn(Optional.empty());
         given(subscriptionRepository.save(any(EventSubscription.class)))
@@ -48,7 +50,9 @@ class EventSubscriptionServiceTest {
         // then
         assertThat(res.eventId()).isEqualTo(eventId);
         assertThat(res.enabled()).isTrue();
-        verify(subscriptionRepository).save(any(EventSubscription.class));
+        // 신청할 때 본 일정을 기준으로 기록한다 (NTF-02 일정 변경 알림)
+        verify(subscriptionRepository).save(org.mockito.ArgumentMatchers.<EventSubscription>argThat(
+                s -> "2099-05-01|||".equals(s.getScheduleSnapshot())));
     }
 
     @Test

@@ -23,10 +23,10 @@ import com.siot.backend.member.domain.UserType;
 import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.notification.domain.EmailDeliveryStatus;
 import com.siot.backend.notification.domain.Notification;
-import com.siot.backend.notification.domain.NotificationPreference;
 import com.siot.backend.notification.repository.NotificationPreferenceRepository;
 import com.siot.backend.notification.repository.NotificationRepository;
 import com.siot.backend.notification.service.NotificationDispatcher;
+import com.siot.backend.notification.service.NotificationMessages;
 import com.siot.backend.schedule.domain.CalendarSchedule;
 import com.siot.backend.schedule.repository.CalendarScheduleRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,10 +38,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -70,12 +76,17 @@ public class NotificationScheduler {
     private static final List<Integer> RESIDENCE_REPORT_LEAD_DAYS = List.of(7, 1);
     /** NTF-01: 납부 마감 D-7, D-1 (납부 시작일 당일 알림은 따로 보낸다) */
     private static final List<Integer> TAX_LEAD_DAYS = List.of(7, 1);
+    /** NTF-02: 시각을 모르는 행사의 시작 전날 알림은 이 시각(한국 시간) 이후에 보낸다 (자정에 보내지 않게) */
+    private static final int DATE_ONLY_EVENT_NOTIFY_HOUR = 9;
+
+    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
 
     static final String REGISTRATION_GUIDE_CODE = "CL-01";
     static final String CHECKLIST_DEADLINE_PREFERENCE = "CHECKLIST_DEADLINE";
 
     /**
-     * 매일 오전 9시: 체류기간 만료, 외국인등록, 정기 세금 납부, 관심 행사 시작 기한 도래 알림 생성 및 발송
+     * 매일 오전 9시: 체류기간 만료, 외국인등록, 체류지 변경 신고, 정기 세금 납부 알림 생성 및 발송
      */
     @Scheduled(cron = "0 0 9 * * *", zone = "Asia/Seoul")
     public void runDailyNotificationJob() {
@@ -85,9 +96,17 @@ public class NotificationScheduler {
         generateRegistrationNotifications();
         generateResidenceReportNotifications();
         generateTaxNotifications();
-        generateEventNotifications();
         notificationDispatcher.dispatchPendingNotifications();
         log.info("Daily notification scheduled job finished.");
+    }
+
+    /**
+     * 매시 정각: 알림을 신청한 행사의 시작 24시간 전, 신청 마감 D-1(24시간 전), 일정 변경 알림 (NTF-02)
+     */
+    @Scheduled(cron = "0 0 * * * *", zone = "Asia/Seoul")
+    public void runHourlyEventNotificationJob() {
+        generateEventNotifications();
+        notificationDispatcher.dispatchPendingNotifications();
     }
 
     /**
@@ -111,26 +130,10 @@ public class NotificationScheduler {
                     continue;
                 }
 
-                String title = String.format("체류기간 만료 D-%d 안내", leadDays);
-                String body = String.format("체류기간 만료일(%s)까지 %d일 남았습니다. 출입국관리사무소 또는 하이코리아에서 체류기간 연장 허가를 신청하세요.", targetDate, leadDays);
-                EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
-
-                Notification notification = Notification.create(
-                        user.getId(),
-                        "STAY_EXPIRY",
-                        null,
-                        null,
-                        null,
-                        null,
-                        sourceKey,
-                        1,
-                        OffsetDateTime.now(),
-                        user.getLanguage(),
-                        title,
-                        body,
-                        emailStatus
-                );
-                notificationRepository.save(notification);
+                NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
+                save(user, "STAY_EXPIRY", null, null, null, sourceKey,
+                        String.format(m.stayExpiryTitle(), leadDays),
+                        String.format(m.stayExpiryBody(), targetDate, leadDays));
             }
         }
     }
@@ -159,14 +162,9 @@ public class NotificationScheduler {
                 continue;
             }
 
-            String title = "체류기간 연장 신청 시작 안내";
-            String body = String.format("오늘부터 체류기간 연장 허가를 신청할 수 있습니다 (체류 만료일 %s). "
-                    + "하이코리아(hikorea.go.kr)에서 방문 예약 또는 전자민원으로 신청하세요.", expiry);
-            EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
-
-            notificationRepository.save(Notification.create(
-                    user.getId(), "STAY_EXPIRY", null, null, null, null, sourceKey, 1,
-                    OffsetDateTime.now(clock), user.getLanguage(), title, body, emailStatus));
+            NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
+            save(user, "STAY_EXPIRY", null, null, null, sourceKey,
+                    m.stayExtensionStartTitle(), String.format(m.stayExtensionStartBody(), expiry));
         }
     }
 
@@ -199,26 +197,10 @@ public class NotificationScheduler {
                 }
 
                 LocalDate deadline = user.getEntryDate().plusDays(90);
-                String title = String.format("외국인등록 마감 D-%d 안내", leadDays);
-                String body = String.format("입국 후 90일 외국인등록 마감일(%s)까지 %d일 남았습니다. 관할 출입국·외국인관서에 방문하여 등록을 완료해주세요.", deadline, leadDays);
-                EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
-
-                Notification notification = Notification.create(
-                        user.getId(),
-                        "REGISTRATION",
-                        null,
-                        null,
-                        null,
-                        null,
-                        sourceKey,
-                        1,
-                        OffsetDateTime.now(),
-                        user.getLanguage(),
-                        title,
-                        body,
-                        emailStatus
-                );
-                notificationRepository.save(notification);
+                NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
+                save(user, "REGISTRATION", null, null, null, sourceKey,
+                        String.format(m.registrationTitle(), leadDays),
+                        String.format(m.registrationBody(), deadline, leadDays));
             }
         }
     }
@@ -263,17 +245,13 @@ public class NotificationScheduler {
                     continue;
                 }
 
+                NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
                 boolean overseasKorean = ResidenceChangeReport.OVERSEAS_KOREAN_REPORT_CODE.equals(reportCode);
-                String reportName = overseasKorean ? "거소 이전 신고" : "체류지 변경 신고";
-                String title = String.format("%s 마감 D-%d 안내", reportName, leadDays);
-                String body = String.format("이사일(%s)부터 %d일 이내인 %s 마감일(%s)까지 %d일 남았습니다. "
-                                + "새 주소지 주민센터나 출입국·외국인관서, 하이코리아에서 신고해주세요.",
-                        move.getBaseDate(), ChronoUnit.DAYS.between(move.getBaseDate(), deadline), reportName, deadline, leadDays);
-                EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
-
-                notificationRepository.save(Notification.create(
-                        user.getId(), "RESIDENCE_REPORT", null, guide != null ? guide.getId() : null, null, null,
-                        sourceKey, 1, OffsetDateTime.now(clock), user.getLanguage(), title, body, emailStatus));
+                String reportName = overseasKorean ? m.overseasKoreanReportName() : m.residenceReportName();
+                save(user, "RESIDENCE_REPORT", null, guide != null ? guide.getId() : null, null, sourceKey,
+                        String.format(m.residenceReportTitle(), reportName, leadDays),
+                        String.format(m.residenceReportBody(), move.getBaseDate(),
+                                ChronoUnit.DAYS.between(move.getBaseDate(), deadline), reportName, deadline, leadDays));
             }
         }
     }
@@ -288,88 +266,168 @@ public class NotificationScheduler {
         // 납부 시작일 (당일)
         for (CalendarSchedule schedule : calendarScheduleRepository.findImpendingSchedules(today, today)) {
             notifyTaxSchedule(schedule, "start",
-                    title -> String.format("[%s] 오늘부터 납부 기간입니다", title),
-                    title -> String.format("%s 납부 기간(%s ~ %s)이 오늘 시작됐습니다. 위택스(wetax.go.kr) 또는 금융기관에서 기한 내 납부해주세요.",
-                            title, schedule.getStartsOn(), schedule.getEndsOn()));
+                    (m, title) -> String.format(m.taxStartTitle(), title),
+                    (m, title) -> String.format(m.taxStartBody(), title, schedule.getStartsOn(), schedule.getEndsOn()));
         }
 
         // 납부 마감 D-7, D-1
         for (int leadDays : TAX_LEAD_DAYS) {
             for (CalendarSchedule schedule : calendarScheduleRepository.findByEndsOnAndActiveTrue(today.plusDays(leadDays))) {
                 notifyTaxSchedule(schedule, "due:" + leadDays,
-                        title -> String.format("[%s] 납부 마감 D-%d 안내", title, leadDays),
-                        title -> String.format("%s 납부 마감일(%s)까지 %d일 남았습니다. 위택스(wetax.go.kr) 또는 금융기관에서 기한 내 납부해주세요.",
-                                title, schedule.getEndsOn(), leadDays));
+                        (m, title) -> String.format(m.taxDueTitle(), title, leadDays),
+                        (m, title) -> String.format(m.taxDueBody(), title, schedule.getEndsOn(), leadDays));
             }
         }
     }
 
     /**
-     * 행사 시작 사전 알림 생성 (NTF-02, EVE-06, D-7, D-1)
+     * 알림을 신청한 행사 알림 (NTF-02, EVE-06). 매시 실행한다.
+     * <ul>
+     *   <li>행사 시작 24시간 전: 시작 시각을 알면 시작 24시간 안에 들어온 첫 실행에, 모르면 시작 전날 오전 9시 이후 첫 실행에 보낸다</li>
+     *   <li>신청 마감 D-1: 신청 마감 시각이 있는 행사만, 마감 24시간 안에 들어온 첫 실행에 보낸다</li>
+     *   <li>일정 변경: 신청할 때(또는 마지막 변경 안내 때) 기록한 일정과 지금 일정이 다르면 보낸다</li>
+     * </ul>
      */
     @Transactional
     public void generateEventNotifications() {
-        LocalDate today = LocalDate.now(clock);
-        List<Integer> eventLeadDays = List.of(7, 1);
+        ZonedDateTime now = ZonedDateTime.now(clock);
+        LocalDate today = now.toLocalDate();
 
-        for (int leadDays : eventLeadDays) {
-            LocalDate targetDate = today.plusDays(leadDays);
-            List<Event> upcomingEvents = eventRepository.findUpcomingEventsOnDate(targetDate);
+        // 1. 행사 시작 24시간 전
+        for (Event event : eventRepository.findByStartsOnBetweenAndStatus(today, today.plusDays(1), "ACTIVE")) {
+            if (!isStartAlertDue(event, now)) {
+                continue;
+            }
+            String startText = event.getStartsAt() != null && !event.isTimeUnknown()
+                    ? event.getStartsOn() + " " + event.getStartsAt().format(TIME)
+                    : event.getStartsOn().toString();
+            notifyEventSubscribers(event, "event_start:%d:%d:" + event.getStartsOn(),
+                    (m, title) -> String.format(m.eventStartTitle(), title),
+                    (m, title) -> String.format(m.eventStartBody(), title, startText));
+        }
 
-            for (Event event : upcomingEvents) {
-                List<EventSubscription> subs = eventSubscriptionRepository.findByEventIdAndEnabledTrue(event.getId());
+        // 2. 신청 마감 D-1 (마감 24시간 전)
+        for (Event event : eventRepository.findByStatusAndApplicationDeadlineBetween(
+                "ACTIVE", now.toOffsetDateTime(), now.plusHours(24).toOffsetDateTime())) {
+            OffsetDateTime deadline = event.getApplicationDeadline();
+            String deadlineText = deadline.atZoneSameInstant(clock.getZone()).format(DATE_TIME);
+            notifyEventSubscribers(event, "event_deadline:%d:%d:" + deadline.toEpochSecond(),
+                    (m, title) -> String.format(m.eventDeadlineTitle(), title),
+                    (m, title) -> String.format(m.eventDeadlineBody(), title, deadlineText));
+        }
 
-                for (EventSubscription sub : subs) {
-                    Long userId = sub.getUserId();
-                    if (isPreferenceDisabled(userId, "EVENT")) {
-                        continue;
+        // 3. 일정 변경
+        generateEventScheduleChangeNotifications(today);
+    }
+
+    /** 시작 시각을 알면 (지금, 지금+24시간] 안에 시작할 때, 모르면 내일 시작이고 지금이 오전 9시 이후일 때 */
+    private boolean isStartAlertDue(Event event, ZonedDateTime now) {
+        if (event.getStartsAt() != null && !event.isTimeUnknown()) {
+            ZonedDateTime start = event.getStartsOn().atTime(event.getStartsAt()).atZone(clock.getZone());
+            return start.isAfter(now) && !start.isAfter(now.plusHours(24));
+        }
+        return event.getStartsOn().equals(now.toLocalDate().plusDays(1))
+                && now.getHour() >= DATE_ONLY_EVENT_NOTIFY_HOUR;
+    }
+
+    /** 끝나지 않은 행사의 알림 신청 중, 기록한 일정과 지금 일정이 다른 것에 변경 알림을 보내고 기록을 갱신한다 */
+    private void generateEventScheduleChangeNotifications(LocalDate today) {
+        List<EventSubscription> subscriptions = eventSubscriptionRepository.findEnabledForCurrentEvents(today);
+        if (subscriptions.isEmpty()) {
+            return;
+        }
+        Map<Long, Event> events = eventRepository.findAllById(
+                        subscriptions.stream().map(EventSubscription::getEventId).distinct().toList())
+                .stream().collect(Collectors.toMap(Event::getId, Function.identity()));
+
+        for (EventSubscription subscription : subscriptions) {
+            Event event = events.get(subscription.getEventId());
+            if (event == null) {
+                continue;
+            }
+            String current = event.scheduleSnapshot();
+            String recorded = subscription.getScheduleSnapshot();
+            if (Objects.equals(current, recorded)) {
+                continue;
+            }
+            // 기록이 없으면 (이 기능 전 신청) 알림 없이 지금 일정을 기준으로 삼는다
+            if (recorded != null) {
+                AppUser user = appUserRepository.findById(subscription.getUserId()).orElse(null);
+                if (user != null && !isPreferenceDisabled(user.getId(), "EVENT")) {
+                    String sourceKey = String.format("event_changed:%d:%d:%s", event.getId(), user.getId(), current);
+                    if (!notificationRepository.existsByUserIdAndSourceKey(user.getId(), sourceKey)) {
+                        NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
+                        String title = eventTitle(event, user, m);
+                        save(user, "EVENT", event.getId(), null, null, sourceKey,
+                                String.format(m.eventChangedTitle(), title),
+                                String.format(m.eventChangedBody(), title, scheduleText(event)));
                     }
-
-                    String sourceKey = String.format("event:%d:%d:%d", event.getId(), userId, leadDays);
-                    if (notificationRepository.existsByUserIdAndSourceKey(userId, sourceKey)) {
-                        continue;
-                    }
-
-                    AppUser user = appUserRepository.findById(userId).orElse(null);
-                    if (user == null) continue;
-
-                    String titleText = "시흥시 문화행사";
-                    EventTranslation tr = eventTranslationRepository.findByEventIdAndLanguage(event.getId(), user.getLanguage())
-                            .or(() -> eventTranslationRepository.findByEventIdAndLanguage(event.getId(), "ko"))
-                            .orElse(null);
-                    if (tr != null) {
-                        titleText = tr.getTitle();
-                    }
-
-                    String title = String.format("[%s] 행사 시작 D-%d 안내", titleText, leadDays);
-                    String body = String.format("관심 등록하신 행사 '%s'가 %d일 후(%s)에 시작됩니다. 일정과 장소를 확인하세요.",
-                            titleText, leadDays, event.getStartsOn());
-                    EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
-
-                    Notification notification = Notification.create(
-                            userId,
-                            "EVENT",
-                            event.getId(),
-                            null,
-                            null,
-                            null,
-                            sourceKey,
-                            1,
-                            OffsetDateTime.now(clock),
-                            user.getLanguage(),
-                            title,
-                            body,
-                            emailStatus
-                    );
-                    notificationRepository.save(notification);
                 }
             }
+            subscription.recordSchedule(current);
+            eventSubscriptionRepository.save(subscription);
         }
+    }
+
+    /** "2026-12-01 14:00 ~ 2026-12-03 18:00" (없는 값은 빼고) */
+    private static String scheduleText(Event event) {
+        String start = dateTimeText(event.getStartsOn(), event.isTimeUnknown() ? null : event.getStartsAt());
+        String end = dateTimeText(event.getEndsOn(), event.isTimeUnknown() ? null : event.getEndsAt());
+        if (start.isEmpty()) {
+            return end;
+        }
+        if (end.isEmpty() || end.equals(start)) {
+            return start;
+        }
+        return start + " ~ " + end;
+    }
+
+    private static String dateTimeText(LocalDate date, java.time.LocalTime time) {
+        if (date == null) {
+            return "";
+        }
+        return time == null ? date.toString() : date + " " + time.format(TIME);
+    }
+
+    /**
+     * 행사 알림을 켠 회원에게 한 번씩 알림을 만든다.
+     *
+     * @param sourceKeyFormat 행사 ID, 회원 ID 순으로 채울 형식 (예: "event_start:%d:%d:2026-12-01")
+     */
+    private void notifyEventSubscribers(Event event, String sourceKeyFormat,
+                                        BiFunction<NotificationMessages, String, String> titleOf,
+                                        BiFunction<NotificationMessages, String, String> bodyOf) {
+        for (EventSubscription sub : eventSubscriptionRepository.findByEventIdAndEnabledTrue(event.getId())) {
+            Long userId = sub.getUserId();
+            if (isPreferenceDisabled(userId, "EVENT")) {
+                continue;
+            }
+            String sourceKey = String.format(sourceKeyFormat, event.getId(), userId);
+            if (notificationRepository.existsByUserIdAndSourceKey(userId, sourceKey)) {
+                continue;
+            }
+            AppUser user = appUserRepository.findById(userId).orElse(null);
+            if (user == null) {
+                continue;
+            }
+            NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
+            String title = eventTitle(event, user, m);
+            save(user, "EVENT", event.getId(), null, null, sourceKey, titleOf.apply(m, title), bodyOf.apply(m, title));
+        }
+    }
+
+    /** 회원 언어의 행사명, 없으면 한국어, 그것도 없으면 기본 문구 */
+    private String eventTitle(Event event, AppUser user, NotificationMessages m) {
+        return eventTranslationRepository.findByEventIdAndLanguage(event.getId(), user.getLanguage())
+                .or(() -> eventTranslationRepository.findByEventIdAndLanguage(event.getId(), "ko"))
+                .map(EventTranslation::getTitle)
+                .orElse(m.defaultEventTitle());
     }
 
     /** 납부 대상 회원에게 세금 알림을 한 번씩 만든다. sourceKeyPart 로 시작일·마감 D-n 알림을 구분한다 */
     private void notifyTaxSchedule(CalendarSchedule schedule, String sourceKeyPart,
-                                   Function<String, String> titleOf, Function<String, String> bodyOf) {
+                                   BiFunction<NotificationMessages, String, String> titleOf,
+                                   BiFunction<NotificationMessages, String, String> bodyOf) {
         String scheduleKind = schedule.getKind() != null ? schedule.getKind().toUpperCase() : "";
 
         for (AppUser user : appUserRepository.findAll()) {
@@ -393,16 +451,23 @@ public class NotificationScheduler {
             if (schedule.getGuideId() != null) {
                 scheduleTitle = guideTranslationRepository
                         .findByGuideIdAndLanguage(schedule.getGuideId(), user.getLanguage())
+                        .or(() -> guideTranslationRepository.findByGuideIdAndLanguage(schedule.getGuideId(), "ko"))
                         .map(GuideTranslation::getTitle)
                         .orElse(schedule.getKind());
             }
-            EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
-
-            notificationRepository.save(Notification.create(
-                    user.getId(), "TAX", null, null, schedule.getId(), null, sourceKey, 1,
-                    OffsetDateTime.now(clock), user.getLanguage(),
-                    titleOf.apply(scheduleTitle), bodyOf.apply(scheduleTitle), emailStatus));
+            NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
+            save(user, "TAX", null, null, schedule.getId(), sourceKey,
+                    titleOf.apply(m, scheduleTitle), bodyOf.apply(m, scheduleTitle));
         }
+    }
+
+    /** 알림을 저장한다. 인증된 이메일이 있으면 메일 발송 대기로 둔다 (NTF-05, NTF-09) */
+    private void save(AppUser user, String kind, Long eventId, Long guideId, Long scheduleId, String sourceKey,
+                      String title, String body) {
+        EmailDeliveryStatus emailStatus = user.hasVerifiedEmail() ? EmailDeliveryStatus.PENDING : null;
+        notificationRepository.save(Notification.create(
+                user.getId(), kind, eventId, guideId, scheduleId, null, sourceKey, 1,
+                OffsetDateTime.now(clock), user.getLanguage(), title, body, emailStatus));
     }
 
     /** 완료(DONE) 또는 해당 없음(NOT_APPLICABLE)으로 표시한 1회성 항목이면 true */

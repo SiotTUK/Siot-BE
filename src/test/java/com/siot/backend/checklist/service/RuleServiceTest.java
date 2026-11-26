@@ -31,6 +31,8 @@ class RuleServiceTest {
     private GuideTranslationRepository guideTranslationRepository;
     @Mock
     private GuideDocumentReferenceRepository guideDocumentReferenceRepository;
+    @Mock
+    private RuleCategoryService ruleCategoryService;
 
     @InjectMocks
     private RuleService ruleService;

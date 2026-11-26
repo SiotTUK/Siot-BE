@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,10 +16,11 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     // ---------------------------------------------------------------- 행사 알림 (NotificationScheduler)
 
-    @Query("SELECT e FROM Event e WHERE e.status = 'ACTIVE' AND e.startsOn = :targetDate")
-    List<Event> findUpcomingEventsOnDate(@Param("targetDate") LocalDate targetDate);
-
+    /** NTF-02 행사 시작 알림 후보 */
     List<Event> findByStartsOnBetweenAndStatus(LocalDate start, LocalDate end, String status);
+
+    /** NTF-02 신청 마감 D-1 알림 후보: 신청 마감 시각이 [from, to] 안인 행사 */
+    List<Event> findByStatusAndApplicationDeadlineBetween(String status, OffsetDateTime from, OffsetDateTime to);
 
     // ---------------------------------------------------------------- 수집·번역
 

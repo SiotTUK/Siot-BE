@@ -5,7 +5,10 @@ import com.siot.backend.event.domain.EventSubscriptionId;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,4 +24,12 @@ public interface EventSubscriptionRepository extends JpaRepository<EventSubscrip
     boolean existsByUserIdAndEventIdAndEnabledTrue(Long userId, Long eventId);
 
     void deleteByUserId(Long userId);
+
+    /** NTF-02 일정 변경 확인 대상: 알림을 켠 신청 중 보이는 행사(ACTIVE)가 끝나지 않은 것 */
+    @Query("""
+            SELECT s FROM EventSubscription s, Event e
+            WHERE e.id = s.eventId AND s.enabled = true AND e.status = 'ACTIVE'
+              AND COALESCE(e.endsOn, e.startsOn) >= :today
+            """)
+    List<EventSubscription> findEnabledForCurrentEvents(@Param("today") LocalDate today);
 }

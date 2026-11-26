@@ -11,7 +11,6 @@ import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.notification.service.NotificationService;
 import com.siot.backend.rag.domain.GuideDocumentReference;
 import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
-import com.siot.backend.translation.Translator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,7 +29,8 @@ public class AdminRuleService {
     private final GuideTranslationRepository guideTranslationRepository;
     private final GuideDocumentReferenceRepository guideDocumentReferenceRepository;
     private final NotificationService notificationService;
-    private final Translator translator;
+    private final GuideTranslationGenerator guideTranslationGenerator;
+    private final RuleCategoryService ruleCategoryService;
     private final Clock clock;
 
     /**
@@ -72,9 +72,9 @@ public class AdminRuleService {
         );
         guideTranslationRepository.save(ko);
 
-        // RUL-13: 자동 번역 실행 (en, zh, vi)
-        autoTranslateAndSave(guide.getId(), request.title(), request.summary(), request.content(),
-                request.badge(), request.place(), request.fee(), request.law(), request.penalty(), request.sourceName());
+        // RUL-13: 자동 번역 실행 (en, zh, vi) - 본문과 카테고리명
+        guideTranslationGenerator.regenerate(ko);
+        ruleCategoryService.ensureTranslations(guide.getCategory());
 
         return toRuleResponse(guide, ko);
     }
@@ -112,9 +112,9 @@ public class AdminRuleService {
         );
         guideTranslationRepository.save(ko);
 
-        // RUL-13: 자동 번역 갱신
-        autoTranslateAndSave(guide.getId(), request.title(), request.summary(), request.content(),
-                request.badge(), request.place(), request.fee(), request.law(), request.penalty(), request.sourceName());
+        // RUL-13, COM-02: 원문이 바뀌었으므로 번역을 다시 만든다. 새 카테고리면 카테고리명도 번역한다
+        guideTranslationGenerator.regenerate(ko);
+        ruleCategoryService.ensureTranslations(guide.getCategory());
 
         // NTF-07: 실제 중요 안내 내용 변경 시 변경 알림 발송
         if (Boolean.TRUE.equals(request.noticeChanged())) {
@@ -136,57 +136,6 @@ public class AdminRuleService {
         guide.softDelete(adminId, OffsetDateTime.now(clock));
     }
 
-    private void autoTranslateAndSave(Long guideId, String title, String summary, String content,
-                                      String badge, String place, String fee, String law,
-                                      String penalty, String sourceName) {
-        if (translator == null) return;
-
-        try {
-            Map<String, String> titles = translateSafely(title);
-            Map<String, String> summaries = translateSafely(summary);
-            Map<String, String> contents = translateSafely(content);
-            Map<String, String> badges = translateSafely(badge);
-            Map<String, String> places = translateSafely(place);
-            Map<String, String> fees = translateSafely(fee);
-            Map<String, String> laws = translateSafely(law);
-            Map<String, String> penalties = translateSafely(penalty);
-            Map<String, String> sourceNames = translateSafely(sourceName);
-
-            for (String lang : Translator.TARGET_LANGUAGES) {
-                GuideTranslation tr = guideTranslationRepository.findByGuideIdAndLanguage(guideId, lang)
-                        .orElseGet(() -> GuideTranslation.create(guideId, lang));
-
-                tr.update(
-                        titles.getOrDefault(lang, title),
-                        summaries.get(lang),
-                        contents.get(lang),
-                        badges.get(lang),
-                        places.get(lang),
-                        Collections.emptyList(),
-                        fees.get(lang),
-                        laws.get(lang),
-                        penalties.get(lang),
-                        sourceNames.get(lang)
-                );
-                guideTranslationRepository.save(tr);
-            }
-        } catch (Exception e) {
-            log.warn("Auto translation failed for guide {}: {}", guideId, e.getMessage());
-        }
-    }
-
-    private Map<String, String> translateSafely(String text) {
-        if (text == null || text.isBlank()) {
-            return Collections.emptyMap();
-        }
-        try {
-            return translator.translateAll(text);
-        } catch (Exception e) {
-            log.warn("Translation failed for text '{}': {}", text, e.getMessage());
-            return Collections.emptyMap();
-        }
-    }
-
     private RuleResponse toRuleResponse(Guide guide, GuideTranslation tr) {
         GuideDocumentReference docRef = guideDocumentReferenceRepository
                 .findFirstByGuideIdOrderByCreatedAtDesc(guide.getId())
@@ -203,6 +152,7 @@ public class AdminRuleService {
         return new RuleResponse(
                 guide.getCode(),
                 guide.getCategory(),
+                guide.getCategory(), // 관리자 응답은 한국어
                 tr != null ? tr.getTitle() : guide.getCode(),
                 tr != null ? tr.getSummary() : null,
                 tr != null ? tr.getContent() : null,
