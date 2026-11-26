@@ -93,7 +93,7 @@ class NotificationSchedulerTest {
         Clock clock = Clock.fixed(ZonedDateTime.of(TODAY.atTime(9, 0), ClockConfig.KST).toInstant(), ClockConfig.KST);
         notificationScheduler = new NotificationScheduler(appUserRepository, notificationRepository, preferenceRepository,
                 calendarScheduleRepository, guideTranslationRepository,
-                eventRepository, eventSubscriptionRepository, eventTranslationRepository, notificationDispatcher,
+                eventRepository, eventSubscriptionRepository, writer(clock), notificationDispatcher,
                 guideRepository, checklistProgressRepository, memberLifeChangeRepository, clock);
         lenient().when(notificationRepository.existsByUserIdAndSourceKey(anyLong(), anyString())).thenReturn(false);
         lenient().when(preferenceRepository.findByKindAndUserId(anyString(), anyLong())).thenReturn(Optional.empty());
@@ -110,6 +110,19 @@ class NotificationSchedulerTest {
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         verify(notificationRepository).save(captor.capture());
         return captor.getValue();
+    }
+
+    /** 일정 변경 알림은 EventChangeNotificationWriter 가 바로 flush 한다 (유니크 제약 충돌을 그 신청자 안에서 잡기 위해) */
+    private Notification flushedNotification() {
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).saveAndFlush(captor.capture());
+        return captor.getValue();
+    }
+
+    private com.siot.backend.notification.service.EventChangeNotificationWriter writer(Clock clock) {
+        return new com.siot.backend.notification.service.EventChangeNotificationWriter(eventSubscriptionRepository,
+                eventTranslationRepository, appUserRepository, notificationRepository, preferenceRepository, clock,
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction());
     }
 
     @Test
@@ -422,7 +435,7 @@ class NotificationSchedulerTest {
         Clock clock = Clock.fixed(ZonedDateTime.of(now, ClockConfig.KST).toInstant(), ClockConfig.KST);
         return new NotificationScheduler(appUserRepository, notificationRepository, preferenceRepository,
                 calendarScheduleRepository, guideTranslationRepository,
-                eventRepository, eventSubscriptionRepository, eventTranslationRepository, notificationDispatcher,
+                eventRepository, eventSubscriptionRepository, writer(clock), notificationDispatcher,
                 guideRepository, checklistProgressRepository, memberLifeChangeRepository, clock);
     }
 
@@ -543,7 +556,7 @@ class NotificationSchedulerTest {
 
         notificationScheduler.generateEventNotifications();
 
-        Notification saved = savedNotification();
+        Notification saved = flushedNotification();
         assertThat(saved.getTitle()).contains("일정이 변경");
         assertThat(saved.getBody()).contains(TODAY.plusDays(10) + " 10:00");
         assertThat(subscription.getScheduleSnapshot()).isEqualTo(event.scheduleSnapshot());
@@ -562,6 +575,7 @@ class NotificationSchedulerTest {
         notificationScheduler.generateEventNotifications();
 
         verify(notificationRepository, never()).save(any());
+        verify(notificationRepository, never()).saveAndFlush(any());
         assertThat(subscription.getScheduleSnapshot()).isEqualTo(event.scheduleSnapshot());
     }
 }

@@ -4,8 +4,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 /**
- * 수집 중 일정이 바뀐 행사를 알림(NTF-02 일정 변경)으로 넘긴다 (EVE-01 6항).
- * 알림 발송은 역할 A 가 구현한다. 지금은 로그만 남기는 {@link LoggingEventChangeNotifier}.
+ * 일정이 바뀐 행사를 알림(NTF-02 일정 변경)으로 넘긴다. 수집(EVE-01 6항)과 관리자 수정(EVE-08)이 커밋 뒤 부른다.
+ * 구현: notification 모듈의 NotificationEventChangeNotifier (신청자에게 즉시 변경 알림).
  */
 public interface EventChangeNotifier {
 

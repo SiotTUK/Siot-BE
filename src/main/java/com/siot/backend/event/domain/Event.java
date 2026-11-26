@@ -305,6 +305,11 @@ public class Event {
      * 형식 "시작일|종료일|시작시각|종료시각", 없는 값은 빈 칸.
      */
     public String scheduleSnapshot() {
+        return scheduleSnapshot(startsOn, endsOn, startsAt, endsAt);
+    }
+
+    /** {@link #scheduleSnapshot()} 와 같은 형식 (바뀌기 전 일정을 만들 때) */
+    public static String scheduleSnapshot(LocalDate startsOn, LocalDate endsOn, LocalTime startsAt, LocalTime endsAt) {
         return String.join("|", text(startsOn), text(endsOn), text(startsAt), text(endsAt));
     }
 

@@ -13,10 +13,10 @@ import com.siot.backend.checklist.repository.MemberLifeChangeRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.event.domain.Event;
 import com.siot.backend.event.domain.EventSubscription;
-import com.siot.backend.event.domain.EventTranslation;
+
 import com.siot.backend.event.repository.EventRepository;
 import com.siot.backend.event.repository.EventSubscriptionRepository;
-import com.siot.backend.event.repository.EventTranslationRepository;
+import com.siot.backend.notification.service.EventChangeNotificationWriter;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.domain.Residence;
 import com.siot.backend.member.domain.UserType;
@@ -61,7 +61,7 @@ public class NotificationScheduler {
     private final GuideTranslationRepository guideTranslationRepository;
     private final EventRepository eventRepository;
     private final EventSubscriptionRepository eventSubscriptionRepository;
-    private final EventTranslationRepository eventTranslationRepository;
+    private final EventChangeNotificationWriter eventChangeWriter;
     private final NotificationDispatcher notificationDispatcher;
     private final GuideRepository guideRepository;
     private final ChecklistProgressRepository checklistProgressRepository;
@@ -346,7 +346,11 @@ public class NotificationScheduler {
                 && now.getHour() >= DATE_ONLY_EVENT_NOTIFY_HOUR;
     }
 
-    /** 끝나지 않은 행사의 알림 신청 중, 기록한 일정과 지금 일정이 다른 것에 변경 알림을 보내고 기록을 갱신한다 */
+    /**
+     * 보완 경로: 끝나지 않은 행사의 알림 신청 중, 기록한 일정과 지금 일정이 다른 것에 변경 알림을 보내고 기록을 갱신한다.
+     * 보통은 일정이 바뀐 즉시 NotificationEventChangeNotifier 가 처리해 기록이 같아져 있다 (규칙은 EventChangeNotificationWriter).
+     * 기록이 없는 (기능 전) 신청은 알림 없이 지금 일정을 기록만 한다.
+     */
     private void generateEventScheduleChangeNotifications(LocalDate today) {
         List<EventSubscription> subscriptions = eventSubscriptionRepository.findEnabledForCurrentEvents(today);
         if (subscriptions.isEmpty()) {
@@ -361,48 +365,13 @@ public class NotificationScheduler {
             if (event == null) {
                 continue;
             }
-            String current = event.scheduleSnapshot();
-            String recorded = subscription.getScheduleSnapshot();
-            if (Objects.equals(current, recorded)) {
-                continue;
+            try {
+                eventChangeWriter.apply(event, subscription, null);
+            } catch (RuntimeException e) {
+                log.warn("Event change notification failed for event {} user {}: {}", event.getId(),
+                        subscription.getUserId(), e.getMessage());
             }
-            // 기록이 없으면 (이 기능 전 신청) 알림 없이 지금 일정을 기준으로 삼는다
-            if (recorded != null) {
-                AppUser user = appUserRepository.findById(subscription.getUserId()).orElse(null);
-                if (user != null && !isPreferenceDisabled(user.getId(), "EVENT")) {
-                    String sourceKey = String.format("event_changed:%d:%d:%s", event.getId(), user.getId(), current);
-                    if (!notificationRepository.existsByUserIdAndSourceKey(user.getId(), sourceKey)) {
-                        NotificationMessages m = NotificationMessages.forLanguage(user.getLanguage());
-                        String title = eventTitle(event, user, m);
-                        save(user, "EVENT", event.getId(), null, null, sourceKey,
-                                String.format(m.eventChangedTitle(), title),
-                                String.format(m.eventChangedBody(), title, scheduleText(event)));
-                    }
-                }
-            }
-            subscription.recordSchedule(current);
-            eventSubscriptionRepository.save(subscription);
         }
-    }
-
-    /** "2026-12-01 14:00 ~ 2026-12-03 18:00" (없는 값은 빼고) */
-    private static String scheduleText(Event event) {
-        String start = dateTimeText(event.getStartsOn(), event.isTimeUnknown() ? null : event.getStartsAt());
-        String end = dateTimeText(event.getEndsOn(), event.isTimeUnknown() ? null : event.getEndsAt());
-        if (start.isEmpty()) {
-            return end;
-        }
-        if (end.isEmpty() || end.equals(start)) {
-            return start;
-        }
-        return start + " ~ " + end;
-    }
-
-    private static String dateTimeText(LocalDate date, java.time.LocalTime time) {
-        if (date == null) {
-            return "";
-        }
-        return time == null ? date.toString() : date + " " + time.format(TIME);
     }
 
     /**
@@ -448,10 +417,7 @@ public class NotificationScheduler {
 
     /** 회원 언어의 행사명, 없으면 한국어, 그것도 없으면 기본 문구 */
     private String eventTitle(Event event, AppUser user, NotificationMessages m) {
-        return eventTranslationRepository.findByEventIdAndLanguage(event.getId(), user.getLanguage())
-                .or(() -> eventTranslationRepository.findByEventIdAndLanguage(event.getId(), "ko"))
-                .map(EventTranslation::getTitle)
-                .orElse(m.defaultEventTitle());
+        return eventChangeWriter.eventTitle(event, user.getLanguage(), m);
     }
 
     /**
