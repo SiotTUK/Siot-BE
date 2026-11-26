@@ -54,7 +54,8 @@ public class NotificationDispatcher {
                             notification.getTitle(),
                             notification.getBody()
                     );
-                    emailSender.send(message);
+                    // 동기 발송: 실패하면 예외 → 아래에서 FAILED 로 기록 (비동기 send 는 실패를 삼켜 늘 SENT 로 기록됐다)
+                    emailSender.sendNow(message);
                     notification.recordEmailSuccess();
                 } else {
                     notification.recordEmailFailure("Email unverified or user not found");

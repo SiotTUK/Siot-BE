@@ -17,8 +17,17 @@ public interface EventSubscriptionRepository extends JpaRepository<EventSubscrip
     Optional<EventSubscription> findByUserIdAndEventId(Long userId, Long eventId);
 
     List<EventSubscription> findByEventIdAndEnabledTrue(Long eventId);
-
-    Page<EventSubscription> findByUserIdAndEnabledTrueOrderByUpdatedAtDesc(Long userId, Pageable pageable);
+    /** 내 알림 신청 목록: 지운 행사(DELETED)는 회원에게 보이지 않으므로 뺀다. 최근 신청 순 */
+    @Query(value = """
+            SELECT s FROM EventSubscription s, Event e
+            WHERE e.id = s.eventId AND s.userId = :userId AND s.enabled = true AND e.status = 'ACTIVE'
+            ORDER BY s.updatedAt DESC
+            """,
+            countQuery = """
+            SELECT count(s) FROM EventSubscription s, Event e
+            WHERE e.id = s.eventId AND s.userId = :userId AND s.enabled = true AND e.status = 'ACTIVE'
+            """)
+    Page<EventSubscription> findMyActive(@Param("userId") Long userId, Pageable pageable);
 
     /** 알림을 켜 둔 구독이 있는지 (EVE-04 상세의 "내 알림 신청 여부") */
     boolean existsByUserIdAndEventIdAndEnabledTrue(Long userId, Long eventId);

@@ -25,9 +25,33 @@ class EventSubscriptionServiceTest {
     private EventRepository eventRepository;
     @Mock
     private EventSubscriptionRepository subscriptionRepository;
+    @org.mockito.Spy
+    private java.time.Clock clock = java.time.Clock.fixed(java.time.Instant.parse("2026-11-26T03:00:00Z"),
+            java.time.ZoneId.of("Asia/Seoul"));
 
     @InjectMocks
     private EventSubscriptionService subscriptionService;
+
+    @Test
+    @DisplayName("지운 행사는 404, 이미 끝난 행사는 400 (보낼 알림이 없다)")
+    void subscribe_rejectsDeletedAndEndedEvents() {
+        com.siot.backend.event.domain.Event deleted = com.siot.backend.event.domain.Event.manual(1L);
+        deleted.editStartsOn(java.time.LocalDate.of(2099, 1, 1), false);
+        deleted.delete(1L);
+        given(eventRepository.findById(1L)).willReturn(Optional.of(deleted));
+        com.siot.backend.event.domain.Event ended = com.siot.backend.event.domain.Event.manual(1L);
+        ended.editStartsOn(java.time.LocalDate.of(2026, 11, 20), false);
+        ended.editEndsOn(java.time.LocalDate.of(2026, 11, 25), false);
+        given(eventRepository.findById(2L)).willReturn(Optional.of(ended));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> subscriptionService.subscribe(9L, 1L))
+                .extracting(e -> ((com.siot.backend.global.exception.BusinessException) e).getErrorCode())
+                .isEqualTo(com.siot.backend.global.exception.ErrorCode.EVENT_NOT_FOUND);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> subscriptionService.subscribe(9L, 2L))
+                .extracting(e -> ((com.siot.backend.global.exception.BusinessException) e).getErrorCode())
+                .isEqualTo(com.siot.backend.global.exception.ErrorCode.INVALID_INPUT);
+        org.mockito.Mockito.verify(subscriptionRepository, org.mockito.Mockito.never()).save(any());
+    }
 
     @Test
     @DisplayName("행사 시작 사전 알림 신청(구독) 검증 (NTF-02, EVE-06)")

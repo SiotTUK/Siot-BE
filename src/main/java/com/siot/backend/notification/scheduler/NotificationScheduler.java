@@ -96,7 +96,6 @@ public class NotificationScheduler {
         generateRegistrationNotifications();
         generateResidenceReportNotifications();
         generateTaxNotifications();
-        notificationDispatcher.dispatchPendingNotifications();
         log.info("Daily notification scheduled job finished.");
     }
 
@@ -106,6 +105,16 @@ public class NotificationScheduler {
     @Scheduled(cron = "0 0 * * * *", zone = "Asia/Seoul")
     public void runHourlyEventNotificationJob() {
         generateEventNotifications();
+    }
+
+    /**
+     * NTF-05 발송: 설정 주기(기본 1분)마다 발송 대기 알림을 보낸다. 알림을 만드는 작업(위 두 개, 관리자 안내 변경)과
+     * 발송을 나눠, 관리자가 안내를 바꿔 알림이 많이 생겨도 다음 주기에 이어서 보낸다.
+     * 발송은 이 작업에서만 한다: 스케줄러 스레드가 2개라 다른 작업에서도 부르면 같은 메일을 동시에 두 번 보낼 수 있다.
+     */
+    @Scheduled(fixedDelayString = "${siot.scheduling.notification-dispatch-interval}",
+            initialDelayString = "${siot.scheduling.notification-dispatch-interval}")
+    public void runDispatchJob() {
         notificationDispatcher.dispatchPendingNotifications();
     }
 

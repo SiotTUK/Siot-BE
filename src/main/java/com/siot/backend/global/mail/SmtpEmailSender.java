@@ -23,17 +23,23 @@ public class SmtpEmailSender implements EmailSender {
     @Async
     @Override
     public void send(EmailMessage message) {
+        try {
+            sendNow(message);
+        } catch (MailException e) {
+            // 수신자 주소는 개인정보라 로그에 남기지 않는다
+            log.error("Mail send failed: subject='{}'", message.subject(), e);
+        }
+    }
+
+    /** 동기로 보낸다. 실패하면 MailException */
+    @Override
+    public void sendNow(EmailMessage message) {
         SimpleMailMessage mail = new SimpleMailMessage();
         mail.setFrom(mailProperties.from());
         mail.setTo(message.to());
         mail.setSubject(message.subject());
         mail.setText(message.body());
-        try {
-            mailSender.send(mail);
-            log.info("Mail sent: subject='{}'", message.subject());
-        } catch (MailException e) {
-            // 수신자 주소는 개인정보라 로그에 남기지 않는다
-            log.error("Mail send failed: subject='{}'", message.subject(), e);
-        }
+        mailSender.send(mail);
+        log.info("Mail sent: subject='{}'", message.subject());
     }
 }
