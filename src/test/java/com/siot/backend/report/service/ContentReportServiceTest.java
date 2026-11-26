@@ -114,20 +114,29 @@ class ContentReportServiceTest {
     }
 
     @Test
-    @DisplayName("대상은 행사·생활수칙 중 하나: 둘 다 없거나 둘 다 있으면 400, 체크리스트 항목이나 없는 항목은 404")
+    @DisplayName("대상은 행사·안내 항목 중 하나: 둘 다 없거나 둘 다 있으면 400, 없는 항목은 404")
     void rejectsInvalidTargets() {
         assertThatThrownBy(() -> contentReportService.createReport(1L, request(null, null, null, null)))
                 .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT);
         assertThatThrownBy(() -> contentReportService.createReport(1L, request(10L, 5L, null, null)))
                 .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT);
 
-        given(guideRepository.findById(20L)).willReturn(Optional.of(rule(20L, "CHECKLIST")));
-        assertThatThrownBy(() -> contentReportService.createReport(1L, request(20L, null, null, null)))
-                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.GUIDE_NOT_FOUND);
         given(guideRepository.findById(99L)).willReturn(Optional.empty());
         assertThatThrownBy(() -> contentReportService.createReport(1L, request(99L, null, null, null)))
                 .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.GUIDE_NOT_FOUND);
         verify(contentReportRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("체크리스트 항목도 체크리스트 응답의 guideId 로 신고할 수 있다")
+    void createChecklistReport() {
+        given(guideRepository.findById(20L)).willReturn(Optional.of(rule(20L, "CHECKLIST")));
+        given(contentReportRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
+
+        ContentReportResponse res = contentReportService.createReport(1L, request(20L, null, null, null));
+
+        assertThat(res.guideId()).isEqualTo(20L);
+        assertThat(res.targetTitleSnapshot()).isEqualTo("RUL-01");
     }
 
     @Test

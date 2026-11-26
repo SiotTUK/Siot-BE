@@ -136,6 +136,42 @@ final class BillMessages {
         return texts.getOrDefault(language, texts.get(SupportedLanguages.DEFAULT));
     }
 
+    /** 서식 이름 (사용자 언어). 모르는 서식이면 "고지서" */
+    static String documentLabel(String documentType, String language) {
+        Map<String, String> labels = DOCUMENT_LABELS.get(documentType);
+        return pick(labels == null ? DOCUMENT_LABELS.get(BillReading.OTHER) : labels, language);
+    }
+
+    /** 납부 마감 알림 제목 (name, leadDays) */
+    private static final Map<String, String> DUE_REMINDER_TITLE = Map.of(
+            "ko", "[%s] 납부 마감 D-%d 안내",
+            "en", "[%s] Payment due in %d day(s)",
+            "zh", "[%s] 缴纳截止 D-%d 提醒",
+            "vi", "[%s] Còn %d ngày đến hạn nộp");
+
+    /** 납부 마감 알림 본문 (name, dueDate, leadDays, amountText) */
+    private static final Map<String, String> DUE_REMINDER_BODY = Map.of(
+            "ko", "번역해 둔 %s의 납부 마감일(%s)까지 %d일 남았습니다.%s 고지서에 적힌 방법으로 기한 안에 내 주세요.",
+            "en", "The payment deadline for the %s you translated is %s, %d day(s) from now.%s Please pay on time using a method on the bill.",
+            "zh", "您翻译的%s缴纳截止日为%s，还剩%d天。%s请按通知书上的方式按期缴纳。",
+            "vi", "Hạn nộp %s bạn đã dịch là %s, còn %d ngày.%s Hãy nộp đúng hạn theo cách ghi trên giấy báo.");
+
+    /** 금액 문구 (won) — 본문 가운데에 들어간다 */
+    private static final Map<String, String> DUE_REMINDER_AMOUNT = Map.of(
+            "ko", " 납부 금액은 %s원입니다.",
+            "en", " The amount is %s won.",
+            "zh", "缴纳金额为%s韩元。",
+            "vi", " Số tiền là %s won.");
+
+    static String dueReminderTitle(String name, int leadDays, String language) {
+        return pick(DUE_REMINDER_TITLE, language).formatted(name, leadDays);
+    }
+
+    static String dueReminderBody(String name, LocalDate dueDate, int leadDays, Long amount, String language) {
+        String amountText = amount == null ? "" : pick(DUE_REMINDER_AMOUNT, language).formatted(won(amount));
+        return pick(DUE_REMINDER_BODY, language).formatted(name, dueDate, leadDays, amountText);
+    }
+
     static List<String> warningCodes() {
         return List.of(LATE_PENALTY, SEIZURE, STAY_EXTENSION, OVERDUE);
     }

@@ -212,7 +212,10 @@ public class ChecklistService {
                     warningMessage,
                     pageStart,
                     pageEnd,
-                    sourcePages
+                    sourcePages,
+                    guide.getId(),
+                    guide.getCategory(),
+                    ChecklistCategories.label(guide.getCategory(), targetLang)
             ));
         }
 

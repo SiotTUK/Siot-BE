@@ -50,7 +50,7 @@ public class ContentReportService {
     @Transactional
     public ContentReportResponse createReport(Long reporterUserId, ContentReportRequest request) {
         if ((request.eventId() == null) == (request.guideId() == null)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "신고 대상은 행사(eventId) 또는 생활수칙(guideId) 중 하나입니다.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "신고 대상은 행사(eventId) 또는 안내 항목(guideId) 중 하나입니다.");
         }
         String title = request.eventId() != null ? eventTitle(request.eventId()) : ruleTitle(request.guideId());
         String snapshot = request.targetTitleSnapshot() == null || request.targetTitleSnapshot().isBlank()
@@ -77,10 +77,10 @@ public class ContentReportService {
         return eventTranslationRepository.findOriginal(event.getId()).map(EventTranslation::getTitle).orElse(null);
     }
 
-    /** 생활수칙(RULE)의 한국어 제목. 없거나 지웠거나 생활수칙이 아니면 404 */
+    /** 안내 항목(생활수칙·체크리스트·생활 변화 할 일)의 한국어 제목. 없거나 지웠으면 404 */
     private String ruleTitle(Long guideId) {
         Guide guide = guideRepository.findById(guideId)
-                .filter(found -> "RULE".equals(found.getKind()) && !found.isDeleted())
+                .filter(found -> !found.isDeleted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.GUIDE_NOT_FOUND));
         return guideTranslationRepository.findByGuideIdAndLanguage(guide.getId(), "ko")
                 .map(GuideTranslation::getTitle).orElse(guide.getCode());

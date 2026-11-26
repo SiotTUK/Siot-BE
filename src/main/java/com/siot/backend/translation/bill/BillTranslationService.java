@@ -29,7 +29,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * RUL-07 고지서 사진 번역. 사진은 메모리에서만 다루고 처리 후 바로 지운다 (저장·알림 없음).
+ * RUL-07 고지서 사진 번역. 사진은 메모리에서만 다루고 처리 후 바로 지운다.
+ * 결과 저장(최근 번역)과 납부 마감 알림은 {@link BillTranslationHistoryService}·{@link BillDueNotifier} 가 맡는다.
  * 로그에는 요청 id, 크기, 형식, 처리 시간, 결과 상태만 남긴다 (사진·글자·금액·이름·주소·납세번호는 남기지 않는다).
  */
 @Slf4j
@@ -113,7 +114,7 @@ public class BillTranslationService {
             return new BillTranslationResponse(language, false,
                     new BillTranslationResponse.Retake(reason, BillMessages.retake(reason, language)),
                     null, null, null, null, null, null, null, null, null, List.of(), null, List.of(),
-                    null, null, List.of(), List.of(), firstPageOnly, pageCount);
+                    null, null, List.of(), List.of(), firstPageOnly, pageCount, null, false, null);
         }
         boolean aiSummary = BillSummaryCheck.consistent(reading);
         BillReading.Summary summary = aiSummary ? reading.summary() : BillMessages.summary(reading, language);
@@ -143,7 +144,10 @@ public class BillTranslationService {
                 warnings,
                 guides(BillGuideLinks.codes(reading.taxType()), language),
                 firstPageOnly,
-                pageCount);
+                pageCount,
+                null,
+                false,
+                null);
     }
 
     private String language(Long userId, String requested) {

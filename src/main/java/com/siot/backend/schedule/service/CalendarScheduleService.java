@@ -250,7 +250,8 @@ public class CalendarScheduleService {
                 law,
                 penalty,
                 contact,
-                sourcePages
+                sourcePages,
+                ScheduleResponse.dDay(cs.getStartsOn(), cs.getEndsOn(), LocalDate.now(ClockConfig.KST))
         );
     }
 

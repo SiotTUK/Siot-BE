@@ -1,8 +1,10 @@
 package com.siot.backend.schedule.dto;
 
+import com.siot.backend.global.config.ClockConfig;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 
 @Schema(description = "생활 달력 일정 응답")
 public record ScheduleResponse(
@@ -25,12 +27,28 @@ public record ScheduleResponse(
         @Schema(description = "개인 맞춤 일정 여부 (체류만료 등)")
         boolean personal,
         @Schema(description = "강조 표시 여부. 체류 만료 30일 전부터 STAY_EXPIRY·STAY_EXTENSION_START 가 true (CAL-04)")
-        boolean highlighted
+        boolean highlighted,
+        @Schema(description = "마감(종료일, 없으면 시작일)까지 남은 일수 (한국 시간 오늘 기준). 음수: 지남, 0: 오늘, 양수: 남음. "
+                + "날짜가 없으면 null", nullable = true, example = "5")
+        Long dDay
 ) {
+
+    /** D-day 를 오늘(한국 시간) 기준으로 계산한다 */
+    public ScheduleResponse(Long scheduleId, Long guideId, String kind, String title, LocalDate startsOn, LocalDate endsOn,
+                            String targetDescription, String sourceUrl, boolean personal, boolean highlighted) {
+        this(scheduleId, guideId, kind, title, startsOn, endsOn, targetDescription, sourceUrl, personal, highlighted,
+                dDay(startsOn, endsOn, LocalDate.now(ClockConfig.KST)));
+    }
 
     /** 강조하지 않는 일정 */
     public ScheduleResponse(Long scheduleId, Long guideId, String kind, String title, LocalDate startsOn, LocalDate endsOn,
                             String targetDescription, String sourceUrl, boolean personal) {
         this(scheduleId, guideId, kind, title, startsOn, endsOn, targetDescription, sourceUrl, personal, false);
+    }
+
+    /** 마감(종료일, 없으면 시작일)까지 남은 일수. 날짜가 없으면 null */
+    public static Long dDay(LocalDate startsOn, LocalDate endsOn, LocalDate today) {
+        LocalDate due = endsOn != null ? endsOn : startsOn;
+        return due == null ? null : ChronoUnit.DAYS.between(today, due);
     }
 }

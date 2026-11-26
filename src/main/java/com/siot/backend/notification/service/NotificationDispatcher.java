@@ -6,6 +6,7 @@ import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.notification.domain.EmailDeliveryStatus;
 import com.siot.backend.notification.domain.Notification;
+import com.siot.backend.notification.repository.NotificationPreferenceRepository;
 import com.siot.backend.notification.repository.NotificationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,30 @@ public class NotificationDispatcher {
     private final NotificationRepository notificationRepository;
     private final AppUserRepository appUserRepository;
     private final EmailSender emailSender;
+    private final NotificationPreferenceRepository preferenceRepository;
+
+    /**
+     * 알림 종류(notification.kind) → 수신 설정 종류(notification_preference.kind).
+     * 외국인등록·체류지 변경 신고는 CHECKLIST_DEADLINE, 고지서 납부 마감(RUL-07)은 TAX 설정을 따른다.
+     */
+    static String preferenceKind(String notificationKind) {
+        if (notificationKind == null) {
+            return null;
+        }
+        return switch (notificationKind) {
+            case "REGISTRATION", "RESIDENCE_REPORT" -> "CHECKLIST_DEADLINE";
+            case "BILL_DUE" -> "TAX";
+            default -> notificationKind;
+        };
+    }
+
+    /** 발송 시점의 설정을 본다: 알림을 만든 뒤 이메일 수신을 꺼도 아직 안 보낸 메일은 보내지 않는다 */
+    private boolean isEmailDisabled(Notification notification) {
+        String kind = preferenceKind(notification.getKind());
+        return kind != null && preferenceRepository.findByKindAndUserId(kind, notification.getUserId())
+                .map(pref -> !pref.isEmailEnabled())
+                .orElse(false);
+    }
 
     /**
      * 예약 시각이 도달한 인앱 및 이메일 알림을 일괄 처리하여 발송합니다.
@@ -47,6 +72,10 @@ public class NotificationDispatcher {
         List<Notification> pendingEmails = notificationRepository.findPendingEmailNotifications(EmailDeliveryStatus.PENDING, now, PageRequest.of(0, 50));
         for (Notification notification : pendingEmails) {
             try {
+                if (isEmailDisabled(notification)) {
+                    notification.recordEmailSkipped();
+                    continue;
+                }
                 AppUser user = appUserRepository.findById(notification.getUserId()).orElse(null);
                 if (user != null && user.hasVerifiedEmail()) {
                     EmailMessage message = new EmailMessage(

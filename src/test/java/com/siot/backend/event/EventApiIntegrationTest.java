@@ -163,6 +163,29 @@ class EventApiIntegrationTest {
         mockMvc.perform(get("/api/events")).andExpect(status().isUnauthorized());
     }
 
+    /** EVE-10 정렬: DATE(기본) / DEADLINE(남은 신청 마감 임박 순 → 나머지 날짜순) / LATEST(최근 등록 순) */
+    @Test
+    void sortsByDeadlineAndLatest() throws Exception {
+        long first = event("GGC", "s1", "먼저 시작", "2026-11-22", "2026-11-22", EventRegion.SIHEUNG);
+        long second = event("GGC", "s2", "다음 시작", "2026-11-25", "2026-11-25", EventRegion.SIHEUNG);
+        long third = event("GGC", "s3", "나중 시작", "2026-12-10", "2026-12-10", EventRegion.SIHEUNG);
+        // 지금(2026-11-20 12:00 KST) 기준: third 마감이 가장 가깝고, second 마감은 이미 지났다
+        jdbc.update("UPDATE event SET application_deadline = '2026-11-21T18:00:00+09:00' WHERE event_id = ?", third);
+        jdbc.update("UPDATE event SET application_deadline = '2026-11-19T18:00:00+09:00' WHERE event_id = ?", second);
+        jdbc.update("UPDATE event SET created_at = now() - interval '3 days' WHERE event_id = ?", first);
+        jdbc.update("UPDATE event SET created_at = now() - interval '1 days' WHERE event_id = ?", second);
+        jdbc.update("UPDATE event SET created_at = now() - interval '2 days' WHERE event_id = ?", third);
+
+        mockMvc.perform(get("/api/events").param("sort", "DATE").cookie(member))
+                .andExpect(jsonPath("$.data.content[*].eventId").value(contains(ids(first, second, third))));
+        mockMvc.perform(get("/api/events").param("sort", "deadline").cookie(member))
+                .andExpect(jsonPath("$.data.content[*].eventId").value(contains(ids(third, first, second))));
+        mockMvc.perform(get("/api/events").param("sort", "LATEST").cookie(member))
+                .andExpect(jsonPath("$.data.content[*].eventId").value(contains(ids(second, third, first))));
+        mockMvc.perform(get("/api/events").param("sort", "POPULAR").cookie(member))
+                .andExpect(status().isBadRequest());
+    }
+
     /** EVE-10 카테고리: 수집할 때 출처 분류로 정하고, 목록·달력은 카테고리로 거르고, 관리자가 고치면 수집이 덮어쓰지 않는다 */
     @Test
     void categoryComesFromSourceFiltersListsAndSurvivesRecollectionWhenAdminEdits() throws Exception {

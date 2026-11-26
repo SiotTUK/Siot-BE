@@ -56,6 +56,9 @@ public record TaxDetailResponse(
         String contact,
 
         @Schema(description = "출처 안내책자 쪽수", example = "p.45")
-        String sourcePages
+        String sourcePages,
+
+        @Schema(description = "납부 마감일까지 남은 일수 (한국 시간 오늘 기준). 음수: 지남, 0: 오늘", nullable = true, example = "5")
+        Long dDay
 ) {
 }

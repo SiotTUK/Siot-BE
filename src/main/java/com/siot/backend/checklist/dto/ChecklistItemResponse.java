@@ -75,6 +75,14 @@ public record ChecklistItemResponse(
         @Schema(description = "CHK-06 출처 안내책자 종료 쪽수", example = "14")
         Integer pageEnd,
         @Schema(description = "CHK-06 출처 쪽수 표기", example = "p.12~14")
-        String sourcePages
+        String sourcePages,
+
+        @Schema(description = "항목 ID. COM-01 오류 신고(POST /api/reports)의 guideId 로 보낸다", example = "1")
+        Long guideId,
+        @Schema(description = "분류 코드: IMMIGRATION / HEALTH_INSURANCE / FAMILY / TAX / EDUCATION / SETTLING / CAR / EMPLOYMENT",
+                nullable = true, example = "IMMIGRATION")
+        String category,
+        @Schema(description = "분류 표시 이름 (요청 언어)", nullable = true, example = "출입국·체류")
+        String categoryLabel
 ) {
 }

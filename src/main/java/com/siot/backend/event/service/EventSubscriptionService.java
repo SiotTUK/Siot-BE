@@ -33,6 +33,17 @@ public class EventSubscriptionService {
      */
     @Transactional
     public EventSubscriptionResponse subscribe(Long userId, Long eventId) {
+        return subscribe(userId, eventId, null);
+    }
+
+    /**
+     * @param leadDays 행사 시작 며칠 전에 알릴지 (1·3·7). null 이면 새 신청은 1, 기존 신청은 그대로
+     */
+    @Transactional
+    public EventSubscriptionResponse subscribe(Long userId, Long eventId, Integer leadDays) {
+        if (leadDays != null && !EventSubscription.LEAD_DAYS_OPTIONS.contains(leadDays)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "leadDays 는 1, 3, 7 중 하나입니다.");
+        }
         Event event = eventRepository.findById(eventId)
                 .filter(found -> !found.isDeleted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.EVENT_NOT_FOUND));
@@ -47,6 +58,7 @@ public class EventSubscriptionService {
                     return existing;
                 })
                 .orElseGet(() -> subscriptionRepository.save(EventSubscription.of(userId, eventId, true)));
+        subscription.changeLeadDays(leadDays);
         // 신청할 때 본 일정이 기준이다. 이후 바뀌면 변경 알림을 보낸다 (NTF-02)
         subscription.recordSchedule(event.scheduleSnapshot());
 
@@ -77,6 +89,14 @@ public class EventSubscriptionService {
      */
     public boolean isSubscribed(Long userId, Long eventId) {
         return subscriptionRepository.existsByUserIdAndEventIdAndEnabledTrue(userId, eventId);
+    }
+
+    /** 신청한 알림 시점 (신청하지 않았거나 해제했으면 null) */
+    public Integer leadDays(Long userId, Long eventId) {
+        return subscriptionRepository.findByUserIdAndEventId(userId, eventId)
+                .filter(EventSubscription::isEnabled)
+                .map(EventSubscription::getLeadDays)
+                .orElse(null);
     }
 
     /**

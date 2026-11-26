@@ -7,5 +7,7 @@ package com.siot.backend.notification.domain;
 public enum EmailDeliveryStatus {
     PENDING,
     SENT,
-    FAILED
+    FAILED,
+    /** 회원이 그 알림 종류의 이메일 수신을 꺼서 보내지 않음 (NTF-03 emailEnabled=false) */
+    SKIPPED
 }

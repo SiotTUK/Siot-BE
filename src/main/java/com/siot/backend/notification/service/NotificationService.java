@@ -152,6 +152,7 @@ public class NotificationService {
                 .orElseGet(() -> preferenceRepository.save(
                         NotificationPreference.of(kind, userId, request.enabled(), leadDays)
                 ));
+        preference.updateEmailEnabled(request.emailEnabled());
 
         return NotificationPreferenceResponse.from(preference);
     }

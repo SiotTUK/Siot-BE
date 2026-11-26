@@ -49,7 +49,11 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     // ---------------------------------------------------------------- 회원 조회 (EVE-03~05, EVE-10)
     // 종료일이 없으면 시작일, 시작일이 없으면 종료일로 본다 (둘 중 하나는 늘 있다)
 
-    /** 진행 예정·진행 중 (종료일 >= today), 기간 [from, to] 와 겹치는 것. 시작일 가까운 순 */
+    /**
+     * 진행 예정·진행 중 (종료일 >= today), 기간 [from, to] 와 겹치는 것.
+     * sort: DATE = 시작일 가까운 순, DEADLINE = 신청 마감(now 이후) 임박 순 → 마감 없거나 지난 행사는 뒤에 시작일 순,
+     * LATEST = 최근 등록 순
+     */
     @Query(value = """
             SELECT e FROM Event e
             WHERE e.status = 'ACTIVE'
@@ -58,7 +62,9 @@ public interface EventRepository extends JpaRepository<Event, Long> {
               AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
-            ORDER BY COALESCE(e.startsOn, e.endsOn) ASC, e.id ASC
+            ORDER BY CASE WHEN :sort = 'DEADLINE' AND e.applicationDeadline >= :now THEN e.applicationDeadline END ASC NULLS LAST,
+                     CASE WHEN :sort = 'LATEST' THEN e.createdAt END DESC NULLS LAST,
+                     COALESCE(e.startsOn, e.endsOn) ASC, e.id ASC
             """,
             countQuery = """
             SELECT count(e) FROM Event e
@@ -72,9 +78,10 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     Page<Event> findUpcoming(@Param("today") LocalDate today, @Param("anyRegion") boolean anyRegion,
                              @Param("region") String region,
                              @Param("anyCategory") boolean anyCategory, @Param("category") EventCategory category, @Param("from") LocalDate from,
-                             @Param("to") LocalDate to, Pageable pageable);
+                             @Param("to") LocalDate to, @Param("sort") String sort, @Param("now") OffsetDateTime now,
+                             Pageable pageable);
 
-    /** 지난 행사 (종료일 < today), 기간 [from, to] 와 겹치는 것. 최근에 끝난 순 */
+    /** 지난 행사 (종료일 < today), 기간 [from, to] 와 겹치는 것. sort: LATEST = 최근 등록 순, 그 밖 = 최근에 끝난 순 */
     @Query(value = """
             SELECT e FROM Event e
             WHERE e.status = 'ACTIVE'
@@ -83,7 +90,8 @@ public interface EventRepository extends JpaRepository<Event, Long> {
               AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
-            ORDER BY COALESCE(e.endsOn, e.startsOn) DESC, COALESCE(e.startsOn, e.endsOn) DESC, e.id DESC
+            ORDER BY CASE WHEN :sort = 'LATEST' THEN e.createdAt END DESC NULLS LAST,
+                     COALESCE(e.endsOn, e.startsOn) DESC, COALESCE(e.startsOn, e.endsOn) DESC, e.id DESC
             """,
             countQuery = """
             SELECT count(e) FROM Event e
@@ -97,7 +105,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     Page<Event> findPast(@Param("today") LocalDate today, @Param("anyRegion") boolean anyRegion,
                          @Param("region") String region,
                          @Param("anyCategory") boolean anyCategory, @Param("category") EventCategory category, @Param("from") LocalDate from,
-                         @Param("to") LocalDate to, Pageable pageable);
+                         @Param("to") LocalDate to, @Param("sort") String sort, Pageable pageable);
 
     /** 기간 [from, to] 에 하루라도 걸치는 보이는 행사 (EVE-03 달력). 시작일 순. anyCategory=false 면 그 카테고리만 */
     @Query("""

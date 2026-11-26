@@ -30,9 +30,23 @@ public class EventSubscription {
     @Column(name = "schedule_snapshot", length = 100)
     private String scheduleSnapshot;
 
+    /** NTF-02 행사 시작 며칠 전에 알릴지: 1(하루 전, 기본) / 3 / 7 ({@link #LEAD_DAYS_OPTIONS}) */
+    @Column(name = "lead_days", nullable = false)
+    private int leadDays = DEFAULT_LEAD_DAYS;
+
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    public static final int DEFAULT_LEAD_DAYS = 1;
+    public static final java.util.List<Integer> LEAD_DAYS_OPTIONS = java.util.List.of(1, 3, 7);
+
+    /** 알림 시점 변경. null 이면 그대로 */
+    public void changeLeadDays(Integer leadDays) {
+        if (leadDays != null) {
+            this.leadDays = leadDays;
+        }
+    }
 
     public static EventSubscription of(Long userId, Long eventId, boolean enabled) {
         EventSubscription subscription = new EventSubscription();

@@ -78,6 +78,8 @@ public class NotificationScheduler {
     private static final List<Integer> TAX_LEAD_DAYS = List.of(7, 1);
     /** NTF-02: 시각을 모르는 행사의 시작 전날 알림은 이 시각(한국 시간) 이후에 보낸다 (자정에 보내지 않게) */
     private static final int DATE_ONLY_EVENT_NOTIFY_HOUR = 9;
+    /** NTF-02 행사 시작 알림을 고를 수 있는 가장 이른 시점 (EventSubscription.LEAD_DAYS_OPTIONS 최댓값) */
+    static final int EVENT_MAX_LEAD_DAYS = 7;
 
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
@@ -303,15 +305,19 @@ public class NotificationScheduler {
         ZonedDateTime now = ZonedDateTime.now(clock);
         LocalDate today = now.toLocalDate();
 
-        // 1. 행사 시작 24시간 전
-        for (Event event : eventRepository.findByStartsOnBetweenAndStatus(today, today.plusDays(1), "ACTIVE")) {
-            if (!isStartAlertDue(event, now)) {
-                continue;
-            }
+        // 1. 행사 시작 전: 신청한 시점(leadDays)마다. 1 = 시작 24시간 전, 3·7 = 시작 N일 전 오전 9시 이후
+        for (Event event : eventRepository.findByStartsOnBetweenAndStatus(today, today.plusDays(EVENT_MAX_LEAD_DAYS), "ACTIVE")) {
             String startText = event.getStartsAt() != null && !event.isTimeUnknown()
                     ? event.getStartsOn() + " " + event.getStartsAt().format(TIME)
                     : event.getStartsOn().toString();
-            notifyEventSubscribers(event, "event_start:%d:%d:" + event.getStartsOn(),
+            boolean dayBeforeDue = isStartAlertDue(event, now);
+            notifyEventSubscribers(event,
+                    sub -> sub.getLeadDays() <= EventSubscription.DEFAULT_LEAD_DAYS ? dayBeforeDue
+                            : event.getStartsOn().equals(today.plusDays(sub.getLeadDays()))
+                            && now.getHour() >= DATE_ONLY_EVENT_NOTIFY_HOUR,
+                    sub -> sub.getLeadDays() <= EventSubscription.DEFAULT_LEAD_DAYS
+                            ? "event_start:%d:%d:" + event.getStartsOn()
+                            : "event_start:%d:%d:" + event.getStartsOn() + ":d" + sub.getLeadDays(),
                     (m, title) -> String.format(m.eventStartTitle(), title),
                     (m, title) -> String.format(m.eventStartBody(), title, startText));
         }
@@ -407,12 +413,26 @@ public class NotificationScheduler {
     private void notifyEventSubscribers(Event event, String sourceKeyFormat,
                                         BiFunction<NotificationMessages, String, String> titleOf,
                                         BiFunction<NotificationMessages, String, String> bodyOf) {
+        notifyEventSubscribers(event, sub -> true, sub -> sourceKeyFormat, titleOf, bodyOf);
+    }
+
+    /**
+     * @param due             이 신청자에게 지금 보낼지 (알림 시점 leadDays 로 거른다)
+     * @param sourceKeyFormat 신청별 sourceKey 형식
+     */
+    private void notifyEventSubscribers(Event event, java.util.function.Predicate<EventSubscription> due,
+                                        Function<EventSubscription, String> sourceKeyFormat,
+                                        BiFunction<NotificationMessages, String, String> titleOf,
+                                        BiFunction<NotificationMessages, String, String> bodyOf) {
         for (EventSubscription sub : eventSubscriptionRepository.findByEventIdAndEnabledTrue(event.getId())) {
             Long userId = sub.getUserId();
+            if (!due.test(sub)) {
+                continue;
+            }
             if (isPreferenceDisabled(userId, "EVENT")) {
                 continue;
             }
-            String sourceKey = String.format(sourceKeyFormat, event.getId(), userId);
+            String sourceKey = String.format(sourceKeyFormat.apply(sub), event.getId(), userId);
             if (notificationRepository.existsByUserIdAndSourceKey(userId, sourceKey)) {
                 continue;
             }

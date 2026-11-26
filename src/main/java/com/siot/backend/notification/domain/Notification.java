@@ -37,6 +37,10 @@ public class Notification {
     @Column(name = "document_version_id")
     private Long documentVersionId;
 
+    /** RUL-07 납부 마감 알림의 고지서 번역 (지우면 null) */
+    @Column(name = "bill_translation_id")
+    private Long billTranslationId;
+
     @Column(name = "source_key")
     private String sourceKey;
 
@@ -113,6 +117,12 @@ public class Notification {
         return notification;
     }
 
+    /** RUL-07 납부 마감 알림: 누르면 이 고지서 번역으로 간다. 다른 대상(행사·항목·일정·문서)과 같이 쓰지 않는다 */
+    public Notification linkBillTranslation(Long billTranslationId) {
+        this.billTranslationId = billTranslationId;
+        return this;
+    }
+
     public void markRead() {
         this.readAt = OffsetDateTime.now();
     }
@@ -131,6 +141,11 @@ public class Notification {
     public void recordEmailSuccess() {
         this.emailStatus = EmailDeliveryStatus.SENT;
         this.emailSentAt = OffsetDateTime.now();
+    }
+
+    /** 회원이 이 종류의 이메일 수신을 꺼서 보내지 않았다 */
+    public void recordEmailSkipped() {
+        this.emailStatus = EmailDeliveryStatus.SKIPPED;
     }
 
     public void recordEmailFailure(String error) {

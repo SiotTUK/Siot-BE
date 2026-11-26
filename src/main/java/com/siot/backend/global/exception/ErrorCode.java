@@ -62,6 +62,8 @@ public enum ErrorCode {
     BILL_FILE_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "파일이 너무 큽니다. 10MB 이하로 올려 주세요."),
     BILL_TRANSLATION_TOO_FREQUENT(HttpStatus.TOO_MANY_REQUESTS, "고지서 번역 요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요."),
     BILL_TRANSLATION_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "고지서 번역 횟수를 모두 사용했습니다. 1시간 뒤에 다시 시도해 주세요."),
+    BILL_TRANSLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "번역 기록을 찾을 수 없습니다."),
+    BILL_REMINDER_UNAVAILABLE(HttpStatus.BAD_REQUEST, "납부 기한을 읽지 못했거나 기한이 지난 고지서는 마감 알림을 받을 수 없습니다."),
 
     // ---- AI 공통 ----
     AI_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "지금은 AI 기능을 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."),

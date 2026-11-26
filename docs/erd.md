@@ -196,3 +196,12 @@ en / zh / vi 문구와 장소·준비물·과태료 등 상세는 관리자 화�
 | NTF-07 안내 변경 표시 | `guide.notice_changed_at` — 실제 안내 내용이 바뀐 시각. `updated_at` 은 오타 수정에도 바뀌므로 구분. NULL = 등록 후 바뀐 적 없음 |
 
 반복되는 일(세금 회차·생활 변화 재등록)의 완료 기록은 지우지 않고 `checklist_progress.period_key` 회차별로 쌓는 방식(A)을 유지한다.
+
+## 고지서 최근 번역·마감 알림, 행사 알림 시점, 이메일 수신 설정 (2026_11_26_1300, 1400)
+
+| 요구사항 | DB 변경 |
+|---|---|
+| RUL-07 최근 번역 저장 | `bill_translation` — 사진은 저장하지 않고 개인정보를 가린 결과 JSON(`result`)과 목록용 값(서식·기관·세목·금액·기한)만. 회원당 최근 10개 (기한 전 마감 알림이 켜진 것은 남김). 회원 삭제 시 CASCADE |
+| RUL-07 납부 마감 알림 | `bill_translation.reminder` (기한이 있어야 true, CHECK). 매일 9시 D-7·D-1 에 `notification.kind = BILL_DUE`, `notification.bill_translation_id` (번역 삭제 시 SET NULL, 알림 대상 하나 CHECK 에 포함). 설정은 TAX 를 따른다 |
+| NTF-02 행사 알림 받을 시점 | `event_subscription.lead_days` (1: 24시간 전(기본) / 3 / 7: 그날 오전 9시) |
+| NTF-03·05 이메일 수신 설정 | `notification_preference.email_enabled` (기본 true). 발송 시점에 보고 꺼져 있으면 `notification.email_status = SKIPPED` |

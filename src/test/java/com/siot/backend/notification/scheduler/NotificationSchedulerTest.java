@@ -431,7 +431,7 @@ class NotificationSchedulerTest {
     void eventStart_within24Hours() {
         subscribed();
         Event event = event(TODAY.plusDays(1), java.time.LocalTime.of(14, 0));
-        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(1), "ACTIVE")).willReturn(List.of(event));
+        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(NotificationScheduler.EVENT_MAX_LEAD_DAYS), "ACTIVE")).willReturn(List.of(event));
 
         schedulerAt(TODAY.atTime(14, 0)).generateEventNotifications();
 
@@ -446,10 +446,37 @@ class NotificationSchedulerTest {
     void eventStart_moreThan24Hours() {
         subscribed();
         Event event = event(TODAY.plusDays(1), java.time.LocalTime.of(14, 0));
-        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(1), "ACTIVE")).willReturn(List.of(event));
+        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(NotificationScheduler.EVENT_MAX_LEAD_DAYS), "ACTIVE")).willReturn(List.of(event));
 
         schedulerAt(TODAY.atTime(13, 0)).generateEventNotifications();
 
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("알림 시점을 7일 전으로 고른 회원은 시작 7일 전 오전 9시 이후에 받고, 하루 전 알림은 받지 않는다")
+    void eventStart_sevenDaysBefore() {
+        subscribed();
+        EventSubscription sevenDays = EventSubscription.of(USER_ID, EVENT_ID, true);
+        sevenDays.changeLeadDays(7);
+        given(eventSubscriptionRepository.findByEventIdAndEnabledTrue(EVENT_ID)).willReturn(List.of(sevenDays));
+        Event inSevenDays = event(TODAY.plusDays(7), java.time.LocalTime.of(14, 0));
+        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(NotificationScheduler.EVENT_MAX_LEAD_DAYS), "ACTIVE"))
+                .willReturn(List.of(inSevenDays));
+
+        schedulerAt(TODAY.atTime(8, 0)).generateEventNotifications();
+        verify(notificationRepository, never()).save(any());
+
+        schedulerAt(TODAY.atTime(9, 0)).generateEventNotifications();
+        Notification saved = savedNotification();
+        assertThat(saved.getSourceKey()).endsWith(":d7");
+
+        // 하루 전 (시작 24시간 안) 이어도 7일 전을 고른 회원에게는 보내지 않는다
+        org.mockito.Mockito.clearInvocations(notificationRepository);
+        Event tomorrow = event(TODAY.plusDays(1), java.time.LocalTime.of(14, 0));
+        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(NotificationScheduler.EVENT_MAX_LEAD_DAYS), "ACTIVE"))
+                .willReturn(List.of(tomorrow));
+        schedulerAt(TODAY.atTime(15, 0)).generateEventNotifications();
         verify(notificationRepository, never()).save(any());
     }
 
@@ -458,7 +485,7 @@ class NotificationSchedulerTest {
     void eventStart_dateOnly() {
         subscribed();
         Event event = event(TODAY.plusDays(1), null);
-        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(1), "ACTIVE")).willReturn(List.of(event));
+        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(NotificationScheduler.EVENT_MAX_LEAD_DAYS), "ACTIVE")).willReturn(List.of(event));
 
         schedulerAt(TODAY.atTime(0, 0)).generateEventNotifications();
         verify(notificationRepository, never()).save(any());

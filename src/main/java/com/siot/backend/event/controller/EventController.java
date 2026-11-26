@@ -57,10 +57,14 @@ public class EventController {
             @Parameter(description = "기간 끝 (yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "true 면 지난 행사") @RequestParam(defaultValue = "false") boolean past,
+            @Parameter(description = "정렬. DATE(기본): 진행 예정은 시작일 가까운 순, 지난 행사는 최근에 끝난 순 / "
+                    + "DEADLINE: 신청 마감이 남은 행사를 마감 임박 순으로 먼저, 나머지는 날짜순 / LATEST: 최근 등록 순",
+                    schema = @Schema(allowableValues = {"DATE", "DEADLINE", "LATEST"}, defaultValue = "DATE"))
+            @RequestParam(required = false) String sort,
             @Parameter(description = "페이지 (0부터)") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "페이지 크기 (최대 100)") @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(ApiResponse.of(
-                eventQueryService.list(principal.getId(), region, category, from, to, past, page, size)));
+                eventQueryService.list(principal.getId(), region, category, from, to, past, sort, page, size)));
     }
 
     @Operation(summary = "EVE-05 행사 추천",

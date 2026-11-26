@@ -7,12 +7,12 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * COM-01 콘텐츠 오류 신고. 대상은 행사(eventId) 또는 생활수칙(guideId) 중 하나.
+ * COM-01 콘텐츠 오류 신고. 대상은 행사(eventId) 또는 안내 항목(guideId: 생활수칙·체크리스트·생활 변화 할 일) 중 하나.
  * 문제가 있는 문장을 인용하고 사유(번역 오류 / 내용 오류 / 기타)를 고른다. 화면 언어를 함께 저장한다.
  */
 @Schema(description = "콘텐츠 오류 신고 접수 요청 (COM-01). eventId 와 guideId 중 하나만 보낸다")
 public record ContentReportRequest(
-        @Schema(description = "생활수칙 항목 ID (행사 신고면 null)", nullable = true, example = "1")
+        @Schema(description = "안내 항목 ID: 생활수칙·체크리스트·생활 변화 할 일 (체크리스트 응답의 guideId). 행사 신고면 null", nullable = true, example = "1")
         Long guideId,
 
         @Schema(description = "행사 ID (생활수칙 신고면 null)", nullable = true, example = "null")

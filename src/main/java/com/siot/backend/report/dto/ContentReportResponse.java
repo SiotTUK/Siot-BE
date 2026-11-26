@@ -16,9 +16,9 @@ public record ContentReportResponse(
         @Schema(description = "행사 ID", example = "null")
         Long eventId,
 
-        @Schema(description = "생활수칙 항목 ID", example = "1")
+        @Schema(description = "안내 항목 ID (생활수칙·체크리스트·생활 변화 할 일)", example = "1")
         Long guideId,
-        @Schema(description = "신고 대상 종류: EVENT(행사) / RULE(생활수칙). 대상을 지웠으면 null (제목은 targetTitleSnapshot)",
+        @Schema(description = "신고 대상 종류: EVENT(행사) / RULE(안내 항목: 생활수칙·체크리스트·생활 변화 할 일, guideId 로 구분). 대상을 지웠으면 null (제목은 targetTitleSnapshot)",
                 nullable = true, example = "RULE")
         String targetType,
 

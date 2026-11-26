@@ -3,9 +3,10 @@ package com.siot.backend.translation.bill;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
-/** RUL-07 고지서 사진 번역 결과. 저장하지 않는다 */
+/** RUL-07 고지서 사진 번역 결과. 읽을 수 있었던 결과는 최근 번역으로 저장한다 (사진은 저장하지 않음) */
 @Schema(description = "고지서 사진 번역 결과. readable=false 면 retake 만 채워진다")
 public record BillTranslationResponse(
         @Schema(description = "요약·경고 언어 (ko/en/zh/vi)", example = "en") String language,
@@ -30,8 +31,18 @@ public record BillTranslationResponse(
         @Schema(description = "주의 사항 (사용자 언어)") List<Warning> warnings,
         @Schema(description = "관련 안내 항목. 어느 화면으로 연결할지는 프론트가 정한다") List<RelatedGuide> relatedGuides,
         @Schema(description = "PDF 가 여러 쪽이라 첫 쪽만 읽었는지") boolean firstPageOnly,
-        @Schema(description = "PDF 쪽 수 (사진은 1)", example = "1") int pageCount
+        @Schema(description = "PDF 쪽 수 (사진은 1)", example = "1") int pageCount,
+        @Schema(description = "최근 번역 ID. readable=false 면 저장하지 않아 null", nullable = true, example = "12") Long id,
+        @Schema(description = "납부 마감 알림(D-7·D-1)을 켰는지") boolean reminder,
+        @Schema(description = "저장 시각 (readable=false 면 null)", nullable = true) OffsetDateTime savedAt
 ) {
+
+    /** 저장 정보(id·reminder·savedAt)를 채운 사본 */
+    public BillTranslationResponse withSaved(Long id, boolean reminder, OffsetDateTime savedAt) {
+        return new BillTranslationResponse(language, readable, retake, documentType, issuer, taxType, taxObject, amount,
+                dueDate, lateAmount, lateDueDate, penalty, paymentMethods, contact, originalLines, summary,
+                summarySource, warnings, relatedGuides, firstPageOnly, pageCount, id, reminder, savedAt);
+    }
 
     @Schema(description = "다시 찍기 안내")
     public record Retake(

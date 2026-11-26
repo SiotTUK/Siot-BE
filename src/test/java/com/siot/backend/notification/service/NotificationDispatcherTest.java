@@ -6,6 +6,8 @@ import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.notification.domain.EmailDeliveryStatus;
 import com.siot.backend.notification.domain.Notification;
+import com.siot.backend.notification.domain.NotificationPreference;
+import com.siot.backend.notification.repository.NotificationPreferenceRepository;
 import com.siot.backend.notification.repository.NotificationRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +40,8 @@ class NotificationDispatcherTest {
     private AppUserRepository appUserRepository;
     @Mock
     private EmailSender emailSender;
+    @Mock
+    private NotificationPreferenceRepository preferenceRepository;
 
     @InjectMocks
     private NotificationDispatcher dispatcher;
@@ -82,5 +86,30 @@ class NotificationDispatcherTest {
 
         verify(emailSender).sendNow(any(EmailMessage.class));
         assertThat(notification.getEmailStatus()).isEqualTo(EmailDeliveryStatus.SENT);
+    }
+
+    @Test
+    void skipsEmailWhenMemberTurnedEmailOffForThatKind() {
+        Notification notification = Notification.create(1L, "BILL_DUE", null, null, null, null, "k", 1,
+                OffsetDateTime.now().minusMinutes(1), "ko", "제목", "본문", EmailDeliveryStatus.PENDING);
+        given(notificationRepository.findPendingNotifications(anyString(), any(), any())).willReturn(List.of());
+        given(notificationRepository.findPendingEmailNotifications(eq(EmailDeliveryStatus.PENDING), any(), any()))
+                .willReturn(List.of(notification));
+        NotificationPreference tax = NotificationPreference.of("TAX", 1L, true, 7);
+        tax.updateEmailEnabled(false);
+        given(preferenceRepository.findByKindAndUserId("TAX", 1L)).willReturn(Optional.of(tax));
+
+        dispatcher.dispatchPendingNotifications();
+
+        verify(emailSender, never()).sendNow(any());
+        assertThat(notification.getEmailStatus()).isEqualTo(EmailDeliveryStatus.SKIPPED);
+    }
+
+    @Test
+    void mapsNotificationKindsToPreferenceKinds() {
+        assertThat(NotificationDispatcher.preferenceKind("REGISTRATION")).isEqualTo("CHECKLIST_DEADLINE");
+        assertThat(NotificationDispatcher.preferenceKind("RESIDENCE_REPORT")).isEqualTo("CHECKLIST_DEADLINE");
+        assertThat(NotificationDispatcher.preferenceKind("BILL_DUE")).isEqualTo("TAX");
+        assertThat(NotificationDispatcher.preferenceKind("EVENT")).isEqualTo("EVENT");
     }
 }

@@ -17,14 +17,18 @@ public record EventSubscriptionResponse(
         boolean enabled,
 
         @Schema(description = "신청/변경 시각")
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+
+        @Schema(description = "행사 시작 며칠 전에 알릴지 (1: 24시간 전, 3, 7)", example = "1")
+        int leadDays
 ) {
     public static EventSubscriptionResponse from(EventSubscription sub) {
         return new EventSubscriptionResponse(
                 sub.getEventId(),
                 sub.getUserId(),
                 sub.isEnabled(),
-                sub.getUpdatedAt()
+                sub.getUpdatedAt(),
+                sub.getLeadDays()
         );
     }
 }

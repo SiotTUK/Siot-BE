@@ -29,6 +29,10 @@ public class NotificationPreference {
     @Column(name = "lead_days", nullable = false)
     private int leadDays = 0;
 
+    /** NTF-03·05 이 종류의 알림을 이메일로도 받을지 (인앱 알림은 enabled 가 정한다) */
+    @Column(name = "email_enabled", nullable = false)
+    private boolean emailEnabled = true;
+
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
@@ -45,5 +49,10 @@ public class NotificationPreference {
     public void update(Boolean enabled, Integer leadDays) {
         if (enabled != null) this.enabled = enabled;
         if (leadDays != null) this.leadDays = leadDays;
+    }
+
+    /** null 이면 그대로 둔다 */
+    public void updateEmailEnabled(Boolean emailEnabled) {
+        if (emailEnabled != null) this.emailEnabled = emailEnabled;
     }
 }

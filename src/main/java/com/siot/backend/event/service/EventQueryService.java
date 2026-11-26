@@ -83,13 +83,31 @@ public class EventQueryService {
         return list(userId, region, null, from, to, past, page, size);
     }
 
+    /** EVE-10 목록 정렬: DATE(기본, 날짜순) / DEADLINE(신청 마감 임박 순) / LATEST(최근 등록 순) */
+    public static final List<String> SORTS = List.of("DATE", "DEADLINE", "LATEST");
+
     /**
      * @param category {@link EventCategory} 코드, null 이면 전체 (EVE-10 카테고리 필터)
      */
     public PageResponse<EventSummaryResponse> list(Long userId, String region, String category, LocalDate from,
                                                    LocalDate to, boolean past, int page, int size) {
+        return list(userId, region, category, from, to, past, null, page, size);
+    }
+
+    /**
+     * @param sort {@link #SORTS} 중 하나 (대소문자 무시), null 이면 DATE.
+     *             DATE: 진행 예정은 시작일 가까운 순, 지난 행사는 최근에 끝난 순.
+     *             DEADLINE: 신청 마감이 남은 행사를 마감 임박 순으로 먼저, 나머지는 날짜순 (지난 행사에선 DATE 와 같다).
+     *             LATEST: 최근 등록 순.
+     */
+    public PageResponse<EventSummaryResponse> list(Long userId, String region, String category, LocalDate from,
+                                                   LocalDate to, boolean past, String sort, int page, int size) {
         if (region != null && !REGIONS.contains(region)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "region 은 SIHEUNG 또는 GYEONGGI 입니다.");
+        }
+        String sortValue = sort == null || sort.isBlank() ? "DATE" : sort.strip().toUpperCase(java.util.Locale.ROOT);
+        if (!SORTS.contains(sortValue)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "sort 는 DATE, DEADLINE, LATEST 중 하나입니다.");
         }
         EventCategory categoryFilter = category(category);
         if (from != null && to != null && from.isAfter(to)) {
@@ -103,9 +121,9 @@ public class EventQueryService {
         EventCategory categoryValue = anyCategory ? EventCategory.EVENT : categoryFilter; // anyCategory 면 쓰지 않는 값
         Page<Event> events = past
                 ? eventRepository.findPast(today, region == null, region == null ? "" : region, anyCategory,
-                categoryValue, start, end, pageable)
+                categoryValue, start, end, sortValue, pageable)
                 : eventRepository.findUpcoming(today, region == null, region == null ? "" : region, anyCategory,
-                categoryValue, start, end, pageable);
+                categoryValue, start, end, sortValue, java.time.OffsetDateTime.now(clock), pageable);
         String language = language(userId);
         Map<Long, EventLocalizer.Text> texts = localizer.texts(ids(events.getContent()), language);
         return PageResponse.from(events, event -> summary(event, texts.get(event.getId()), language));
