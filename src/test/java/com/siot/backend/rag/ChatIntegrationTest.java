@@ -386,6 +386,43 @@ class ChatIntegrationTest {
     }
 
     @Test
+    void foreignQuestionIsSearchedInKoreanAndAnsweredWithOriginal() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "en");
+        // 한국어 검색어와 원래 질문이 서로 다른 조각을 찾는 경우
+        when(queryEmbedder.embedQuery("외국인등록은 언제까지 해야 하나요?")).thenReturn(axis(AXIS_REGISTRATION));
+        when(queryEmbedder.embedQuery("By when do I have to register as a foreigner?")).thenReturn(axis(AXIS_CAR_TAX));
+        when(answerGenerator.generate(anyString(), anyString(), anyList(), anyList()))
+                .thenReturn("Within 90 days of entry.");
+        when(queryRewriter.rewrite(eq("By when do I have to register as a foreigner?"), eq(List.of())))
+                .thenReturn("외국인등록은 언제까지 해야 하나요?");
+
+        // 두 검색 결과를 모두 근거로 (한국어 검색어 결과 먼저)
+        ask(session, conversationId, "By when do I have to register as a foreigner?")
+                .andExpect(jsonPath("$.data.answer.answerStatus").value("ANSWERED"))
+                .andExpect(jsonPath("$.data.answer.sources[0].pageStart").value(12))
+                .andExpect(jsonPath("$.data.answer.sources[1].pageStart").value(30));
+
+        // 검색은 한국어 검색어와 원래 질문으로, 답변은 원래 질문으로
+        verify(queryEmbedder).embedQuery("외국인등록은 언제까지 해야 하나요?");
+        verify(queryEmbedder).embedQuery("By when do I have to register as a foreigner?");
+        verify(answerGenerator).generate(eq("By when do I have to register as a foreigner?"), eq("en"), anyList(),
+                eq(List.of()));
+    }
+
+    @Test
+    void foreignQuestionRewriteFailureSearchesWithOriginal() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "en");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+        when(queryRewriter.rewrite(anyString(), anyList())).thenThrow(new AiUnavailableException("timeout"));
+
+        ask(session, conversationId, "When do I pay the car tax?").andExpect(status().isOk());
+
+        verify(queryEmbedder).embedQuery("When do I pay the car tax?");
+    }
+
+    @Test
     void historyIsLimitedToRecentTurns() throws Exception {
         Cookie session = signup();
         long conversationId = startConversation(session, "ko");
@@ -473,6 +510,29 @@ class ChatIntegrationTest {
         // 일반 질문에는 붙지 않는다
         ask(session, conversationId, "외국인등록은 어떻게 하나요?")
                 .andExpect(jsonPath("$.data.answer.referral").doesNotExist());
+    }
+
+    @Test
+    void taxAndLaborJudgmentQuestionsShowTheirOffices() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+
+        ask(session, conversationId, "제 경우 이번 연말정산에서 환급을 얼마나 받을까요?")
+                .andExpect(jsonPath("$.data.answer.referral.contacts[0].topic").value("TAX"))
+                .andExpect(jsonPath("$.data.answer.referral.contacts[0].number").value("126"));
+        ask(session, conversationId, "My boss fired me and hasn't paid my wages. I also got hurt at work.")
+                .andExpect(jsonPath("$.data.answer.referral.contacts[0].topic").value("LABOR"))
+                .andExpect(jsonPath("$.data.answer.referral.contacts[0].number").value("1350"))
+                .andExpect(jsonPath("$.data.answer.referral.contacts[1].topic").value("WORK_INJURY"))
+                .andExpect(jsonPath("$.data.answer.referral.contacts[1].number").value("1588-0075"))
+                .andExpect(jsonPath("$.data.answer.referral.contacts[1].label")
+                        .value("Korea Workers' Compensation & Welfare Service (industrial accidents)"));
+
+        // 저장된 주제로 대화 기록에서도 다시 보인다 (DB 제약 조건 확인)
+        mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(session))
+                .andExpect(jsonPath("$.data[1].referral.contacts[0].number").value("126"))
+                .andExpect(jsonPath("$.data[3].referral.contacts[1].number").value("1588-0075"));
     }
 
     // ---------------------------------------------------------------- CB-04

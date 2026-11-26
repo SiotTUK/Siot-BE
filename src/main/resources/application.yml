@@ -59,6 +59,14 @@ spring:
     basename: messages/mail
     fallback-to-system-locale: false
 
+  # ADM-02: 문서(PDF) 업로드 한도
+  servlet:
+    multipart:
+      max-file-size: 30MB
+      max-request-size: 31MB
+      # RUL-07: 고지서 사진(10MB 이하)은 디스크 임시 파일 없이 메모리에서만 받는다. 이보다 큰 파일(문서)만 임시 파일로
+      file-size-threshold: 10MB
+
   task:
     execution:
       thread-name-prefix: siot-async-   # 메일 비동기 발송
@@ -82,15 +90,68 @@ siot:
     max-question-length: 1000
     # 이어지는 질문(CB-07)에 쓰는 최근 대화 턴 수
     history-turns: 3
-  # Gemini (LangChain4j). 챗봇·번역·문서 적재가 같이 쓴다. 키가 없으면 챗봇은 "지금은 답변할 수 없어요" 로 응답하고 번역·적재는 실패한다
+  # Gemini (LangChain4j). 챗봇·번역·문서 적재가 같이 쓴다. project-id(Vertex AI)가 있으면 우선, 없으면 api-key(AI Studio).
+  # 둘 다 없으면 챗봇은 "지금은 답변할 수 없어요" 로 응답하고 번역·적재는 실패한다
   gemini:
+    project-id: ${GEMINI_PROJECT_ID:}
+    # gemini-3.x 는 global 리전에서만 제공된다
+    location: ${GEMINI_LOCATION:global}
     api-key: ${GEMINI_API_KEY:}
-    chat-model: ${GEMINI_CHAT_MODEL:gemini-2.5-flash}
+    chat-model: ${GEMINI_CHAT_MODEL:gemini-3.1-flash-lite}
     # 문서 적재(역할 B)와 반드시 같은 모델·차원 (document_chunk.embedding VECTOR(768))
     embedding-model: gemini-embedding-001
     embedding-dimension: 768
     temperature: 0.2
     timeout: 20s
+  # 문서 적재 (ADM-02~04, DocumentProperties)
+  document:
+    # 업로드한 PDF 저장 폴더. 실패 버전 재실행에 원본이 필요하므로 지우지 않는다
+    storage-dir: ${DOCUMENT_STORAGE_DIR:./data/documents}
+    # 무료 등급 한도: 묶어서 호출하고 묶음 사이에 쉰다. 429·503 이면 기다렸다 재시도, 계속 실패하면 FAILED
+    embedding-batch-size: 100
+    embedding-batch-pause: 2s
+    embedding-retry-wait: 60s
+    embedding-max-retries: 2
+  # 행사 수집 (EVE-01·EVE-02, EventProperties). 매일 siot.scheduling.event-collect-cron 에 출처별로 수집한다
+  event:
+    # 공공데이터포털 키: TourAPI·전국문화축제표준데이터. 비어 있으면 두 출처는 FAILED 로 기록 (지지씨는 키 없이 동작)
+    api-key: ${EVENT_API_KEY:}
+    http-timeout: 30s
+    # 번역(Gemini) 호출 사이 간격. 실패하면 남은 행사는 다음 주기에 다시 번역한다
+    translation-pause: 1s
+    ggc:
+      base-url: https://ggc.ggcf.kr/open/json/playongoing
+      per-page: 100
+      max-pages: 10
+    tourapi:
+      base-url: https://apis.data.go.kr/B551011/KorService2/searchFestival2
+      page-size: 1000
+      max-pages: 5
+      # eventStartDate = 오늘 - 365일 (진행 중인 축제가 빠지지 않게). 저장은 종료일 >= 오늘만
+      lookback-days: 365
+      # 시흥시 법정동 코드 (경기 41, 시흥 390)
+      region-code: "41"
+      district-code: "390"
+      # 행사마다 원문 링크(homepage)·설명(overview)을 한 번 더 받는다. 실패하면 그 행사는 목록 값만으로 저장
+      detail-url: https://apis.data.go.kr/B551011/KorService2/detailCommon2
+    festival:
+      base-url: https://api.data.go.kr/openapi/tn_pubr_public_cltur_fstvl_api
+      page-size: 1000
+      max-pages: 5
+      address-prefix: 경기도 시흥시
+  # 번역 (TranslationProperties). 고지서 사진 번역(RUL-07)은 사진을 저장하지 않는다
+  translation:
+    # 고지서 사진(RUL-07) 전용 모델. 비어 있으면 siot.gemini.chat-model 을 쓴다
+    bill-model: ${GEMINI_BILL_MODEL:}
+    # 사진 읽기 1회 호출 제한 시간. 사진은 글보다 오래 걸린다 (라이브 확인 9~31초). 넘으면 503 AI_UNAVAILABLE
+    bill-timeout: ${GEMINI_BILL_TIMEOUT:45s}
+    bill-max-file-size: 10MB
+    bill-retry-wait: 2s
+    # 회원당 시간당 10회 (Gemini 무료 한도를 챗봇과 같이 쓴다). 넘으면 429
+    bill-rate-limit:
+      max-requests: ${BILL_RATE_LIMIT_MAX_REQUESTS:10}
+      window: 1h
+      min-interval: 2s
   mail:
     # Gmail SMTP 는 로그인한 계정(또는 등록된 별칭) 주소로만 발신할 수 있다
     from: ${MAIL_FROM}

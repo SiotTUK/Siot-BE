@@ -57,6 +57,11 @@ public record ChecklistItemResponse(
         OffsetDateTime noticeChangedAt,
         @Schema(description = "최근 안내 내용 변경 여부 (14일 이내)")
         boolean hasNoticeChanged,
+        @Schema(description = "CAL-04 체류기간 연장 신청 시작일 (만료일 − 4개월, 그달에 없는 날짜면 말일). CL-05 외에는 null",
+                nullable = true, example = "2027-07-01")
+        LocalDate applyStartsOn,
+        @Schema(description = "강조 표시 여부. CL-05: 체류 만료 30일 전부터 true (CAL-04)")
+        boolean highlighted,
 
         // CHK-08 경고 표시 (외국인등록 D-30, 체류지 변경 D-7, 기한 지남 등)
         @Schema(description = "CHK-08 경고 표시 여부 (외국인등록 D-30, 체류지 변경 D-7, 기한 초과 등)", example = "true")

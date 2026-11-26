@@ -3,13 +3,13 @@ package com.siot.backend.rag.config;
 import com.siot.backend.rag.ai.AiUnavailableException;
 import com.siot.backend.rag.ai.DocumentEmbedder;
 import com.siot.backend.rag.ai.GeminiDocumentEmbedder;
-import dev.langchain4j.model.googleai.GoogleAiEmbeddingModel;
+import dev.langchain4j.model.google.genai.GoogleGenAiEmbeddingModel;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * 문서 적재 AI 연결 (ADM-02~04). {@link RagConfig} 와 같은 방식이다.
- * API 키가 없으면 호출 시 {@link AiUnavailableException} 을 던지는 구현을 등록한다 (적재는 FAILED 가 된다).
+ * Gemini 설정이 없으면 호출 시 {@link AiUnavailableException} 을 던지는 구현을 등록한다 (적재는 FAILED 가 된다).
  */
 @Configuration
 public class DocumentAiConfig {
@@ -24,11 +24,10 @@ public class DocumentAiConfig {
                 throw new AiUnavailableException("Gemini API key is not configured");
             };
         }
-        GoogleAiEmbeddingModel model = GoogleAiEmbeddingModel.builder()
-                .apiKey(props.apiKey())
+        GoogleGenAiEmbeddingModel model = GeminiModels.embedding(props)
                 .modelName(props.embeddingModel())
                 .outputDimensionality(props.embeddingDimension())
-                .taskType(GoogleAiEmbeddingModel.TaskType.RETRIEVAL_DOCUMENT)
+                .taskType(GoogleGenAiEmbeddingModel.TaskTypeEnum.RETRIEVAL_DOCUMENT)
                 .titleMetadataKey(GeminiDocumentEmbedder.TITLE_METADATA_KEY)
                 .timeout(props.timeout())
                 .maxRetries(MAX_RETRIES)

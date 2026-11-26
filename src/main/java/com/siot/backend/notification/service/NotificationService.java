@@ -35,7 +35,9 @@ public class NotificationService {
     private final AppUserRepository appUserRepository;
     private final GuideTranslationRepository guideTranslationRepository;
 
-    private static final List<String> DEFAULT_KINDS = List.of("STAY_EXPIRY", "TAX", "EVENT", "NOTICE_CHANGED");
+    /** CHECKLIST_DEADLINE: 외국인등록 등 체크리스트 마감 알림 (NTF-08) */
+    private static final List<String> DEFAULT_KINDS =
+            List.of("STAY_EXPIRY", "CHECKLIST_DEADLINE", "TAX", "EVENT", "NOTICE_CHANGED");
 
     /**
      * 회원 알림 목록 페이징 조회 (NTF-04)
@@ -92,7 +94,7 @@ public class NotificationService {
             } else {
                 int defaultLeadDays = switch (kind) {
                     case "STAY_EXPIRY" -> 30;
-                    case "TAX" -> 7;
+                    case "CHECKLIST_DEADLINE", "TAX" -> 7;
                     case "EVENT" -> 1;
                     default -> 0;
                 };

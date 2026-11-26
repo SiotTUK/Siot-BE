@@ -9,12 +9,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Gemini 임베딩 (RETRIEVAL_DOCUMENT). 모델이 100개씩 묶어 batchEmbedContents 로 호출한다.
+ * Gemini 임베딩 (RETRIEVAL_DOCUMENT). 모델이 같은 제목끼리 100개씩 묶어 호출한다.
  * gemini-embedding-001 은 768 차원에서 정규화되지 않은 벡터를 주므로 저장 전에 L2 정규화한다.
  */
 public class GeminiDocumentEmbedder implements DocumentEmbedder {
 
-    /** GoogleAiEmbeddingModel.titleMetadataKey 와 같아야 제목이 요청에 들어간다 */
+    /** GoogleGenAiEmbeddingModel.titleMetadataKey 와 같아야 제목이 요청에 들어간다 */
     public static final String TITLE_METADATA_KEY = "title";
 
     private final EmbeddingModel model;

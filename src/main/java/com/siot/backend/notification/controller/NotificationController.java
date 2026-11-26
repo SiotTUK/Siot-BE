@@ -3,6 +3,9 @@ package com.siot.backend.notification.controller;
 import com.siot.backend.auth.security.MemberPrincipal;
 import com.siot.backend.global.common.ApiResponse;
 import com.siot.backend.global.common.PageResponse;
+import com.siot.backend.global.config.openapi.ApiErrorCodes;
+import com.siot.backend.global.config.openapi.SuccessStatus;
+import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.notification.dto.NotificationPreferenceResponse;
 import com.siot.backend.notification.dto.NotificationPreferenceUpdateRequest;
 import com.siot.backend.notification.dto.NotificationResponse;
@@ -21,7 +24,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
-@Tag(name = "알림", description = "알림 목록, 읽음 처리, 알림 환경설정 (NTF-01~05)")
+@Tag(name = "8-1. 알림", description = "알림 목록, 읽음 처리, 알림 환경설정 (NTF-01~05)")
 @RestController
 @RequestMapping("/api/members/me/notifications")
 @RequiredArgsConstructor
@@ -48,6 +51,7 @@ public class NotificationController {
     }
 
     @Operation(summary = "알림 단건 읽음 처리 (NTF-04)")
+    @ApiErrorCodes({ErrorCode.NOTIFICATION_NOT_FOUND})
     @PatchMapping("/{notificationId}/read")
     public ResponseEntity<ApiResponse<NotificationResponse>> markRead(
             @AuthenticationPrincipal MemberPrincipal principal,
@@ -57,6 +61,7 @@ public class NotificationController {
     }
 
     @Operation(summary = "알림 전체 읽음 처리")
+    @SuccessStatus(value = 204, description = "모두 읽음 처리 완료")
     @PatchMapping("/read-all")
     public ResponseEntity<Void> markAllRead(
             @AuthenticationPrincipal MemberPrincipal principal

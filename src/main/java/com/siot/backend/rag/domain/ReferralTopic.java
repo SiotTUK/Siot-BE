@@ -7,5 +7,11 @@ public enum ReferralTopic {
     /** 불법·처벌·소송 등 법률 판단 */
     LEGAL,
     /** 증상·진단·약 등 의료 판단 */
-    MEDICAL
+    MEDICAL,
+    /** 내 경우 세율·환급액 등 개인 세금 판단 */
+    TAX,
+    /** 해고·임금 체불 등 노동 분쟁 판단 */
+    LABOR,
+    /** 일하다 다친 경우 산업재해 인정 여부 */
+    WORK_INJURY
 }

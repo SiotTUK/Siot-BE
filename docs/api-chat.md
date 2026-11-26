@@ -48,7 +48,7 @@ POST /api/chat/conversations/12/messages
 |---|---|---|
 | `ANSWERED` | 검색된 자료를 근거로 답변 (CB-13) | 답변 + 출처 (`sources`) |
 | `NO_EVIDENCE` | 관련 자료를 찾지 못함 (CB-12). 답을 지어내지 않고 문의처(☎1345 등)를 안내하는 문구가 `content` 에 들어 있음 | 그대로 표시, 출처 없음 |
-| `ERROR` | Gemini 호출 실패·키 미설정 (CB-02). 문의처 안내 문구가 `content` 에 들어 있음 | 그대로 표시 + 관련 페이지 링크(`relatedPages`) + 다시 시도 버튼 |
+| `ERROR` | Gemini 호출 실패·설정 없음 (CB-02). 문의처 안내 문구가 `content` 에 들어 있음 | 그대로 표시 + 관련 페이지 링크(`relatedPages`) + 다시 시도 버튼 |
 
 `NO_EVIDENCE`·`ERROR` 도 HTTP 200 입니다 (대화 기록에 남음).
 
@@ -84,22 +84,25 @@ POST /api/chat/conversations/12/messages
 
 ### 담당 기관 안내 (CB-11)
 
-비자 발급 가능 여부, 법률·의료 판단을 묻는 질문(4개 언어 단어 감지)이면 답변의 `referral` 에 "개인 상황은 판단할 수 없다"는 고정 문구(`notice`)와 담당 기관이 들어 있습니다. 아니면 `null` 입니다. Gemini 지시문과 별개로 서버가 감지해 붙이므로, 답변 내용과 상관없이 항상 표시해 주세요. 대화 기록에서도 다시 보입니다(`chat_message.referral_topics`).
+비자 발급 가능 여부, 법률·의료·세금·노동 판단을 묻는 질문(4개 언어 단어 감지)이면 답변의 `referral` 에 "개인 상황은 판단할 수 없다"는 고정 문구(`notice`)와 담당 기관이 들어 있습니다. 아니면 `null` 입니다. Gemini 지시문과 별개로 서버가 감지해 붙이므로, 답변 내용과 상관없이 항상 표시해 주세요. 대화 기록에서도 다시 보입니다(`chat_message.referral_topics`).
 
 | topic | 기관 | 감지 예 |
 |---|---|---|
 | `VISA` | ☎1345 외국인종합안내센터 | 비자·체류·연장 등 + "가능할까요 / 될까요 / Can I" ("비자 연장 서류는?" 같은 절차 질문은 제외) |
-| `LEGAL` | ☎132 대한법률구조공단 | 불법인가요, 고소, 소송, 변호사, 처벌 |
+| `LEGAL` | ☎132 대한법률구조공단 | 불법인가요, 고소, 소송, 변호사, 처벌, 이길 수 있나요, 계약서에 서명해도 될까요 |
 | `MEDICAL` | ☎119 구급상황관리센터 | 증상, 진단, 아파요, 약 먹어도, 부작용 |
+| `TAX` | ☎126 국세청 국세상담센터 | 세금·세율·연말정산·환급 + "제 경우 / 더 유리한가요 / 얼마나 받을까요" ("연말정산은 언제?" 같은 제도 질문은 제외) |
+| `LABOR` | ☎1350 고용노동부 고객상담센터 | 해고, 부당해고, 임금 체불, 월급을 못 받 |
+| `WORK_INJURY` | ☎1588-0075 근로복지공단 | 산재, 산업재해, 일하다가 다쳤 |
 
 ```json
 "referral": {
-  "notice": "개인 상황에 대한 판단(비자 발급 가능 여부, 법률·의료 판단)은 해 드릴 수 없어요. 정확한 답은 아래 기관에 확인해 주세요.",
+  "notice": "개인 상황에 대한 판단(비자 발급 가능 여부, 법률·의료·세금·노동 문제)은 해 드릴 수 없어요. 정확한 답은 아래 기관에 확인해 주세요.",
   "contacts": [ { "topic": "VISA", "number": "1345", "label": "외국인종합안내센터 (비자·체류)" } ]
 }
 ```
 
-질문 하나에 여러 종류가 있으면 `contacts` 에 VISA → LEGAL → MEDICAL 순서로 모두 들어 있습니다. 응급(`emergencyContacts`)과 함께 나올 수 있으며, 그때는 응급 연락처를 위에 보여 주세요.
+질문 하나에 여러 종류가 있으면 `contacts` 에 VISA → LEGAL → MEDICAL → TAX → LABOR → WORK_INJURY 순서로 모두 들어 있습니다. 응급(`emergencyContacts`)과 함께 나올 수 있으며, 그때는 응급 연락처를 위에 보여 주세요.
 
 ### 관련 페이지 (CB-10)
 
@@ -174,9 +177,9 @@ GET /api/chat/suggestions?language=en
 
 1. **개인정보 가리기 (CB-05)**: 외국인등록번호·주민등록번호 형식, 여권번호, 전화번호를 `[등록번호]` `[여권번호]` `[전화번호]` 로 바꿉니다. 이름·주소·이메일은 가리지 않습니다. AI 로 보내는 질문과 DB 에 저장하는 질문 모두 가린 값입니다.
 2. **이어지는 질문 (CB-07)**: 같은 대화에 앞선 질문이 있으면 최근 3턴을 보고 질문을 검색용 독립 질문으로 바꿉니다. 예: "그거 온라인으로도 돼요?" → "외국인등록은 온라인으로도 신청할 수 있나요?". 첫 질문은 바꾸지 않고, 바꾸기에 실패하면 직전 질문을 앞에 붙여 검색합니다. 저장되는 질문은 사용자가 쓴 그대로입니다.
-3. **검색 (CB-14)**: 질문을 `gemini-embedding-001`(768차원, RETRIEVAL_QUERY)로 임베딩해 `document_chunk` 에서 코사인 거리로 가까운 조각 `top-k`(기본 5)개를 찾습니다. 사용 중인 문서(`document.is_active`)의 현재 버전(`document_version.is_current`) 중 반영이 끝난(`processing_status = 'COMPLETED'`) 버전의 조각만 대상입니다.
+3. **검색 (CB-14)**: 질문을 `gemini-embedding-001`(768차원, RETRIEVAL_QUERY)로 임베딩해 `document_chunk` 에서 코사인 거리로 가까운 조각 `top-k`(기본 5)개를 찾습니다. 사용 중인 문서(`document.is_active`)의 현재 버전(`document_version.is_current`) 중 반영이 끝난(`processing_status = 'COMPLETED'`) 버전의 조각만 대상입니다. 근사 인덱스(HNSW) 없이 이 조각 전체에서 정확히 가까운 순으로 찾습니다.
 4. **근거 판단 (CB-12)**: 관련도(1 − 코사인 거리)가 `min-relevance`(기본 0.6) 이상인 조각만 근거로 씁니다. 하나도 없으면 Gemini 를 호출하지 않고 `NO_EVIDENCE`.
-5. **답변 (CB-13)**: 근거 조각과 최근 3턴(질문 + 근거로 답한 답변)을 Gemini(`gemini-2.5-flash`)에 넘겨 답변합니다. 앞 대화는 무엇을 가리키는지 이해하는 데만 쓰고, 사실은 근거 조각에서만 가져오게 합니다. 근거에 답이 없으면 모델이 `NO_ANSWER` 를 돌려주고, 이것도 `NO_EVIDENCE` 로 처리합니다. 답변 언어는 질문 언어, 판별이 안 되면 대화 언어입니다.
+5. **답변 (CB-13)**: 근거 조각과 최근 3턴(질문 + 근거로 답한 답변)을 Gemini(`gemini-3.1-flash-lite`)에 넘겨 답변합니다. 앞 대화는 무엇을 가리키는지 이해하는 데만 쓰고, 사실은 근거 조각에서만 가져오게 합니다. 근거에 답이 없으면 모델이 `NO_ANSWER` 를 돌려주고, 이것도 `NO_EVIDENCE` 로 처리합니다. 답변 언어는 질문 언어, 판별이 안 되면 대화 언어입니다.
 6. **저장**: 답변과 근거(최대 3개, `chat_message_source`)를 저장합니다.
 
 Gemini 호출 중에는 DB 트랜잭션을 잡지 않습니다.
@@ -185,8 +188,10 @@ Gemini 호출 중에는 DB 트랜잭션을 잡지 않습니다.
 
 | 환경변수 | 설명 | 기본값 |
 |---|---|---|
-| `GEMINI_API_KEY` | Google AI Studio API 키. 비우면 모든 질문이 `ERROR` 안내로 응답 (앱은 정상 기동) | - |
-| `GEMINI_CHAT_MODEL` | 답변 모델 | `gemini-2.5-flash` |
+| `GEMINI_PROJECT_ID` | Vertex AI 프로젝트 ID. 있으면 우선 사용 (인증은 ADC: VM 서비스 계정) | - |
+| `GEMINI_LOCATION` | Vertex AI 리전 (gemini-3.x 는 global 만 제공) | `global` |
+| `GEMINI_API_KEY` | Google AI Studio API 키 (`GEMINI_PROJECT_ID` 가 없을 때). 둘 다 비우면 모든 질문이 `ERROR` 안내로 응답 (앱은 정상 기동) | - |
+| `GEMINI_CHAT_MODEL` | 답변 모델 | `gemini-3.1-flash-lite` |
 | `CHATBOT_MIN_RELEVANCE` | 근거 최소 관련도 (0~1) | 0.6 |
 | `CHATBOT_TOP_K` | 검색 조각 수 | 5 |
 | `siot.chatbot.history-turns` | 이어지는 질문에 쓰는 최근 턴 수 (0이면 끔) | 3 |
@@ -198,7 +203,7 @@ Gemini 호출 중에는 DB 트랜잭션을 잡지 않습니다.
 | 항목 | 약속 |
 |---|---|
 | 임베딩 | `gemini-embedding-001`, `outputDimensionality=768`, 문서는 `RETRIEVAL_DOCUMENT` (질문은 챗봇이 `RETRIEVAL_QUERY`). 저장 전 L2 정규화 권장. `embedding_model` 컬럼 = `gemini-embedding-001` (챗봇이 이 값으로 걸러 검색). 모델을 바꾸면 전체 재임베딩 |
-| 상태 | `processing_status`: `PENDING` → `PROCESSING` → `COMPLETED` / `FAILED`. `COMPLETED` 뒤에만 `is_current = true`, 이전 버전은 같은 트랜잭션에서 false. 실패하면 이전 버전 유지 (ADM-04). 챗봇은 `is_current AND COMPLETED AND document.is_active` 만 검색 |
+| 상태 | `processing_status`: `PENDING` → `PROCESSING` → `COMPLETED` / `FAILED`. `COMPLETED` 뒤에만 `is_current = true`, 이전 버전은 같은 트랜잭션에서 false. 실패하면 이전 버전 유지 (ADM-04). 챗봇은 `is_current AND COMPLETED AND document.is_active` 만 검색. 현재 버전에서 내려온 버전 조각은 글만 남기고 `embedding` 은 비운다 |
 | 필수 값 | `document.name` (화면 표시 이름), `document.source_url` (공개 원문 링크), `document_chunk.page_start/page_end` (PDF 기준 1부터), `chunk_no` (버전별 1부터) |
 | 조각 | 목표 600자 / 최대 1,000자 / 100자 겹침. 제목·문단 경계에서 자르고, 조각 첫 줄에 절 제목, 표는 한 조각. 쪽을 넘으면 page_start~page_end 로 기록 |
 | 언어 | 자료는 한국어 원문 그대로. 질문은 번역 없이 검색 (다국어 임베딩). 평가 세트(CB-01)에서 외국어 정답률 80% 미만이면 챗봇이 검색 전 한국어 변환을 추가 |

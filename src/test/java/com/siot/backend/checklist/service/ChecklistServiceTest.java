@@ -100,6 +100,60 @@ class ChecklistServiceTest {
     }
 
     @Test
+    @DisplayName("CL-05 체류기간 연장: 마감일은 만료일, 신청 시작일은 만료일 − 4개월, 만료 30일 안이면 강조 (CAL-04)")
+    void getMyChecklist_stayExtension_applyStartAndHighlight() {
+        // given: 만료 20일 전
+        Long userId = 1L;
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
+        LocalDate expiry = today.plusDays(20);
+        AppUser user = AppUser.create("user@siot.kr", "hash");
+        user.updateOnboarding(UserType.LIVING, today.minusYears(1), Purpose.WORK, Set.of(), expiry);
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+
+        Guide cl05 = Guide.create("CL-05", "CHECKLIST", ItemType.REQUIRED, "IMMIGRATION", 5, null, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(cl05, "id", 5L);
+        given(guideRepository.findByKindOrderBySortOrderAsc("CHECKLIST")).willReturn(List.of(cl05));
+        given(guideRepository.findByKindOrderBySortOrderAsc("LIFE_CHANGE_TASK")).willReturn(Collections.emptyList());
+        given(guideTranslationRepository.findByGuideIdInAndLanguage(anyCollection(), eq("ko"))).willReturn(List.of());
+        given(progressRepository.findByUserId(userId)).willReturn(List.of());
+        given(lifeChangeRepository.findByUserId(userId)).willReturn(Collections.emptyList());
+
+        // when
+        ChecklistItemResponse item = checklistService.getMyChecklist(userId, "ko").items().get(0);
+
+        // then
+        assertThat(item.code()).isEqualTo("CL-05");
+        assertThat(item.deadline()).isEqualTo(expiry);
+        assertThat(item.dDay()).isEqualTo(20L);
+        assertThat(item.applyStartsOn()).isEqualTo(expiry.minusMonths(4));
+        assertThat(item.highlighted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("CL-05 외 항목은 신청 시작일이 없고 강조하지 않는다")
+    void getMyChecklist_otherItems_noApplyStart() {
+        Long userId = 1L;
+        AppUser user = AppUser.create("user@siot.kr", "hash");
+        user.updateOnboarding(UserType.NEW, LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).minusDays(85),
+                Purpose.WORK, Set.of(), null);
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+
+        Guide cl01 = Guide.create("CL-01", "CHECKLIST", ItemType.REQUIRED, "IMMIGRATION", 1, null, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(cl01, "id", 1L);
+        given(guideRepository.findByKindOrderBySortOrderAsc("CHECKLIST")).willReturn(List.of(cl01));
+        given(guideRepository.findByKindOrderBySortOrderAsc("LIFE_CHANGE_TASK")).willReturn(Collections.emptyList());
+        given(guideTranslationRepository.findByGuideIdInAndLanguage(anyCollection(), eq("ko"))).willReturn(List.of());
+        given(progressRepository.findByUserId(userId)).willReturn(List.of());
+        given(lifeChangeRepository.findByUserId(userId)).willReturn(Collections.emptyList());
+
+        ChecklistItemResponse item = checklistService.getMyChecklist(userId, "ko").items().get(0);
+
+        assertThat(item.code()).isEqualTo("CL-01");
+        assertThat(item.applyStartsOn()).isNull();
+        assertThat(item.highlighted()).isFalse();
+    }
+
+    @Test
     @DisplayName("체크리스트 상태 업데이트 - 완료(DONE) 저장")
     void updateProgress_done() {
         // given

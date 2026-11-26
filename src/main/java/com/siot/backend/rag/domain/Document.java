@@ -40,4 +40,29 @@ public class Document {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    /** ADM-02: 새 문서 (사용 중) */
+    public static Document create(String name, String sourceUrl, LocalDate publishedOn) {
+        Document document = new Document();
+        document.name = name;
+        document.sourceUrl = sourceUrl;
+        document.publishedOn = publishedOn;
+        return document;
+    }
+
+    /** ADM-03: null 인 값은 바꾸지 않는다 */
+    public void update(String name, String sourceUrl, LocalDate publishedOn, Boolean active) {
+        if (name != null) {
+            this.name = name;
+        }
+        if (sourceUrl != null) {
+            this.sourceUrl = sourceUrl;
+        }
+        if (publishedOn != null) {
+            this.publishedOn = publishedOn;
+        }
+        if (active != null) {
+            this.active = active;
+        }
+    }
 }

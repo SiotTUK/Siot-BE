@@ -3,6 +3,8 @@ package com.siot.backend.checklist.controller;
 import com.siot.backend.checklist.dto.RuleResponse;
 import com.siot.backend.checklist.service.RuleService;
 import com.siot.backend.global.common.ApiResponse;
+import com.siot.backend.global.config.openapi.ApiErrorCodes;
+import com.siot.backend.global.exception.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -15,7 +17,7 @@ import java.util.List;
 /**
  * 생활수칙 및 자주 묻는 질문(FAQ) REST API (RUL-01 ~ RUL-13)
  */
-@Tag(name = "5. 생활수칙", description = "기초생활수칙, 쓰레기 배출, 교통질서, 세금, FAQ TOP 5 (RUL-01~13)")
+@Tag(name = "6. 생활수칙", description = "기초생활수칙, 쓰레기 배출, 교통질서, 세금, FAQ TOP 5 (RUL-01~13)")
 @RestController
 @RequestMapping("/api/rules")
 @RequiredArgsConstructor
@@ -49,6 +51,7 @@ public class RuleController {
     }
 
     @Operation(summary = "생활수칙 단건 상세 조회")
+    @ApiErrorCodes({ErrorCode.GUIDE_NOT_FOUND})
     @GetMapping("/{code}")
     public ResponseEntity<ApiResponse<RuleResponse>> getRule(
             @Parameter(description = "항목 코드 (RUL-01 등)") @PathVariable String code,

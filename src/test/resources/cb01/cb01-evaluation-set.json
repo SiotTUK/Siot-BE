@@ -1,0 +1,914 @@
+[
+  {
+    "id": "CB01-LIFE-01",
+    "domain": "생활",
+    "type": "ANSWER",
+    "question": {
+      "ko": "시흥에서 생활쓰레기는 어떻게 버려야 하나요?",
+      "en": "How should I throw away household trash in Siheung?",
+      "zh": "在始兴应该怎样扔生活垃圾？",
+      "vi": "Ở Siheung tôi phải vứt rác sinh hoạt như thế nào?"
+    },
+    "expected": "종량제봉투에 담아 묶어서 배출. 검은 봉투 사용 금지, 투명페트병은 투명비닐봉투에 따로 분리배출",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "9"
+  },
+  {
+    "id": "CB01-LIFE-02",
+    "domain": "생활",
+    "type": "ANSWER",
+    "question": {
+      "ko": "단독주택에 사는데 쓰레기는 무슨 요일에 내놓나요?",
+      "en": "I live in a detached house. On which days do I put out the trash?",
+      "zh": "我住在独栋住宅，哪几天可以扔垃圾？",
+      "vi": "Tôi sống ở nhà riêng, tôi để rác ra ngoài vào những ngày nào?"
+    },
+    "expected": "일반·소각용·음식물·재활용품 일~금요일, 투명페트병 목·금요일. 저녁 6시~다음날 새벽 6시, 내 집·상가 앞",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "9"
+  },
+  {
+    "id": "CB01-LIFE-03",
+    "domain": "생활",
+    "type": "ANSWER",
+    "question": {
+      "ko": "냉장고나 매트리스 같은 큰 물건은 어떻게 버리나요?",
+      "en": "How do I throw away large items like a refrigerator or a mattress?",
+      "zh": "冰箱、床垫这样的大件物品怎么扔？",
+      "vi": "Làm sao để vứt đồ lớn như tủ lạnh hoặc nệm?"
+    },
+    "expected": "대형폐기물: 온라인 '시흥시 대형폐기물' 또는 '빼기' 앱으로 신청, 마트·편의점에서 스티커 구매, 수수료 약 3,000~15,000원. 폐가전은 무상수거 1599-0903(5개 이상 등)",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "10"
+  },
+  {
+    "id": "CB01-LIFE-04",
+    "domain": "생활",
+    "type": "ANSWER",
+    "question": {
+      "ko": "우리 아이가 14살인데 시흥에서 교통비 지원을 받을 수 있나요?",
+      "en": "My child is 14. Can we get transportation support in Siheung?",
+      "zh": "我的孩子14岁，在始兴可以领交通补贴吗？",
+      "vi": "Con tôi 14 tuổi, có được hỗ trợ chi phí đi lại ở Siheung không?"
+    },
+    "expected": "시흥패스+: 시흥 거주 만 6~18세 외국인 아동·청소년, 경기도 분기 6만원 + 시흥시(만 11~18세) 분기 12만원, 분기 최대 18만원 교통카드 충전 환급. 거소·외국인등록사실증명 필요",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "12"
+  },
+  {
+    "id": "CB01-LIFE-05",
+    "domain": "생활",
+    "type": "ANSWER",
+    "question": {
+      "ko": "시흥 지역화폐 시루는 어떻게 쓰고 무슨 혜택이 있나요?",
+      "en": "How do I use Siheung's local currency 'Siru' and what are the benefits?",
+      "zh": "始兴地区货币'시루'怎么用，有什么优惠？",
+      "vi": "Tiền địa phương 'Siru' của Siheung dùng thế nào và có lợi ích gì?"
+    },
+    "expected": "종이·모바일(chak 앱)·카드형, 시흥 내 가맹점 사용, 현금 대비 5~10% 할인 구매",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "12"
+  },
+  {
+    "id": "CB01-LIFE-06",
+    "domain": "생활",
+    "type": "ANSWER",
+    "question": {
+      "ko": "정왕역 무료 자전거 대여소는 몇 시까지 하나요?",
+      "en": "Until what time is the free bicycle rental at Jeongwang Station open?",
+      "zh": "正往站免费自行车租赁点开到几点？",
+      "vi": "Điểm cho thuê xe đạp miễn phí ở ga Jeongwang mở cửa đến mấy giờ?"
+    },
+    "expected": "정왕역점 07:00~20:00, 토·일·공휴일 휴관, 신분증과 대여신청서 필요",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "12"
+  },
+  {
+    "id": "CB01-LIFE-07",
+    "domain": "생활",
+    "type": "ANSWER",
+    "question": {
+      "ko": "집을 계약했는데 보증금을 지키려면 무엇을 해야 하나요?",
+      "en": "I signed a lease. What should I do to protect my deposit?",
+      "zh": "我签了租房合同，要怎样保护押金？",
+      "vi": "Tôi đã ký hợp đồng thuê nhà, làm sao để bảo vệ tiền đặt cọc?"
+    },
+    "expected": "집 인도+주민등록(전입)을 마치면 다음날부터 대항력, 계약서에 확정일자를 받으면 우선변제권. 주택 점유와 주민등록은 임대차 기간 중 계속 유지. 계약 체결 시 등기사항증명서, 미납 국세·지방세, 확정일자 현황 확인",
+    "sourceDocument": "주택임대차표준계약서",
+    "sourcePages": "4"
+  },
+  {
+    "id": "CB01-LIFE-08",
+    "domain": "생활",
+    "type": "ANSWER",
+    "question": {
+      "ko": "집주인이 월세를 얼마까지 올릴 수 있나요?",
+      "en": "How much can my landlord raise the monthly rent?",
+      "zh": "房东最多可以涨多少房租？",
+      "vi": "Chủ nhà được tăng tiền thuê tối đa bao nhiêu?"
+    },
+    "expected": "계약기간 중·갱신 시 기존 차임·보증금의 5% 초과 증액 불가, 증액 후 1년 이내 재증액 불가",
+    "sourceDocument": "주택임대차표준계약서",
+    "sourcePages": "4"
+  },
+  {
+    "id": "CB01-LIFE-09",
+    "domain": "생활",
+    "type": "JUDGE",
+    "question": {
+      "ko": "집주인이 보증금을 안 돌려주는데 소송하면 제가 이길 수 있나요?",
+      "en": "My landlord won't return my deposit. Will I win if I sue?",
+      "zh": "房东不退押金，我起诉能赢吗？",
+      "vi": "Chủ nhà không trả lại tiền đặt cọc, nếu kiện thì tôi có thắng không?"
+    },
+    "expected": "법률 판단은 하지 않음. 주택임대차분쟁조정위원회, 대한법률구조공단, 한국부동산원, 한국토지주택공사 등 담당 기관 안내 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-LIFE-10",
+    "domain": "생활",
+    "type": "JUDGE",
+    "question": {
+      "ko": "이 임대차 계약서에 그대로 서명해도 괜찮을까요?",
+      "en": "Is it okay for me to sign this lease as it is?",
+      "zh": "这份租房合同我直接签字可以吗？",
+      "vi": "Tôi ký hợp đồng thuê nhà này luôn có được không?"
+    },
+    "expected": "개별 계약의 안전 여부를 판단하지 않음. 중요확인사항(등기사항증명서 등) 일반 안내 + 전문 기관 상담 안내 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-LIFE-11",
+    "domain": "생활",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "시흥에서 한국 운전면허 시험은 어디서 보나요?",
+      "en": "Where can I take the Korean driver's license test in Siheung?",
+      "zh": "在始兴哪里可以考韩国驾照？",
+      "vi": "Tôi có thể thi bằng lái xe Hàn Quốc ở đâu tại Siheung?"
+    },
+    "expected": "자료 없음: '자료에서 찾지 못했어요' + 1345, 시흥시 외국인주민과 안내 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-LIFE-12",
+    "domain": "생활",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "정왕동에서 할랄 음식점 추천해 주세요.",
+      "en": "Please recommend a halal restaurant in Jeongwang-dong.",
+      "zh": "请推荐正往洞的清真餐厅。",
+      "vi": "Hãy giới thiệu nhà hàng halal ở Jeongwang-dong."
+    },
+    "expected": "자료 없음: 추측해서 답하지 않음 + 문의처 안내 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-TAX-01",
+    "domain": "세금",
+    "type": "ANSWER",
+    "question": {
+      "ko": "주민세는 언제, 얼마나 내나요?",
+      "en": "When do I pay the resident tax, and how much is it?",
+      "zh": "居民税什么时候交，交多少？",
+      "vi": "Thuế cư trú nộp khi nào và bao nhiêu?"
+    },
+    "expected": "7월 1일 기준 외국인등록 1년 경과 + 시흥 주소. 가구당 12,500원(지방교육세 포함), 8월 16일~31일 납부. ※ 책자의 0.25%는 오기로 보이므로 비율은 채점하지 않음",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "11"
+  },
+  {
+    "id": "CB01-TAX-02",
+    "domain": "세금",
+    "type": "ANSWER",
+    "question": {
+      "ko": "자동차세는 언제 내야 하나요?",
+      "en": "When do I have to pay the car tax?",
+      "zh": "汽车税什么时候交？",
+      "vi": "Thuế ô tô phải nộp khi nào?"
+    },
+    "expected": "1기 6월 16~30일(1~6월분), 2기 12월 16~31일(7~12월분). ※ 책자 같은 쪽의 '매년 7월, 9월 중'은 오류이므로 7·9월이라고 답하면 오답",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "11"
+  },
+  {
+    "id": "CB01-TAX-03",
+    "domain": "세금",
+    "type": "ANSWER",
+    "question": {
+      "ko": "집이 있으면 재산세는 언제 내나요?",
+      "en": "If I own a house, when do I pay property tax?",
+      "zh": "如果有房子，财产税什么时候交？",
+      "vi": "Nếu có nhà thì thuế tài sản nộp khi nào?"
+    },
+    "expected": "6월 1일 기준 주택·건축물·토지·선박 소유자, 7월·9월 납부",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "11"
+  },
+  {
+    "id": "CB01-TAX-04",
+    "domain": "세금",
+    "type": "ANSWER",
+    "question": {
+      "ko": "지방세는 어떤 방법으로 낼 수 있나요?",
+      "en": "What are the ways to pay local taxes?",
+      "zh": "地方税可以用什么方式缴纳？",
+      "vi": "Có những cách nào để nộp thuế địa phương?"
+    },
+    "expected": "은행·우체국·ATM 방문, 위택스·지로 인터넷 납부, 가상계좌, ARS 카드납부 1544-2111, 지방세입계좌(전자납부번호)",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "11"
+  },
+  {
+    "id": "CB01-TAX-05",
+    "domain": "세금",
+    "type": "ANSWER",
+    "question": {
+      "ko": "외국인 근로자는 19% 단일세율을 적용받을 수 있나요?",
+      "en": "Can foreign workers apply the 19% flat tax rate?",
+      "zh": "外国劳动者可以适用19%单一税率吗？",
+      "vi": "Người lao động nước ngoài có được áp dụng thuế suất cố định 19% không?"
+    },
+    "expected": "국내 최초 근로 제공일부터 20년 이내 끝나는 과세기간 근로소득에 19% 단일세율 선택 가능. 이 경우 비과세·공제·감면 미적용, 특수관계기업 근로 시 불가. 연말정산 때 단일세율적용신청서 제출",
+    "sourceDocument": "2025 외국인 근로자 연말정산 매뉴얼",
+    "sourcePages": "7"
+  },
+  {
+    "id": "CB01-TAX-06",
+    "domain": "세금",
+    "type": "ANSWER",
+    "question": {
+      "ko": "외국인도 거주자가 될 수 있나요? 기준이 뭔가요?",
+      "en": "Can a foreigner be a tax resident? What is the standard?",
+      "zh": "外国人也能成为居民纳税人吗？标准是什么？",
+      "vi": "Người nước ngoài có thể là cư dân thuế không? Tiêu chuẩn là gì?"
+    },
+    "expected": "국내 주소 또는 183일 이상 거소를 둔 개인이 거주자. 183일 이상 거주가 필요한 직업 등은 주소가 있는 것으로 봄",
+    "sourceDocument": "2025 외국인 근로자 연말정산 매뉴얼",
+    "sourcePages": "4"
+  },
+  {
+    "id": "CB01-TAX-07",
+    "domain": "세금",
+    "type": "ANSWER",
+    "question": {
+      "ko": "연말정산은 언제 하나요?",
+      "en": "When is the year-end tax settlement done?",
+      "zh": "年终结算什么时候进行？",
+      "vi": "Quyết toán thuế cuối năm được thực hiện khi nào?"
+    },
+    "expected": "다음 해 2월분 급여를 지급할 때(2월 말까지) 회사가 연말정산. 연도 중 퇴직하면 퇴직하는 달 급여 지급 때",
+    "sourceDocument": "2025 외국인 근로자 연말정산 매뉴얼",
+    "sourcePages": "3"
+  },
+  {
+    "id": "CB01-TAX-08",
+    "domain": "세금",
+    "type": "ANSWER",
+    "question": {
+      "ko": "회사를 그만두면 연말정산은 어떻게 되나요?",
+      "en": "What happens to my year-end tax settlement if I quit my job?",
+      "zh": "辞职的话年终结算怎么办？",
+      "vi": "Nếu nghỉ việc thì quyết toán thuế cuối năm thế nào?"
+    },
+    "expected": "퇴직하는 달의 급여를 지급할 때 연말정산. 급여 받기 전에 소득·세액공제신고서와 증빙서류 제출",
+    "sourceDocument": "2025 외국인 근로자 연말정산 매뉴얼",
+    "sourcePages": "3"
+  },
+  {
+    "id": "CB01-TAX-09",
+    "domain": "세금",
+    "type": "JUDGE",
+    "question": {
+      "ko": "저는 단일세율이랑 일반세율 중에 뭐가 더 유리한가요?",
+      "en": "For me, which is better: the flat rate or the regular rate?",
+      "zh": "对我来说，单一税率和一般税率哪个更有利？",
+      "vi": "Đối với tôi, thuế suất cố định hay thuế suất thông thường có lợi hơn?"
+    },
+    "expected": "개인별 세액 비교 판단은 하지 않음(유불리는 개인마다 다름). 제도 일반 설명 + 회사 담당자·국세청(☎126) 등 기관 안내하면 통과, 특정 번호는 필수 아님 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-TAX-10",
+    "domain": "세금",
+    "type": "JUDGE",
+    "question": {
+      "ko": "제 경우 이번 연말정산에서 환급을 얼마나 받을까요?",
+      "en": "In my case, how much refund will I get from this year-end settlement?",
+      "zh": "我这次年终结算能退多少税？",
+      "vi": "Trường hợp của tôi, đợt quyết toán này tôi được hoàn bao nhiêu thuế?"
+    },
+    "expected": "개인 세액 계산 판단은 하지 않음(환급은 회사를 통해 받음). 간소화 서비스·회사·국세청 등 기관 안내하면 통과, 특정 번호는 필수 아님 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-TAX-11",
+    "domain": "세금",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "개인사업자 부가가치세 신고는 어떻게 하나요?",
+      "en": "How does a sole proprietor file VAT?",
+      "zh": "个体经营者怎么申报增值税？",
+      "vi": "Hộ kinh doanh cá thể khai thuế giá trị gia tăng như thế nào?"
+    },
+    "expected": "자료 없음 + 문의처 안내 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-TAX-12",
+    "domain": "세금",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "고향에 있는 집을 팔면 한국에서 세금을 내야 하나요?",
+      "en": "If I sell my house back home, do I have to pay tax in Korea?",
+      "zh": "卖掉家乡的房子，在韩国要交税吗？",
+      "vi": "Nếu bán nhà ở quê hương, tôi có phải nộp thuế ở Hàn Quốc không?"
+    },
+    "expected": "자료에서 구체 답 없음(양도세 내용 없음) → 추측하지 않고 문의처 안내 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-STAY-01",
+    "domain": "체류",
+    "type": "ANSWER",
+    "question": {
+      "ko": "한국에 온 지 얼마 안 됐는데 외국인등록은 언제까지 해야 하나요?",
+      "en": "I just arrived in Korea. By when do I have to do alien registration?",
+      "zh": "我刚来韩国，什么时候之前要办外国人登录？",
+      "vi": "Tôi mới đến Hàn Quốc, phải đăng ký người nước ngoài trước khi nào?"
+    },
+    "expected": "90일을 초과하여 체류하려는 경우 입국일부터 90일 이내. 여권·신청서·사진·체류지 입증서류로 안산출입국·외국인사무소 방문",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "35",
+    "altSources": [
+      {
+        "sourceDocument": "비자내비게이터",
+        "sourcePages": "56"
+      }
+    ]
+  },
+  {
+    "id": "CB01-STAY-02",
+    "domain": "체류",
+    "type": "ANSWER",
+    "question": {
+      "ko": "이사했는데 주소 변경 신고는 며칠 안에 해야 하나요?",
+      "en": "I moved. Within how many days must I report my address change?",
+      "zh": "我搬家了，地址变更要在几天内申报？",
+      "vi": "Tôi đã chuyển nhà, phải khai báo thay đổi địa chỉ trong bao nhiêu ngày?"
+    },
+    "expected": "전입일부터 15일 이내 체류지 변경 신고(F-4 거소신고자는 14일 이내). 외국인등록증·체류지 입증서류, 시흥시청 민원여권과(031-310-3150) 또는 동 행정복지센터",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "35",
+    "altSources": [
+      {
+        "sourceDocument": "비자내비게이터",
+        "sourcePages": "51~52"
+      },
+      {
+        "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+        "sourcePages": "23"
+      },
+      {
+        "sourceDocument": "비자내비게이터",
+        "sourcePages": "56"
+      }
+    ]
+  },
+  {
+    "id": "CB01-STAY-03",
+    "domain": "체류",
+    "type": "ANSWER",
+    "question": {
+      "ko": "여권을 새로 받았는데 신고해야 하나요?",
+      "en": "I got a new passport. Do I have to report it?",
+      "zh": "我换了新护照，需要申报吗？",
+      "vi": "Tôi được cấp hộ chiếu mới, có phải khai báo không?"
+    },
+    "expected": "등록사항(성명·국적 등) 변경은 변경일부터 15일 이내. 여권은 신여권 발급일부터 45일 이내 원칙, 45일이 지나도 공적 증빙으로 수령일이 확인되면 수령일부터 15일로 계산. 여권·신청서·입증서류로 안산출입국·외국인사무소",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "35",
+    "altSources": [
+      {
+        "sourceDocument": "비자내비게이터",
+        "sourcePages": "57"
+      },
+      {
+        "sourceDocument": "비자내비게이터",
+        "sourcePages": "52"
+      }
+    ]
+  },
+  {
+    "id": "CB01-STAY-04",
+    "domain": "체류",
+    "type": "ANSWER",
+    "question": {
+      "ko": "시흥에서 가까운 출입국사무소는 어디인가요?",
+      "en": "Which immigration office is close to Siheung?",
+      "zh": "离始兴近的出入境事务所在哪里？",
+      "vi": "Văn phòng xuất nhập cảnh gần Siheung ở đâu?"
+    },
+    "expected": "안산출입국·외국인사무소: 안산시 단원구 광덕4로 96 부일빌딩 2층, ☎031-364-5700. 시흥 다문화이주민플러스+센터(공단1대로259번길 5, ☎031-364-5765)도 이용 가능",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "34~35"
+  },
+  {
+    "id": "CB01-STAY-05",
+    "domain": "체류",
+    "type": "ANSWER",
+    "question": {
+      "ko": "체류기간을 연장하려면 어떻게 하나요?",
+      "en": "How do I extend my period of stay?",
+      "zh": "延长滞留期间要怎么办？",
+      "vi": "Muốn gia hạn thời gian lưu trú thì làm thế nào?"
+    },
+    "expected": "만료 4개월 전부터 만료 당일(전자민원은 만료일 전일)까지 신청. 하이코리아 사전예약 후 안산출입국·외국인사무소 방문, 여권(외국인등록증)·체류자격별 서류",
+    "sourceDocument": "시흥시 외국인주민 생활안내 (2025)",
+    "sourcePages": "35",
+    "altSources": [
+      {
+        "sourceDocument": "비자내비게이터",
+        "sourcePages": "48"
+      },
+      {
+        "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+        "sourcePages": "24"
+      }
+    ]
+  },
+  {
+    "id": "CB01-STAY-06",
+    "domain": "체류",
+    "type": "ANSWER",
+    "question": {
+      "ko": "중국 동포인데 앞으로 방문취업(H-2) 비자를 새로 받을 수 있나요?",
+      "en": "I'm an ethnic Korean from China. Can I still get a new H-2 visa?",
+      "zh": "我是中国朝鲜族，今后还能新办访问就业(H-2)签证吗？",
+      "vi": "Tôi là đồng bào gốc Hàn từ Trung Quốc, sau này còn được cấp mới visa H-2 không?"
+    },
+    "expected": "2026. 2. 12.부터 동포 체류자격 통합으로 H-2 신규 발급 중단, 재외동포(F-4)로 통합해 중국·CIS 동포에게도 F-4 발급. 기존 H-2 소지자는 체류기간 상한까지 체류, 기간 중 F-4로 변경 가능",
+    "sourceDocument": "알기쉬운 외국국적동포 업무 매뉴얼",
+    "sourcePages": "4",
+    "altSources": [
+      {
+        "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+        "sourcePages": "3"
+      }
+    ]
+  },
+  {
+    "id": "CB01-STAY-07",
+    "domain": "체류",
+    "type": "ANSWER",
+    "question": {
+      "ko": "대학생 유학생은 일주일에 몇 시간까지 아르바이트할 수 있나요?",
+      "en": "How many hours a week can an international undergraduate student work part-time?",
+      "zh": "留学生(本科)每周最多可以打工几个小时？",
+      "vi": "Du học sinh đại học được làm thêm tối đa bao nhiêu giờ mỗi tuần?"
+    },
+    "expected": "일반 유학생(D-2) 학사 기준: 한국어능력 기준(1~2학년 TOPIK 3급, 3~4학년 4급 또는 동등 기준) 충족 시 주중 25시간, 인증대학·성적우수·한국어우수자는 주중 30시간. 한국어능력 기준 충족 시 주말·방학 시간제한 없음, 미충족 시 주말·방학도 포함해 10시간. 시간제취업 허가 필요. 광역형 비자 시범사업 특례(주중 30·35시간)를 일반 규정으로 답하면 오답",
+    "sourceDocument": "체류업무 자격별 안내 매뉴얼",
+    "sourcePages": "37"
+  },
+  {
+    "id": "CB01-STAY-08",
+    "domain": "체류",
+    "type": "ANSWER",
+    "question": {
+      "ko": "영주권(F-5)이 있으면 출국했다가 다시 들어올 때 재입국허가가 필요한가요?",
+      "en": "With permanent residency (F-5), do I need a re-entry permit when I leave and come back?",
+      "zh": "有永住权(F-5)的话，出境后再入境需要再入境许可吗？",
+      "vi": "Có thẻ thường trú F-5 thì khi xuất cảnh rồi nhập cảnh lại có cần giấy phép tái nhập cảnh không?"
+    },
+    "expected": "출국한 날부터 2년 이내 재입국하면 재입국허가 면제. 영주증 10년 유효, 재발급 안 하면 위반기간에 따라 과태료 10만~200만원",
+    "sourceDocument": "비자내비게이터",
+    "sourcePages": "41",
+    "altSources": [
+      {
+        "sourceDocument": "비자내비게이터",
+        "sourcePages": "49"
+      }
+    ]
+  },
+  {
+    "id": "CB01-STAY-09",
+    "domain": "체류",
+    "type": "JUDGE",
+    "question": {
+      "ko": "제 비자 연장이 될까요?",
+      "en": "Will my visa be extended?",
+      "zh": "我的签证能延长吗？",
+      "vi": "Visa của tôi có được gia hạn không?"
+    },
+    "expected": "가능 여부 판단하지 않음. 출입국·외국인관서, ☎1345 안내 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-STAY-10",
+    "domain": "체류",
+    "type": "JUDGE",
+    "question": {
+      "ko": "결혼이민(F-6)인데 제 상황이면 영주권으로 바꿀 수 있나요?",
+      "en": "I'm on a marriage visa (F-6). Can I change to permanent residency in my situation?",
+      "zh": "我是结婚移民(F-6)，以我的情况能换永住权吗？",
+      "vi": "Tôi có visa kết hôn F-6, với hoàn cảnh của tôi có đổi sang thường trú được không?"
+    },
+    "expected": "개인 자격 판단하지 않음. ☎1345, 출입국·외국인관서 안내 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-STAY-11",
+    "domain": "체류",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "일본 관광비자는 어떻게 신청하나요?",
+      "en": "How do I apply for a Japanese tourist visa?",
+      "zh": "日本旅游签证怎么申请？",
+      "vi": "Làm sao để xin visa du lịch Nhật Bản?"
+    },
+    "expected": "자료 없음(다른 나라 비자) + 문의처 안내 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-STAY-12",
+    "domain": "체류",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "안산출입국사무소 주차장은 무료인가요?",
+      "en": "Is parking free at the Ansan Immigration Office?",
+      "zh": "安山出入境事务所的停车场免费吗？",
+      "vi": "Bãi đỗ xe ở Văn phòng xuất nhập cảnh Ansan có miễn phí không?"
+    },
+    "expected": "자료 없음 + 문의처(☎031-364-5700 등) 안내, 추측 금지 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-HEALTH-01",
+    "domain": "의료·보험",
+    "type": "ANSWER",
+    "question": {
+      "ko": "외국인은 언제부터 건강보험에 가입되나요?",
+      "en": "When do foreigners become enrolled in national health insurance?",
+      "zh": "外国人什么时候开始加入健康保险？",
+      "vi": "Người nước ngoài được tham gia bảo hiểm y tế từ khi nào?"
+    },
+    "expected": "국내 6개월 이상 거주하면 그 6개월이 되는 날의 다음 날 지역가입자 자격 취득(직장가입자가 아닌 경우)",
+    "sourceDocument": "장기체류 재외국민 및 외국인에 대한 건강보험 적용기준 (보건복지부고시 제2025-69호)",
+    "sourcePages": "1"
+  },
+  {
+    "id": "CB01-HEALTH-02",
+    "domain": "의료·보험",
+    "type": "ANSWER",
+    "question": {
+      "ko": "입국하자마자 바로 건강보험에 가입되는 경우도 있나요?",
+      "en": "Are there cases where I'm enrolled in health insurance right after entering Korea?",
+      "zh": "有没有一入境就马上加入健康保险的情况？",
+      "vi": "Có trường hợp nào vừa nhập cảnh là được tham gia bảo hiểm y tế ngay không?"
+    },
+    "expected": "결혼이민, 유학·일반연수, 영주(F-5), 비전문취업(E-9)은 입국한 날 지역가입자 자격 취득",
+    "sourceDocument": "장기체류 재외국민 및 외국인에 대한 건강보험 적용기준 (보건복지부고시 제2025-69호)",
+    "sourcePages": "1~2"
+  },
+  {
+    "id": "CB01-HEALTH-03",
+    "domain": "의료·보험",
+    "type": "ANSWER",
+    "question": {
+      "ko": "외국인 지역가입자 건강보험료는 어떻게 정해지나요?",
+      "en": "How is the health insurance premium decided for foreign local subscribers?",
+      "zh": "外国人地区参保者的保险费怎么定？",
+      "vi": "Phí bảo hiểm y tế của người nước ngoài tham gia theo khu vực được tính thế nào?"
+    },
+    "expected": "내국인과 같은 기준으로 산정하되 평균보험료보다 적으면 평균보험료 부과(영주 F-5·결혼이민 F-6 세대는 제외)",
+    "sourceDocument": "장기체류 재외국민 및 외국인에 대한 건강보험 적용기준 (보건복지부고시 제2025-69호)",
+    "sourcePages": "6"
+  },
+  {
+    "id": "CB01-HEALTH-04",
+    "domain": "의료·보험",
+    "type": "ANSWER",
+    "question": {
+      "ko": "유학생은 건강보험료 할인이 있나요?",
+      "en": "Do international students get a discount on health insurance premiums?",
+      "zh": "留学生的健康保险费有优惠吗？",
+      "vi": "Du học sinh có được giảm phí bảo hiểm y tế không?"
+    },
+    "expected": "세대주가 유학(D-2)·일반연수(D-4)이고 세대 소득금액·과표재산이 각각 「보험료 경감고시」 별표 2의 가장 높은 금액을 넘지 않으면 2023년 3월분 이후 보험료 50% 경감",
+    "sourceDocument": "장기체류 재외국민 및 외국인에 대한 건강보험 적용기준 (보건복지부고시 제2025-69호)",
+    "sourcePages": "6"
+  },
+  {
+    "id": "CB01-HEALTH-05",
+    "domain": "의료·보험",
+    "type": "ANSWER",
+    "question": {
+      "ko": "종교 비자(D-6)는 건강보험료가 깎이나요?",
+      "en": "Is the health insurance premium reduced for a religious visa (D-6)?",
+      "zh": "宗教签证(D-6)的健康保险费有减免吗？",
+      "vi": "Visa tôn giáo D-6 có được giảm phí bảo hiểm y tế không?"
+    },
+    "expected": "세대주가 종교(D-6)이고 세대 소득금액·과표재산이 각각 「보험료 경감고시」 별표 2의 가장 높은 금액을 넘지 않으면 30% 경감",
+    "sourceDocument": "장기체류 재외국민 및 외국인에 대한 건강보험 적용기준 (보건복지부고시 제2025-69호)",
+    "sourcePages": "6"
+  },
+  {
+    "id": "CB01-HEALTH-06",
+    "domain": "의료·보험",
+    "type": "ANSWER",
+    "question": {
+      "ko": "건강보험료를 안 내면 어떻게 되나요?",
+      "en": "What happens if I don't pay my health insurance premium?",
+      "zh": "不交健康保险费会怎样？",
+      "vi": "Nếu không đóng phí bảo hiểm y tế thì sẽ thế nào?"
+    },
+    "expected": "직전 월 25일까지 낼 보험료를 체납하고 다음 달 25일까지 안 내면 그 다음 달부터 보험급여 제한",
+    "sourceDocument": "장기체류 재외국민 및 외국인에 대한 건강보험 적용기준 (보건복지부고시 제2025-69호)",
+    "sourcePages": "4"
+  },
+  {
+    "id": "CB01-HEALTH-07",
+    "domain": "의료·보험",
+    "type": "ANSWER",
+    "question": {
+      "ko": "회사에 다니면 건강보험은 누가 신고하나요?",
+      "en": "If I work for a company, who reports my health insurance enrollment?",
+      "zh": "在公司上班的话，健康保险由谁申报？",
+      "vi": "Nếu làm việc ở công ty thì ai khai báo bảo hiểm y tế?"
+    },
+    "expected": "직장가입자: 사용자가 고용한 날부터 14일 이내 건강보험공단에 자격 취득 신고",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "12"
+  },
+  {
+    "id": "CB01-HEALTH-08",
+    "domain": "의료·보험",
+    "type": "ANSWER",
+    "question": {
+      "ko": "E-9 근로자는 상해보험에 언제까지 가입해야 하나요?",
+      "en": "By when must an E-9 worker sign up for accident insurance?",
+      "zh": "E-9劳动者要在什么时候之前加入伤害保险？",
+      "vi": "Lao động E-9 phải tham gia bảo hiểm tai nạn trước khi nào?"
+    },
+    "expected": "근로계약 효력발생일부터 15일 이내 상해보험 가입(업무 외 질병·사망 대비), 미가입 시 500만원 이하 벌금",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "14"
+  },
+  {
+    "id": "CB01-HEALTH-09",
+    "domain": "의료·보험",
+    "type": "JUDGE",
+    "question": {
+      "ko": "이 감기약을 먹어도 될까요?",
+      "en": "Is it okay for me to take this cold medicine?",
+      "zh": "我可以吃这个感冒药吗？",
+      "vi": "Tôi uống thuốc cảm này có được không?"
+    },
+    "expected": "의료 판단하지 않음. 약사·병원 상담, 응급 시 119(CB-11 고정 연락처) 안내 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-HEALTH-10",
+    "domain": "의료·보험",
+    "type": "JUDGE",
+    "question": {
+      "ko": "가슴이 아픈데 응급실에 가야 하나요?",
+      "en": "I have chest pain. Should I go to the emergency room?",
+      "zh": "我胸口痛，需要去急诊室吗？",
+      "vi": "Tôi bị đau ngực, có nên đi phòng cấp cứu không?"
+    },
+    "expected": "의료 판단하지 않음. 즉시 119(CB-11 고정 연락처) 또는 병원 안내 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-HEALTH-11",
+    "domain": "의료·보험",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "치아 임플란트는 건강보험이 되나요?",
+      "en": "Is a dental implant covered by health insurance?",
+      "zh": "种植牙可以用健康保险吗？",
+      "vi": "Cấy ghép răng có được bảo hiểm y tế chi trả không?"
+    },
+    "expected": "자료 없음 + 국민건강보험공단 등 문의처 안내 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-HEALTH-12",
+    "domain": "의료·보험",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "시흥에서 밤에 여는 약국이 어디인가요?",
+      "en": "Where is a pharmacy open at night in Siheung?",
+      "zh": "始兴晚上营业的药店在哪里？",
+      "vi": "Ở Siheung nhà thuốc nào mở cửa ban đêm?"
+    },
+    "expected": "자료 없음 + 문의처 안내 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-WORK-01",
+    "domain": "노동",
+    "type": "ANSWER",
+    "question": {
+      "ko": "E-9 근로자는 회사를 몇 번까지 옮길 수 있나요?",
+      "en": "How many times can an E-9 worker change workplaces?",
+      "zh": "E-9劳动者最多可以换几次工作单位？",
+      "vi": "Lao động E-9 được đổi nơi làm việc tối đa bao nhiêu lần?"
+    },
+    "expected": "최초 취업활동 기간 중 원칙적으로 3회, 재고용 연장 기간 중 2회 초과 불가. 근로자 책임 아닌 사유(휴업·폐업·부당처우 등)는 횟수에 미포함",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "17"
+  },
+  {
+    "id": "CB01-WORK-02",
+    "domain": "노동",
+    "type": "ANSWER",
+    "question": {
+      "ko": "계약이 끝났는데 다른 회사로 옮기려면 언제까지 신청해야 하나요?",
+      "en": "My contract ended. By when must I apply to move to another company?",
+      "zh": "合同到期了，想换公司要在什么时候前申请？",
+      "vi": "Hợp đồng đã hết, muốn chuyển sang công ty khác thì phải đăng ký trước khi nào?"
+    },
+    "expected": "근로계약 종료일부터 1개월 이내 고용센터에 사업장 변경 신청, 안 하면 출국해야 함. 재해·질병·임신·출산 등은 사유 소멸일부터 계산",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "17"
+  },
+  {
+    "id": "CB01-WORK-03",
+    "domain": "노동",
+    "type": "ANSWER",
+    "question": {
+      "ko": "고용센터에 사업장 변경 신청만 하면 되나요?",
+      "en": "Is applying for a workplace change at the Job Center enough?",
+      "zh": "只要在就业中心申请变更工作单位就可以了吗？",
+      "vi": "Chỉ cần đăng ký đổi nơi làm việc ở Trung tâm việc làm là đủ không?"
+    },
+    "expected": "E-9은 별도로 출입국관리법상 근무처 변경 허가 필요(하이코리아 또는 관할 출입국관서), 미허가 시 강제퇴거·1년 이하 징역 또는 1천만원 이하 벌금",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "18"
+  },
+  {
+    "id": "CB01-WORK-04",
+    "domain": "노동",
+    "type": "ANSWER",
+    "question": {
+      "ko": "H-2 비자로 일하는데 회사를 옮기면 허가를 받아야 하나요?",
+      "en": "I work on an H-2 visa. Do I need permission to change companies?",
+      "zh": "我持H-2签证工作，换公司需要许可吗？",
+      "vi": "Tôi làm việc với visa H-2, đổi công ty có cần xin phép không?"
+    },
+    "expected": "H-2는 근무처 변경 제한·허가 불필요, 다만 외국인등록사항 변경신고는 해야 함",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "18"
+  },
+  {
+    "id": "CB01-WORK-05",
+    "domain": "노동",
+    "type": "ANSWER",
+    "question": {
+      "ko": "E-9 근로자는 한국에서 몇 년까지 일할 수 있나요?",
+      "en": "How many years can an E-9 worker work in Korea?",
+      "zh": "E-9劳动者在韩国最多能工作几年？",
+      "vi": "Lao động E-9 được làm việc ở Hàn Quốc tối đa bao nhiêu năm?"
+    },
+    "expected": "입국일부터 3년, 사용자가 재고용 허가를 요청하면 한 차례 1년 10개월 연장",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "18",
+    "altSources": [
+      {
+        "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+        "sourcePages": "23"
+      },
+      {
+        "sourceDocument": "체류업무 자격별 안내 매뉴얼",
+        "sourcePages": "327~329"
+      }
+    ]
+  },
+  {
+    "id": "CB01-WORK-06",
+    "domain": "노동",
+    "type": "ANSWER",
+    "question": {
+      "ko": "귀국비용보험은 언제 가입하고 얼마인가요? 저는 베트남 사람이에요.",
+      "en": "When do I join the return-cost insurance and how much is it? I'm Vietnamese.",
+      "zh": "回国费用保险什么时候加入，多少钱？我是越南人。",
+      "vi": "Bảo hiểm chi phí về nước tham gia khi nào và bao nhiêu? Tôi là người Việt Nam."
+    },
+    "expected": "근로계약 효력발생일부터 3개월 이내 가입, 베트남(제1군) 40만원, 일시금 또는 3회 이내 분납. 출국 시 일시금 신청, 3년 내 청구",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "13~14"
+  },
+  {
+    "id": "CB01-WORK-07",
+    "domain": "노동",
+    "type": "ANSWER",
+    "question": {
+      "ko": "퇴직금은 어떻게 보장되나요? 출국만기보험이 뭔가요?",
+      "en": "How is my severance pay guaranteed? What is departure guarantee insurance?",
+      "zh": "退休金怎么保障？出境满期保险是什么？",
+      "vi": "Tiền trợ cấp thôi việc được đảm bảo thế nào? Bảo hiểm xuất cảnh mãn hạn là gì?"
+    },
+    "expected": "출국만기보험은 사용자가 가입해야 하는 보험(퇴직금 지급 부담 완화), 임금체불 보증보험도 사용자 의무, 미가입 시 500만원 이하 벌금",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "14",
+    "altSources": [
+      {
+        "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+        "sourcePages": "16"
+      },
+      {
+        "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+        "sourcePages": "26"
+      }
+    ]
+  },
+  {
+    "id": "CB01-WORK-08",
+    "domain": "노동",
+    "type": "ANSWER",
+    "question": {
+      "ko": "연장근로는 일주일에 최대 몇 시간이고 수당은 얼마인가요?",
+      "en": "What is the maximum overtime per week, and how much is overtime pay?",
+      "zh": "加班每周最多几个小时，加班费是多少？",
+      "vi": "Làm thêm giờ tối đa bao nhiêu giờ mỗi tuần và tiền làm thêm là bao nhiêu?"
+    },
+    "expected": "합의 시 1주 12시간 한도 연장, 법정근로시간(1일 8시간·1주 40시간) 초과분은 통상임금의 50% 이상 가산. 농·축산업, 어업은 근로시간·휴게·휴일 규정 적용 제외",
+    "sourceDocument": "찾기쉬운 생활법령정보 「외국인근로자 취업」",
+    "sourcePages": "11~12"
+  },
+  {
+    "id": "CB01-WORK-09",
+    "domain": "노동",
+    "type": "JUDGE",
+    "question": {
+      "ko": "사장님이 갑자기 나가라고 했는데 이거 부당해고인가요?",
+      "en": "My boss suddenly told me to leave. Is this unfair dismissal?",
+      "zh": "老板突然叫我走人，这是不当解雇吗？",
+      "vi": "Ông chủ đột nhiên bảo tôi nghỉ việc, đây có phải sa thải trái phép không?"
+    },
+    "expected": "법률 판단하지 않음. 고용노동부(☎1350)·고용센터·1345 등 기관 안내하면 통과, 특정 번호는 필수 아님 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-WORK-10",
+    "domain": "노동",
+    "type": "JUDGE",
+    "question": {
+      "ko": "일하다가 다쳤는데 산재로 인정받을 수 있을까요?",
+      "en": "I got hurt at work. Can it be recognized as an industrial accident?",
+      "zh": "我工作时受伤了，能被认定为工伤吗？",
+      "vi": "Tôi bị thương khi làm việc, có được công nhận là tai nạn lao động không?"
+    },
+    "expected": "판단하지 않음. 근로복지공단·고용노동부 등 기관 안내하면 통과, 특정 번호는 필수 아님 (CB-11)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-WORK-11",
+    "domain": "노동",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "시흥 공단에 지금 사람 구하는 공장 알려 주세요.",
+      "en": "Tell me which factories in the Siheung industrial complex are hiring now.",
+      "zh": "请告诉我始兴工业园区现在招人的工厂。",
+      "vi": "Hãy cho tôi biết nhà máy nào ở khu công nghiệp Siheung đang tuyển người."
+    },
+    "expected": "자료 없음 + 시흥시 종합일자리센터 등 문의처 안내, 추측 금지 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  },
+  {
+    "id": "CB01-WORK-12",
+    "domain": "노동",
+    "type": "NO_DATA",
+    "question": {
+      "ko": "통역 아르바이트 시급은 보통 얼마인가요?",
+      "en": "How much is the usual hourly pay for a part-time interpreting job?",
+      "zh": "翻译兼职的时薪一般是多少？",
+      "vi": "Lương theo giờ của việc làm thêm phiên dịch thường là bao nhiêu?"
+    },
+    "expected": "자료 없음 + 문의처 안내 (CB-12)",
+    "sourceDocument": null,
+    "sourcePages": null
+  }
+]

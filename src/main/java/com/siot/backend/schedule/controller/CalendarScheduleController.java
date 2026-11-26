@@ -20,7 +20,7 @@ import java.util.List;
 /**
  * 생활 달력 & 세금 상세 일정 REST API (CAL-01 ~ CAL-04)
  */
-@Tag(name = "6. 생활 달력", description = "공통 세금 일정, 로그인 회원의 체류 만료일 및 자동차세/재산세 일정 병합 (CAL-01~04)")
+@Tag(name = "7. 생활 달력", description = "공통 세금 일정, 로그인 회원의 체류 만료일 및 자동차세/재산세 일정 병합 (CAL-01~04)")
 @RestController
 @RequestMapping("/api/schedules")
 @RequiredArgsConstructor
@@ -30,7 +30,8 @@ public class CalendarScheduleController {
     private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
 
     @Operation(summary = "CAL-02 월간 생활 및 세금 일정 조회",
-            description = "공통 세금 일정과 로그인 회원의 체류만료일 및 자동차세/재산세 납부 일정을 병합하여 반환합니다.")
+            description = "조회 월과 기간이 겹치는 공통 일정과 로그인 회원의 개인 일정을 함께 반환합니다. "
+                    + "개인 일정의 제목과 대상 안내는 요청 언어로 표시합니다.")
     @GetMapping("/monthly")
     public ResponseEntity<ApiResponse<List<ScheduleResponse>>> getMonthly(
             @AuthenticationPrincipal MemberPrincipal principal,

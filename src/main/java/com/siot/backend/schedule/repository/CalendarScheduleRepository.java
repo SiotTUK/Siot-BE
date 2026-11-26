@@ -14,6 +14,16 @@ public interface CalendarScheduleRepository extends JpaRepository<CalendarSchedu
 
     List<CalendarSchedule> findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(LocalDate start, LocalDate end);
 
+    @Query("""
+            SELECT cs FROM CalendarSchedule cs
+            WHERE cs.active = true AND cs.startsOn <= :end
+              AND COALESCE(cs.endsOn, cs.startsOn) >= :start
+            """)
+    List<CalendarSchedule> findActiveOverlapping(@Param("start") LocalDate start, @Param("end") LocalDate end);
+
     @Query("SELECT cs FROM CalendarSchedule cs WHERE cs.active = true AND cs.startsOn >= :startDate AND cs.startsOn <= :endDate")
     List<CalendarSchedule> findImpendingSchedules(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+
+    /** 납부 마감일이 그날인 일정 (NTF-01 마감 D-7·D-1) */
+    List<CalendarSchedule> findByEndsOnAndActiveTrue(LocalDate endsOn);
 }

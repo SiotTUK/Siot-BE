@@ -1,5 +1,6 @@
 package com.siot.backend.global.exception;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -10,11 +11,15 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final String BILL_TRANSLATION_PATH = "/api/translations/bills";
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusiness(BusinessException e) {
@@ -34,6 +39,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             HttpMessageNotReadableException.class,
             MissingServletRequestParameterException.class,
+            MissingServletRequestPartException.class,
             MethodArgumentTypeMismatchException.class
     })
     public ResponseEntity<ErrorResponse> handleBadRequest(Exception e) {
@@ -49,6 +55,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<ErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException e) {
         return toResponse(ErrorCode.UNSUPPORTED_MEDIA_TYPE, ErrorCode.UNSUPPORTED_MEDIA_TYPE.getMessage());
+    }
+
+    /**
+     * 업로드 한도(spring.servlet.multipart.max-file-size) 초과는 500 이 아니라 413.
+     * 고지서 번역(RUL-07)은 고지서 문구로, 나머지는 문서 업로드(ADM-02) 문구로 답한다.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException e,
+                                                             HttpServletRequest request) {
+        ErrorCode code = request.getRequestURI().startsWith(BILL_TRANSLATION_PATH)
+                ? ErrorCode.BILL_FILE_TOO_LARGE
+                : ErrorCode.DOCUMENT_FILE_TOO_LARGE;
+        return toResponse(code, code.getMessage());
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

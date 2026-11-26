@@ -16,6 +16,8 @@ import com.siot.backend.schedule.repository.CalendarScheduleRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -29,6 +31,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class CalendarScheduleServiceTest {
@@ -65,7 +68,7 @@ class CalendarScheduleServiceTest {
                 10L, "TAX_CAR", LocalDate.of(2026, 6, 16), LocalDate.of(2026, 6, 30),
                 "자동차세 1기분 납부", "https://wetax.go.kr", true, 1L
         );
-        given(calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(any(), any()))
+        given(calendarScheduleRepository.findActiveOverlapping(any(), any()))
                 .willReturn(List.of(commonSchedule));
 
         GuideTranslation translation = GuideTranslation.create(
@@ -126,5 +129,102 @@ class CalendarScheduleServiceTest {
         assertThat(response.summary()).isEqualTo("재산세 납부 요약");
         assertThat(response.content()).isEqualTo("재산세 상세 본문");
         assertThat(response.sourcePages()).isEqualTo("p.42~43");
+    }
+
+    @Test
+    @DisplayName("연장 신청 시작일(만료일 − 4개월)이 든 달에 STAY_EXTENSION_START 일정을 보여 준다 (CAL-04)")
+    void getMonthlySchedules_stayExtensionStart() {
+        // given: 2099-10-31 만료 → 신청 시작 2099-06-30 (먼 미래라 강조 아님)
+        Long userId = 1L;
+        AppUser user = AppUser.create("test@siot.kr", "hash");
+        user.updateOnboarding(UserType.LIVING, LocalDate.of(2025, 1, 1), Purpose.WORK, Set.of(), LocalDate.of(2099, 10, 31));
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+        given(calendarScheduleRepository.findActiveOverlapping(any(), any())).willReturn(List.of());
+
+        // when
+        List<ScheduleResponse> june = calendarScheduleService.getMonthlySchedules(userId, 2099, 6, "ko");
+        List<ScheduleResponse> october = calendarScheduleService.getMonthlySchedules(userId, 2099, 10, "ko");
+
+        // then
+        assertThat(june).singleElement().satisfies(r -> {
+            assertThat(r.kind()).isEqualTo("STAY_EXTENSION_START");
+            assertThat(r.startsOn()).isEqualTo(LocalDate.of(2099, 6, 30));
+            assertThat(r.targetDescription()).isEqualTo(
+                    "2099-06-30부터 체류 만료일(2099-10-31)까지 체류기간 연장을 신청할 수 있습니다.");
+            assertThat(r.personal()).isTrue();
+            assertThat(r.highlighted()).isFalse();
+        });
+        assertThat(october).singleElement().satisfies(r -> {
+            assertThat(r.kind()).isEqualTo("STAY_EXPIRY");
+            assertThat(r.targetDescription()).contains("2099-06-30");
+        });
+    }
+
+    @Test
+    @DisplayName("연간 일정은 1월만이 아니라 1~12월 공통 일정을 시작일 순으로 돌려준다 (CAL-01)")
+    void getYearlySchedules_wholeYear() {
+        CalendarSchedule car2 = CalendarSchedule.create(null, "TAX_CAR", LocalDate.of(2027, 12, 16), LocalDate.of(2027, 12, 31),
+                "자동차 보유자", null, true, null);
+        CalendarSchedule resident = CalendarSchedule.create(null, "TAX_RESIDENT", LocalDate.of(2027, 8, 16), LocalDate.of(2027, 8, 31),
+                "모든 주민", null, true, null);
+        CalendarSchedule car1 = CalendarSchedule.create(null, "TAX_CAR", LocalDate.of(2027, 6, 16), LocalDate.of(2027, 6, 30),
+                "자동차 보유자", null, true, null);
+        given(calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(
+                LocalDate.of(2027, 1, 1), LocalDate.of(2027, 12, 31)))
+                .willReturn(List.of(car2, resident, car1));
+
+        List<ScheduleResponse> responses = calendarScheduleService.getYearlySchedules(2027, "ko");
+
+        assertThat(responses).extracting(ScheduleResponse::startsOn).containsExactly(
+                LocalDate.of(2027, 6, 16), LocalDate.of(2027, 8, 16), LocalDate.of(2027, 12, 16));
+        assertThat(responses).allSatisfy(r -> assertThat(r.personal()).isFalse());
+        verifyNoInteractions(appUserRepository);
+    }
+
+    @Test
+    @DisplayName("만료 30일 안이면 체류 만료 일정을 강조한다 (CAL-04)")
+    void getMonthlySchedules_stayExpiryHighlighted() {
+        Long userId = 1L;
+        LocalDate expiry = LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).plusDays(10);
+        AppUser user = AppUser.create("test@siot.kr", "hash");
+        user.updateOnboarding(UserType.LIVING, LocalDate.of(2025, 1, 1), Purpose.WORK, Set.of(), expiry);
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+        given(calendarScheduleRepository.findActiveOverlapping(any(), any())).willReturn(List.of());
+
+        List<ScheduleResponse> responses = calendarScheduleService.getMonthlySchedules(
+                userId, expiry.getYear(), expiry.getMonthValue(), "ko");
+
+        assertThat(responses).filteredOn(r -> "STAY_EXPIRY".equals(r.kind()))
+                .singleElement().satisfies(r -> assertThat(r.highlighted()).isTrue());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "en, First day to apply for a stay extension, Stay expiry date, Vehicle tax payment (installment 1), Property tax payment (installment 2)",
+            "zh, 居留期限延长申请开始日, 居留期满日, 汽车税缴纳（第1期）, 财产税缴纳（第2期）",
+            "vi, Ngày bắt đầu nộp đơn gia hạn thời gian lưu trú, Ngày hết hạn lưu trú, Nộp thuế ô tô (đợt 1), Nộp thuế tài sản (đợt 2)"
+    })
+    void monthlyPersonalSchedulesUseRequestedLanguage(
+            String language, String extensionTitle, String expiryTitle, String carTaxTitle, String propertyTaxTitle) {
+        AppUser user = AppUser.create("test@siot.kr", "hash");
+        user.updateOnboarding(UserType.LIVING, null, Purpose.WORK, Set.of(Residence.CAR, Residence.HOUSE),
+                LocalDate.of(2099, 10, 31));
+        given(appUserRepository.findById(1L)).willReturn(Optional.of(user));
+
+        List<ScheduleResponse> june = calendarScheduleService.getMonthlySchedules(1L, 2099, 6, language);
+        List<ScheduleResponse> september = calendarScheduleService.getMonthlySchedules(1L, 2099, 9, language);
+        List<ScheduleResponse> october = calendarScheduleService.getMonthlySchedules(1L, 2099, 10, language);
+
+        assertThat(june).extracting(ScheduleResponse::title).containsExactly(carTaxTitle, extensionTitle);
+        assertThat(june.getFirst().targetDescription()).isNotBlank().doesNotContain("자동차세");
+        assertThat(june.getLast().targetDescription()).contains("2099-06-30", "2099-10-31").doesNotContain("오늘");
+        assertThat(september).singleElement().satisfies(r -> {
+            assertThat(r.title()).isEqualTo(propertyTaxTitle);
+            assertThat(r.targetDescription()).isNotBlank().doesNotContain("재산세");
+        });
+        assertThat(october).singleElement().satisfies(r -> {
+            assertThat(r.title()).isEqualTo(expiryTitle);
+            assertThat(r.targetDescription()).contains("2099-06-30").doesNotContain("체류기간");
+        });
     }
 }

@@ -24,6 +24,7 @@ cp .env.example .env
 | `SCHEDULING_ENABLED` | 예약 작업 사용 여부 | true |
 | `EVENT_COLLECT_CRON` | 행사 수집 주기 (EVE-01, Asia/Seoul) | `0 0 3 * * *` |
 | `NOTIFICATION_DISPATCH_INTERVAL` | 예약 알림 발송 확인 주기 (NTF-05) | 1m |
+| `DOCUMENT_STORAGE_DIR` | 업로드한 문서(PDF) 저장 폴더 (ADM-02). compose 는 `document-data` 볼륨 | `./data/documents` |
 | `MAIL_HOST` / `MAIL_PORT` | SMTP 서버 | 로컬 localhost:1025, compose mailpit:1025 |
 | `MAIL_USERNAME` / `MAIL_PASSWORD` | SMTP 계정 (운영: Gmail 앱 비밀번호) | - |
 | `MAIL_SMTP_AUTH` / `MAIL_SMTP_STARTTLS` | SMTP 인증·TLS | 로컬 false, 운영 true |

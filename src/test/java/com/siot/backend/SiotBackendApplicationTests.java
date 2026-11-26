@@ -65,7 +65,7 @@ class SiotBackendApplicationTests {
     void flywayAppliedAllMigrations() {
         Integer applied = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = true", Integer.class);
-        assertThat(applied).isEqualTo(12);
+        assertThat(applied).isEqualTo(16);
     }
 
     @Test
@@ -129,6 +129,12 @@ class SiotBackendApplicationTests {
                 .andExpect(jsonPath("$.paths['/api/auth/signup/email-verification'].post.responses['202']").exists())
                 .andExpect(jsonPath("$.paths['/api/auth/logout'].post.responses['204'].content").doesNotExist())
                 .andExpect(jsonPath("$.paths['/api/chat/conversations'].post.responses['201']").exists())
+                .andExpect(jsonPath("$.paths['/api/members/me/checklist/{code}'].put.responses['204']").exists())
+                .andExpect(jsonPath("$.paths['/api/members/me/checklist/{code}'].put.responses['200']").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/members/me/life-changes/{code}'].delete.responses['204']").exists())
+                .andExpect(jsonPath("$.paths['/api/members/me/notifications/read-all'].patch.responses['204']").exists())
+                .andExpect(jsonPath("$.paths['/api/reports'].post.responses['201']").exists())
+                .andExpect(jsonPath("$.paths['/api/reports'].post.responses['200']").doesNotExist())
                 // 공개 API 는 인증 표시 없음, 그 외는 세션 + 401
                 .andExpect(jsonPath("$.paths['/api/auth/login'].post.security").isEmpty())
                 .andExpect(jsonPath("$.paths['/api/auth/login'].post.responses['401'].content['application/json'].examples.LOGIN_FAILED").exists())
@@ -138,10 +144,16 @@ class SiotBackendApplicationTests {
                 .andExpect(jsonPath("$.paths['/api/admin/members'].get.responses['403'].content['application/json'].examples.FORBIDDEN").exists())
                 .andExpect(jsonPath("$.paths['/api/chat/conversations/{conversationId}/messages'].post.responses['403'].content['application/json'].examples.CSRF_TOKEN_INVALID").exists())
                 .andExpect(jsonPath("$.paths['/api/auth/signup'].post.responses['409'].content['application/json'].examples.DUPLICATE_EMAIL").exists())
+                .andExpect(jsonPath("$.paths['/api/rules/{code}'].get.responses['404'].content['application/json'].examples.GUIDE_NOT_FOUND").exists())
+                .andExpect(jsonPath("$.paths['/api/members/me/notifications/{notificationId}/read'].patch.responses['404'].content['application/json'].examples.NOTIFICATION_NOT_FOUND").exists())
+                .andExpect(jsonPath("$.paths['/api/admin/reports/{reportId}'].patch.responses['404'].content['application/json'].examples.CONTENT_REPORT_NOT_FOUND").exists())
                 .andExpect(jsonPath("$.components.schemas.ErrorResponse.properties.code.enum").isNotEmpty())
                 // 설명·태그
                 .andExpect(jsonPath("$.paths['/api/auth/signup'].post.summary").value("M-01~M-03 회원가입"))
                 .andExpect(jsonPath("$.paths['/api/auth/signup'].post.tags[0]").value("1. 인증·가입"))
+                .andExpect(jsonPath("$.paths['/api/members/me/checklist'].get.tags[0]").value("5. 체크리스트"))
+                .andExpect(jsonPath("$.paths['/api/reports'].post.tags[0]").value("8-2. 오류 신고"))
+                .andExpect(jsonPath("$.paths['/api/admin/reports'].get.tags[0]").value("9-4. 관리자: 오류 신고"))
                 .andExpect(jsonPath("$.components.schemas.ReferralContact").exists())
                 .andExpect(jsonPath("$.components.schemas.Contact").doesNotExist());
     }

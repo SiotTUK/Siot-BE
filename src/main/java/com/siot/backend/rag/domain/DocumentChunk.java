@@ -52,4 +52,17 @@ public class DocumentChunk {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
+
+    public static DocumentChunk create(DocumentVersion version, int chunkNo, int pageStart, int pageEnd,
+                                       String content, String embeddingModel, float[] embedding) {
+        DocumentChunk chunk = new DocumentChunk();
+        chunk.documentVersion = version;
+        chunk.chunkNo = chunkNo;
+        chunk.pageStart = pageStart;
+        chunk.pageEnd = pageEnd;
+        chunk.content = content;
+        chunk.embeddingModel = embeddingModel;
+        chunk.embedding = embedding;
+        return chunk;
+    }
 }

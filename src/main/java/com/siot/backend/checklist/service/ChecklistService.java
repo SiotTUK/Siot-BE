@@ -46,6 +46,7 @@ public class ChecklistService {
     private final GuideDocumentReferenceRepository guideDocumentReferenceRepository;
 
     private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
+    private static final String STAY_EXTENSION_CODE = "CL-05";
 
     /**
      * 회원의 온보딩 답과 생활 변화를 바탕으로 맞춤 체크리스트 및 진행률 계산
@@ -174,6 +175,9 @@ public class ChecklistService {
             // 조건별 문구 (CL-04 등)
             List<String> variantBodies = getVariantBodies(guide, targetLang, user.effectivePurpose());
 
+            // CL-05 체류기간 연장: 마감일 = 체류 만료일 (CAL-04)
+            boolean isStayExtension = STAY_EXTENSION_CODE.equals(guide.getCode());
+
             boolean hasNoticeChanged = guide.getNoticeChangedAt() != null &&
                     guide.getNoticeChangedAt().isAfter(OffsetDateTime.now().minusDays(14));
 
@@ -202,6 +206,8 @@ public class ChecklistService {
                     periodKey,
                     guide.getNoticeChangedAt(),
                     hasNoticeChanged,
+                    isStayExtension ? StayExtension.applyStartDate(deadline) : null,
+                    isStayExtension && StayExtension.isHighlighted(deadline, today),
                     warning,
                     warningMessage,
                     pageStart,
@@ -280,8 +286,9 @@ public class ChecklistService {
             return false; // 등록되지 않은 생활 변화는 표시 안 함
         }
 
-        if ("LC-01-1".equals(code)) return !res.contains(Residence.F4);
-        if ("LC-01-2".equals(code)) return res.contains(Residence.F4);
+        if (ResidenceChangeReport.isReportCode(code)) {
+            return code.equals(ResidenceChangeReport.reportCodeFor(res.contains(Residence.F4)));
+        }
         if ("LC-01-3".equals(code)) return res.contains(Residence.CAR);
         if ("LC-01-4".equals(code)) return res.contains(Residence.KIDS);
         if ("LC-01-5".equals(code)) return true;
@@ -308,7 +315,7 @@ public class ChecklistService {
             return new PeriodAndDeadline(ChecklistProgress.ONCE, deadline);
         }
 
-        if ("CL-05".equals(code)) {
+        if (STAY_EXTENSION_CODE.equals(code)) {
             return new PeriodAndDeadline(ChecklistProgress.ONCE, user.getStayExpiry());
         }
 
@@ -338,7 +345,7 @@ public class ChecklistService {
             String periodKey = baseDate.toString();
 
             LocalDate deadline = null;
-            if ("LC-01-1".equals(code) || "LC-01-2".equals(code)) deadline = baseDate.plusDays(14);
+            if (ResidenceChangeReport.isReportCode(code)) deadline = ResidenceChangeReport.deadline(code, baseDate);
             else if ("LC-01-3".equals(code)) deadline = baseDate.plusDays(30);
             else if ("LC-02-2".equals(code)) deadline = baseDate.plusDays(15);
             else if ("LC-04-1".equals(code)) deadline = baseDate.plusDays(15);

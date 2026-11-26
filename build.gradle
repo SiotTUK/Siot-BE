@@ -49,8 +49,11 @@ dependencies {
     // Mail (Gmail SMTP: NTF-09 이메일 인증, M-11 비밀번호 재설정, NTF-05 알림 이메일)
     implementation 'org.springframework.boot:spring-boot-starter-mail'
 
-    // 챗봇 (CB-13): LangChain4j + Gemini (답변 생성·질문 임베딩)
-    implementation 'dev.langchain4j:langchain4j-google-ai-gemini:1.22.0'
+    // 챗봇·번역·문서 적재: LangChain4j + Gemini. Vertex AI(서비스 계정)와 AI Studio(API 키)를 모두 지원하는 google-genai SDK 기반
+    implementation 'dev.langchain4j:langchain4j-google-genai:1.22.0-beta32'
+
+    // 문서 적재 (ADM-04): PDF 쪽별 텍스트 추출
+    implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 
     // Lombok / Config metadata
     compileOnly 'org.projectlombok:lombok'
@@ -72,6 +75,9 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // 운영(Dockerfile -Duser.timezone=Asia/Seoul)과 같은 JVM 시간대. hibernate.jdbc.time_zone=Asia/Seoul 과 다르면
+    // TIME 컬럼(event.starts_at 등)을 LocalTime 으로 읽을 때 시차만큼 바뀐다 (CI 는 UTC)
+    systemProperty 'user.timezone', 'Asia/Seoul'
 }
 
 // 실행 가능한 bootJar 하나만 생성 (plain jar 비활성화)

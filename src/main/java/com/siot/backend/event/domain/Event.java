@@ -10,6 +10,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.LocalTime;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 @Getter
 @Entity
@@ -83,6 +85,15 @@ public class Event {
     @Column(name = "application_url_locked", nullable = false)
     private boolean applicationUrlLocked = false;
 
+    @Column(name = "region_code_locked", nullable = false)
+    private boolean regionCodeLocked = false;
+
+    @Column(name = "source_url_locked", nullable = false)
+    private boolean sourceUrlLocked = false;
+
+    @Column(name = "multicultural_locked", nullable = false)
+    private boolean multiculturalLocked = false;
+
     @Column(nullable = false)
     private int revision = 1;
 
@@ -102,4 +113,177 @@ public class Event {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_DELETED = "DELETED";
+    /** 관리자가 직접 등록한 행사의 external_source (ADM-05, EVE-07). 수집 출처({@code EventSourceType})가 아니다 */
+    public static final String SOURCE_MANUAL = "MANUAL";
+
+    /** 수집한 새 행사 (EVE-01). 일정·내용은 {@link #collectSchedule}, {@link #collectDetails} 로 채운다 */
+    public static Event collected(String externalSource, String externalId) {
+        Event event = new Event();
+        event.externalSource = externalSource;
+        event.externalId = externalId;
+        return event;
+    }
+
+    /** 관리자가 직접 등록한 행사 (EVE-07). 내용은 edit* 로 채우고, 잠금은 걸지 않는다 (수집 대상이 아니다) */
+    public static Event manual(Long adminId) {
+        Event event = new Event();
+        event.externalSource = SOURCE_MANUAL;
+        event.createdBy = adminId;
+        event.updatedBy = adminId;
+        return event;
+    }
+
+    /** 관리자가 지운 행사. 다시 수집해도 살리거나 고치지 않는다 */
+    public boolean isDeleted() {
+        return STATUS_DELETED.equals(status);
+    }
+
+    /**
+     * 수집한 일정을 반영한다. 잠긴 칸(관리자 수정)은 그대로 둔다.
+     * 수집 값이 null 이면 기존 값을 지우지 않는다 (시작일·종료일 중 하나는 늘 있다).
+     * 시각을 모르면 시작·종료 시각을 비우고 time_is_unknown.
+     *
+     * @return 바뀐 칸이 있으면 true
+     */
+    public boolean collectSchedule(LocalDate newStartsOn, LocalDate newEndsOn, LocalTime newStartsAt,
+                                   LocalTime newEndsAt) {
+        boolean changed = false;
+        if (!startsOnLocked && newStartsOn != null && !newStartsOn.equals(startsOn)) {
+            startsOn = newStartsOn;
+            changed = true;
+        }
+        if (!endsOnLocked && newEndsOn != null && !newEndsOn.equals(endsOn)) {
+            endsOn = newEndsOn;
+            changed = true;
+        }
+        if (!startsAtLocked && !Objects.equals(newStartsAt, startsAt)) {
+            startsAt = newStartsAt;
+            changed = true;
+        }
+        if (!endsAtLocked && !Objects.equals(newEndsAt, endsAt)) {
+            endsAt = newEndsAt;
+            changed = true;
+        }
+        boolean unknown = startsAt == null && endsAt == null;
+        if (unknown != timeUnknown) {
+            timeUnknown = unknown;
+            changed = true;
+        }
+        return changed;
+    }
+
+    /**
+     * 수집한 지역·가격·원문 링크·다문화 여부를 반영한다. 잠긴 가격은 두고, null 인 수집 값은 기존 값을 지우지 않는다.
+     *
+     * @return 바뀐 칸이 있으면 true
+     */
+    public boolean collectDetails(String newRegionCode, String newPriceInfo, String newSourceUrl, boolean newMulticultural) {
+        boolean changed = false;
+        if (!regionCodeLocked && newRegionCode != null && !newRegionCode.equals(regionCode)) {
+            regionCode = newRegionCode;
+            changed = true;
+        }
+        if (!priceInfoLocked && newPriceInfo != null && !newPriceInfo.equals(priceInfo)) {
+            priceInfo = newPriceInfo;
+            changed = true;
+        }
+        if (!sourceUrlLocked && newSourceUrl != null && !newSourceUrl.equals(sourceUrl)) {
+            sourceUrl = newSourceUrl;
+            changed = true;
+        }
+        if (!multiculturalLocked && newMulticultural != multicultural) {
+            multicultural = newMulticultural;
+            changed = true;
+        }
+        return changed;
+    }
+
+    // ---------------------------------------------------------------- 관리자 등록·수정 (ADM-05, EVE-07·08)
+    // edit* 는 값을 바꾸고 lock=true 면 그 칸을 잠근다 (수집이 덮어쓰지 않게). 바뀌었으면 true
+
+    public boolean editStartsOn(LocalDate value, boolean lock) {
+        startsOnLocked |= lock;
+        return set(startsOn, value, v -> startsOn = v);
+    }
+
+    public boolean editEndsOn(LocalDate value, boolean lock) {
+        endsOnLocked |= lock;
+        return set(endsOn, value, v -> endsOn = v);
+    }
+
+    /** 시작·종료 시각을 바꾸면 time_is_unknown 도 다시 정한다 */
+    public boolean editStartsAt(LocalTime value, boolean lock) {
+        startsAtLocked |= lock;
+        boolean changed = set(startsAt, value, v -> startsAt = v);
+        timeUnknown = startsAt == null && endsAt == null;
+        return changed;
+    }
+
+    public boolean editEndsAt(LocalTime value, boolean lock) {
+        endsAtLocked |= lock;
+        boolean changed = set(endsAt, value, v -> endsAt = v);
+        timeUnknown = startsAt == null && endsAt == null;
+        return changed;
+    }
+
+    public boolean editApplicationDeadline(OffsetDateTime value, boolean lock) {
+        deadlineLocked |= lock;
+        return set(applicationDeadline, value, v -> applicationDeadline = v);
+    }
+
+    public boolean editPriceInfo(String value, boolean lock) {
+        priceInfoLocked |= lock;
+        return set(priceInfo, value, v -> priceInfo = v);
+    }
+
+    public boolean editApplicationUrl(String value, boolean lock) {
+        applicationUrlLocked |= lock;
+        return set(applicationUrl, value, v -> applicationUrl = v);
+    }
+
+    public boolean editSourceUrl(String value, boolean lock) {
+        sourceUrlLocked |= lock;
+        return set(sourceUrl, value, v -> sourceUrl = v);
+    }
+
+    public boolean editRegionCode(String value, boolean lock) {
+        regionCodeLocked |= lock;
+        return set(regionCode, value, v -> regionCode = v);
+    }
+
+    public boolean editMulticultural(boolean value, boolean lock) {
+        multiculturalLocked |= lock;
+        return set(multicultural, value, v -> multicultural = v);
+    }
+
+    /** 잠기지 않았을 때만 키워드로 다시 계산한 다문화 여부를 반영한다 */
+    public boolean recomputeMulticultural(boolean value) {
+        return !multiculturalLocked && set(multicultural, value, v -> multicultural = v);
+    }
+
+    /** 관리자 삭제 (EVE-09). 행은 지우지 않는다 */
+    public void delete(Long adminId) {
+        status = STATUS_DELETED;
+        updatedBy = adminId;
+    }
+
+    public void editedBy(Long adminId) {
+        updatedBy = adminId;
+    }
+
+    private static <T> boolean set(T current, T value, Consumer<T> setter) {
+        if (Objects.equals(current, value)) {
+            return false;
+        }
+        setter.accept(value);
+        return true;
+    }
+
+    /** 내용이 바뀌었다 (번역을 다시 만든다, COM-02) */
+    public void increaseRevision() {
+        revision++;
+    }
 }

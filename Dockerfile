@@ -25,6 +25,8 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 
 RUN groupadd --system spring && useradd --system --gid spring --no-create-home spring
+# 업로드한 문서(PDF) 저장 폴더 (ADM-02). 볼륨이 처음 붙을 때 이 소유자를 이어받아 spring 이 쓸 수 있다
+RUN mkdir -p /app/data/documents && chown -R spring:spring /app/data
 
 # 자주 바뀌지 않는 레이어부터 복사한다
 COPY --from=build /workspace/extracted/dependencies/ ./
