@@ -94,6 +94,14 @@ public class Event {
     @Column(name = "multicultural_locked", nullable = false)
     private boolean multiculturalLocked = false;
 
+    /** EVE-10 카테고리 ({@link EventCategory}) */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private EventCategory category = EventCategory.EVENT;
+
+    @Column(name = "category_locked", nullable = false)
+    private boolean categoryLocked = false;
+
     @Column(nullable = false)
     private int revision = 1;
 
@@ -257,6 +265,16 @@ public class Event {
     public boolean editMulticultural(boolean value, boolean lock) {
         multiculturalLocked |= lock;
         return set(multicultural, value, v -> multicultural = v);
+    }
+
+    public boolean editCategory(EventCategory value, boolean lock) {
+        categoryLocked |= lock;
+        return value != null && set(category, value, v -> category = v);
+    }
+
+    /** 수집한 카테고리를 반영한다. 관리자가 고쳤으면(잠금) 그대로 둔다. 바뀌었으면 true */
+    public boolean collectCategory(EventCategory value) {
+        return !categoryLocked && value != null && set(category, value, v -> category = v);
     }
 
     /** 잠기지 않았을 때만 키워드로 다시 계산한 다문화 여부를 반영한다 */

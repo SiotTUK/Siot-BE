@@ -3,6 +3,7 @@ package com.siot.backend.event.service;
 import com.siot.backend.event.collect.EventRegion;
 import com.siot.backend.event.collect.EventSourceType;
 import com.siot.backend.event.domain.Event;
+import com.siot.backend.event.domain.EventCategory;
 import com.siot.backend.event.domain.EventCollectionRun;
 import com.siot.backend.event.domain.EventTag;
 import com.siot.backend.event.dto.EventCalendarItemResponse;
@@ -79,9 +80,18 @@ public class EventQueryService {
      */
     public PageResponse<EventSummaryResponse> list(Long userId, String region, LocalDate from, LocalDate to,
                                                    boolean past, int page, int size) {
+        return list(userId, region, null, from, to, past, page, size);
+    }
+
+    /**
+     * @param category {@link EventCategory} 코드, null 이면 전체 (EVE-10 카테고리 필터)
+     */
+    public PageResponse<EventSummaryResponse> list(Long userId, String region, String category, LocalDate from,
+                                                   LocalDate to, boolean past, int page, int size) {
         if (region != null && !REGIONS.contains(region)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "region 은 SIHEUNG 또는 GYEONGGI 입니다.");
         }
+        EventCategory categoryFilter = category(category);
         if (from != null && to != null && from.isAfter(to)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "from 은 to 보다 늦을 수 없습니다.");
         }
@@ -89,12 +99,16 @@ public class EventQueryService {
         LocalDate today = LocalDate.now(clock);
         LocalDate start = from != null ? from : MIN_DATE;
         LocalDate end = to != null ? to : MAX_DATE;
+        boolean anyCategory = categoryFilter == null;
+        EventCategory categoryValue = anyCategory ? EventCategory.EVENT : categoryFilter; // anyCategory 면 쓰지 않는 값
         Page<Event> events = past
-                ? eventRepository.findPast(today, region == null, region == null ? "" : region, start, end, pageable)
-                : eventRepository.findUpcoming(today, region == null, region == null ? "" : region, start, end,
-                pageable);
-        Map<Long, EventLocalizer.Text> texts = localizer.texts(ids(events.getContent()), language(userId));
-        return PageResponse.from(events, event -> summary(event, texts.get(event.getId())));
+                ? eventRepository.findPast(today, region == null, region == null ? "" : region, anyCategory,
+                categoryValue, start, end, pageable)
+                : eventRepository.findUpcoming(today, region == null, region == null ? "" : region, anyCategory,
+                categoryValue, start, end, pageable);
+        String language = language(userId);
+        Map<Long, EventLocalizer.Text> texts = localizer.texts(ids(events.getContent()), language);
+        return PageResponse.from(events, event -> summary(event, texts.get(event.getId()), language));
     }
 
     /** EVE-04 상세. 지운 행사(DELETED)는 404 */
@@ -110,7 +124,8 @@ public class EventQueryService {
         return new EventDetailResponse(event.getId(), text.title(), text.description(), text.venue(),
                 event.getStartsOn(), event.getEndsOn(), event.getStartsAt(), event.getEndsAt(), event.isTimeUnknown(),
                 event.getPriceInfo(), event.getApplicationDeadline(), event.getApplicationUrl(), event.getSourceUrl(),
-                event.getRegionCode(), event.isMulticultural(), subscribed, text.language(), text.translated());
+                event.getRegionCode(), event.getCategory().name(), event.getCategory().displayName(language(userId)),
+                event.isMulticultural(), subscribed, text.language(), text.translated());
     }
 
     /**
@@ -144,30 +159,40 @@ public class EventQueryService {
                         .thenComparing(scored -> scored.event().getId()))
                 .limit(limit)
                 .toList();
+        String language = language(user);
         Map<Long, EventLocalizer.Text> texts = localizer.texts(ranked.stream().map(s -> s.event().getId()).toList(),
-                language(user));
+                language);
         return ranked.stream()
                 .filter(scored -> texts.containsKey(scored.event().getId()))
                 .map(scored -> new EventRecommendationResponse(
-                        summary(scored.event(), texts.get(scored.event().getId())),
+                        summary(scored.event(), texts.get(scored.event().getId()), language),
                         reasons(scored.event(), scored.matched())))
                 .toList();
     }
 
     /** EVE-03 달력: 그 달에 하루라도 걸치는 행사 (지난 행사 포함). 시작일 순 */
     public List<EventCalendarItemResponse> calendar(Long userId, int year, int month) {
+        return calendar(userId, year, month, null);
+    }
+
+    /** @param category {@link EventCategory} 코드, null 이면 전체 */
+    public List<EventCalendarItemResponse> calendar(Long userId, int year, int month, String category) {
         if (year < 2000 || year > 2100 || month < 1 || month > 12) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "year 는 2000~2100, month 는 1~12 입니다.");
         }
+        EventCategory categoryFilter = category(category);
         YearMonth yearMonth = YearMonth.of(year, month);
-        List<Event> events = eventRepository.findOverlapping(yearMonth.atDay(1), yearMonth.atEndOfMonth());
-        Map<Long, EventLocalizer.Text> texts = localizer.texts(ids(events), language(userId));
+        List<Event> events = eventRepository.findOverlapping(yearMonth.atDay(1), yearMonth.atEndOfMonth(),
+                categoryFilter == null, categoryFilter == null ? EventCategory.EVENT : categoryFilter);
+        String language = language(userId);
+        Map<Long, EventLocalizer.Text> texts = localizer.texts(ids(events), language);
         return events.stream()
                 .filter(event -> texts.containsKey(event.getId()))
                 .map(event -> {
                     EventLocalizer.Text text = texts.get(event.getId());
                     return new EventCalendarItemResponse(event.getId(), text.title(), event.getStartsOn(),
-                            event.getEndsOn(), event.getRegionCode(), text.translated());
+                            event.getEndsOn(), event.getRegionCode(), event.getCategory().name(),
+                            event.getCategory().displayName(language), text.translated());
                 })
                 .toList();
     }
@@ -239,11 +264,23 @@ public class EventQueryService {
     }
 
     /** 원문 행이 없는 행사(정상이면 없음)는 빈 제목으로 */
-    static EventSummaryResponse summary(Event event, EventLocalizer.Text found) {
+    /** @param language 회원 화면 언어 (카테고리 이름용. 글은 번역이 없으면 한국어) */
+    static EventSummaryResponse summary(Event event, EventLocalizer.Text found, String language) {
         EventLocalizer.Text text = Objects.requireNonNullElse(found,
                 new EventLocalizer.Text("", null, null, SupportedLanguages.DEFAULT, false));
         return new EventSummaryResponse(event.getId(), text.title(), text.venue(), event.getStartsOn(),
                 event.getEndsOn(), event.getStartsAt(), event.getEndsAt(), event.isTimeUnknown(),
-                event.getRegionCode(), event.isMulticultural(), text.language(), text.translated());
+                event.getRegionCode(), event.getCategory().name(), event.getCategory().displayName(language),
+                event.isMulticultural(), text.language(), text.translated());
+    }
+
+    /** 요청한 카테고리 코드. 비어 있으면 null (전체), 모르는 값이면 400 */
+    private static EventCategory category(String value) {
+        try {
+            return EventCategory.parse(value);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "category 는 FESTIVAL, PERFORMANCE, EXHIBITION, EDUCATION, EVENT 중 하나입니다.");
+        }
     }
 }

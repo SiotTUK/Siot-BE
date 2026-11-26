@@ -19,6 +19,9 @@ public record EventSummaryResponse(
         @Schema(description = "시간 미정이면 true", example = "false") boolean timeUnknown,
         @Schema(description = "지역", allowableValues = {"SIHEUNG", "GYEONGGI"}, nullable = true, example = "SIHEUNG")
         String region,
+        @Schema(description = "EVE-10 카테고리", allowableValues = {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"},
+                example = "FESTIVAL") String category,
+        @Schema(description = "카테고리 이름 (회원 언어)", example = "축제") String categoryName,
         @Schema(description = "다문화·외국인 대상 행사", example = "false") boolean multicultural,
         @Schema(description = "글(행사명·장소)의 언어", example = "en") String language,
         @Schema(description = "회원 언어로 된 글이면 true. false 면 한국어 원문 (\"번역 준비 중\" 표시, COM-02)", example = "true")

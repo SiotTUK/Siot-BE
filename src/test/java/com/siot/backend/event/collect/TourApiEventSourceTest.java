@@ -62,6 +62,9 @@ class TourApiEventSourceTest {
         assertThat(festival.regionCode()).isEqualTo(EventRegion.SIHEUNG);
         assertThat(festival.venue()).contains("시흥시");
         assertThat(festival.externalId()).isNotBlank();
+        // EVE-10 카테고리: 신분류 lclsSystm2 EV01 → 축제. 상세 조회로 다시 만들어도 남는다
+        assertThat(result.events()).extracting(CollectedEvent::category)
+                .containsOnly(com.siot.backend.event.domain.EventCategory.FESTIVAL);
     }
 
     /** 갯골축제: homepage 의 a 태그에서 URL 만, overview 의 br 은 줄바꿈. MOIM: 상세 조회가 실패해도 목록 값으로 저장 */

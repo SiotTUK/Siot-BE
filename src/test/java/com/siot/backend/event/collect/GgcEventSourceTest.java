@@ -110,6 +110,18 @@ class GgcEventSourceTest {
         assertThat(first.description()).isNull();
     }
 
+    /** EVE-10 카테고리: 지지씨 category 공연·전시·교육·행사 → PERFORMANCE·EXHIBITION·EDUCATION·EVENT */
+    @Test
+    void mapsCategoryOfSampleEvents() {
+        respond(0, resource("ggc-playongoing-sample.json"));
+        respond(1, EMPTY);
+
+        assertThat(source(10).fetch(TODAY).events()).extracting(CollectedEvent::category)
+                .contains(com.siot.backend.event.domain.EventCategory.PERFORMANCE,
+                        com.siot.backend.event.domain.EventCategory.EXHIBITION)
+                .doesNotContain(com.siot.backend.event.domain.EventCategory.FESTIVAL); // 지지씨에는 축제 분류가 없다
+    }
+
     @Test
     void endDateFallsBackToStartAndBadDatesAreSkipped() {
         String body = "{\"INFO\":0,\"DATA\":["

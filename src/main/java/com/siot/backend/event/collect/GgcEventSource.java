@@ -1,5 +1,6 @@
 package com.siot.backend.event.collect;
 
+import com.siot.backend.event.domain.EventCategory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -106,7 +107,7 @@ public class GgcEventSource implements EventSource {
         String homepage = EventTexts.clean(text(item, "homepage"));
         return new CollectedEvent(href, title, startsOn, endsOn, times[0], times[1],
                 EventTexts.clean(text(item, "incost")), homepage == null ? href : homepage,
-                null, null, region(item));
+                null, null, region(item), EventCategory.fromGgc(text(item, "category")));
     }
 
     static String region(JsonNode item) {

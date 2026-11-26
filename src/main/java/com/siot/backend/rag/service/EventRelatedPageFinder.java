@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * CB-10: 행사를 묻는 질문({@link EventIntentDetector})에 다가오는 행사 상세 링크를 찾는다.
@@ -22,7 +23,7 @@ import java.util.Locale;
  *   <li>{@code event_id} 는 재수집해도 바뀌지 않는다 (출처 + 원본 ID 로 갱신) → 프론트엔드 경로 /events/{eventId}</li>
  *   <li>모든 행사에 ko 번역 행이 있다 (질문 언어 번역이 없으면 ko 제목)</li>
  * </ul>
- * 순서: 질문에 들어 있는 제목 단어 수(많은 순) → 다문화 행사 → 시작일 빠른 순 (EVE-05 추천 순서와 같은 기준).
+ * 순서: 질문에 들어 있는 제목 단어 수(많은 순) → 질문이 말한 카테고리(공연·전시 등) → 다문화 행사 → 시작일 빠른 순.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,7 +37,7 @@ public class EventRelatedPageFinder {
 
     /** 끝나지 않은 행사: 종료일이 오늘 이후, 종료일이 없으면 시작일이 오늘 이후 (날짜가 모두 없으면 제외) */
     private static final String SQL = """
-            SELECT e.event_id, e.is_multicultural, e.starts_on,
+            SELECT e.event_id, e.is_multicultural, e.starts_on, e.category,
                    ko.title AS ko_title, t.title AS title
             FROM event e
             JOIN event_translation ko ON ko.event_id = e.event_id AND ko.language = 'ko'
@@ -50,7 +51,8 @@ public class EventRelatedPageFinder {
     private final NamedParameterJdbcTemplate jdbc;
     private final Clock clock;
 
-    private record Candidate(long id, boolean multicultural, LocalDate startsOn, String koTitle, String title, int score) {
+    private record Candidate(long id, boolean multicultural, LocalDate startsOn, String koTitle, String title, int score,
+                             boolean categoryMatch) {
     }
 
     /** 행사 질문이 아니면 빈 목록 */
@@ -59,6 +61,9 @@ public class EventRelatedPageFinder {
             return List.of();
         }
         String compact = compact(question);
+        // "공연 있어요?" 처럼 카테고리를 말하면 그 카테고리 행사를 먼저 (EVE-10 카테고리)
+        Set<String> wanted = EventIntentDetector.categories(question).stream().map(Enum::name)
+                .collect(java.util.stream.Collectors.toSet());
         List<Candidate> candidates = jdbc.query(SQL, new MapSqlParameterSource()
                         .addValue("language", language)
                         .addValue("today", LocalDate.now(clock))
@@ -68,10 +73,12 @@ public class EventRelatedPageFinder {
                     String title = rs.getString("title");
                     return new Candidate(rs.getLong("event_id"), rs.getBoolean("is_multicultural"),
                             rs.getObject("starts_on", LocalDate.class), koTitle, title,
-                            score(compact, koTitle) + (title == null ? 0 : score(compact, title)));
+                            score(compact, koTitle) + (title == null ? 0 : score(compact, title)),
+                            wanted.contains(rs.getString("category")));
                 });
         return candidates.stream()
                 .sorted(Comparator.comparingInt(Candidate::score).reversed()
+                        .thenComparing(Candidate::categoryMatch, Comparator.reverseOrder())
                         .thenComparing(Candidate::multicultural, Comparator.reverseOrder())
                         .thenComparing(Candidate::startsOn, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparingLong(Candidate::id))

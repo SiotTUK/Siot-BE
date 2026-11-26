@@ -25,6 +25,8 @@ public record AdminEventResponse(
         @Schema(description = "원문 링크", nullable = true) String sourceUrl,
         @Schema(description = "지역", allowableValues = {"SIHEUNG", "GYEONGGI"}, nullable = true) String region,
         @Schema(description = "다문화 행사") boolean multicultural,
+        @Schema(description = "EVE-10 카테고리", allowableValues = {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"})
+        String category,
         @Schema(description = "출처. MANUAL = 관리자 등록") String source,
         @Schema(description = "출처 안의 ID", nullable = true) String externalId,
         @Schema(description = "상태", allowableValues = {"ACTIVE", "DELETED"}) String status,

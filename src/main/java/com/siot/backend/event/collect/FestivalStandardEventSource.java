@@ -1,5 +1,6 @@
 package com.siot.backend.event.collect;
 
+import com.siot.backend.event.domain.EventCategory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -112,7 +113,8 @@ public class FestivalStandardEventSource implements EventSource {
         return new CollectedEvent(title + "|" + startsOn, title, startsOn, endsOn, null, null, null,
                 homepage(DataGoKrResponses.text(item, "homepageUrl")),
                 joinItems(DataGoKrResponses.text(item, "opar")),
-                joinItems(DataGoKrResponses.text(item, "fstvlCo")), EventRegion.SIHEUNG);
+                joinItems(DataGoKrResponses.text(item, "fstvlCo")), EventRegion.SIHEUNG,
+                EventCategory.FESTIVAL); // 축제 데이터셋이라 모두 축제
     }
 
     /** "금남로+충장로" → "금남로, 충장로". 빈 항목은 뺀다 */

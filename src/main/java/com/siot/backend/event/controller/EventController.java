@@ -41,6 +41,7 @@ public class EventController {
     @Operation(summary = "EVE-10 행사 목록",
             description = "기본은 진행 예정·진행 중(종료일 >= 오늘) 행사를 시작일이 가까운 순으로. past=true 면 지난 행사(종료일 < 오늘)를 "
                     + "최근에 끝난 순으로 (\"지난 행사 보기\"). from·to 는 그 기간과 하루라도 겹치는 행사. "
+                    + "category 는 축제(FESTIVAL)·공연(PERFORMANCE)·전시(EXHIBITION)·교육·체험(EDUCATION)·행사(EVENT). "
                     + "결과가 없으면 content 가 빈 배열 (화면은 필터 초기화 버튼). 최종 갱신 시각은 collection-status.")
     @ApiErrorCodes(ErrorCode.INVALID_INPUT)
     @GetMapping
@@ -48,6 +49,9 @@ public class EventController {
             @AuthenticationPrincipal MemberPrincipal principal,
             @Parameter(description = "지역. 비우면 전체", schema = @Schema(allowableValues = {"SIHEUNG", "GYEONGGI"}))
             @RequestParam(required = false) String region,
+            @Parameter(description = "카테고리. 비우면 전체", schema = @Schema(allowableValues =
+                    {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"}))
+            @RequestParam(required = false) String category,
             @Parameter(description = "기간 시작 (yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @Parameter(description = "기간 끝 (yyyy-MM-dd)") @RequestParam(required = false)
@@ -56,7 +60,7 @@ public class EventController {
             @Parameter(description = "페이지 (0부터)") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "페이지 크기 (최대 100)") @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(ApiResponse.of(
-                eventQueryService.list(principal.getId(), region, from, to, past, page, size)));
+                eventQueryService.list(principal.getId(), region, category, from, to, past, page, size)));
     }
 
     @Operation(summary = "EVE-05 행사 추천",
@@ -78,8 +82,11 @@ public class EventController {
     public ResponseEntity<ApiResponse<List<EventCalendarItemResponse>>> calendar(
             @AuthenticationPrincipal MemberPrincipal principal,
             @Parameter(description = "연도", example = "2026") @RequestParam int year,
-            @Parameter(description = "월 (1~12)", example = "12") @RequestParam int month) {
-        return ResponseEntity.ok(ApiResponse.of(eventQueryService.calendar(principal.getId(), year, month)));
+            @Parameter(description = "월 (1~12)", example = "12") @RequestParam int month,
+            @Parameter(description = "카테고리. 비우면 전체", schema = @Schema(allowableValues =
+                    {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"}))
+            @RequestParam(required = false) String category) {
+        return ResponseEntity.ok(ApiResponse.of(eventQueryService.calendar(principal.getId(), year, month, category)));
     }
 
     @Operation(summary = "EVE-10 행사 최종 갱신 시각",

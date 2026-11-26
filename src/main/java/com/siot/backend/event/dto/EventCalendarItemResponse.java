@@ -13,5 +13,8 @@ public record EventCalendarItemResponse(
         @Schema(description = "종료일", nullable = true, example = "2026-12-20") LocalDate endsOn,
         @Schema(description = "지역", allowableValues = {"SIHEUNG", "GYEONGGI"}, nullable = true, example = "SIHEUNG")
         String region,
+        @Schema(description = "EVE-10 카테고리", allowableValues = {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"},
+                example = "FESTIVAL") String category,
+        @Schema(description = "카테고리 이름 (회원 언어)", example = "축제") String categoryName,
         @Schema(description = "회원 언어로 된 행사명이면 true", example = "true") boolean translated) {
 }

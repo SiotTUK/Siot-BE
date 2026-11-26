@@ -9,6 +9,7 @@ import com.siot.backend.event.collect.EventTexts;
 import com.siot.backend.event.collect.EventTranslationUpdater;
 import com.siot.backend.event.collect.EventUpsertService;
 import com.siot.backend.event.domain.Event;
+import com.siot.backend.event.domain.EventCategory;
 import com.siot.backend.event.domain.EventTag;
 import com.siot.backend.event.domain.EventTranslation;
 import com.siot.backend.event.dto.AdminEventCreateRequest;
@@ -76,6 +77,19 @@ public class AdminEventService {
     /** 목록 (DELETED 포함). 조건이 null 이면 거르지 않는다. 최근 등록 순 */
     public PageResponse<AdminEventSummaryResponse> list(String status, String region, String source, String title,
                                                         int page, int size) {
+        return list(status, region, source, title, null, page, size);
+    }
+
+    /** @param category {@link EventCategory} 코드, null 이면 전체 */
+    public PageResponse<AdminEventSummaryResponse> list(String status, String region, String source, String title,
+                                                        String category, int page, int size) {
+        EventCategory categoryFilter;
+        try {
+            categoryFilter = EventCategory.parse(category);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "category 는 FESTIVAL, PERFORMANCE, EXHIBITION, EDUCATION, EVENT 중 하나입니다.");
+        }
         if (region != null && !EventQueryService.REGIONS.contains(region)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "region 은 SIHEUNG 또는 GYEONGGI 입니다.");
         }
@@ -86,13 +100,15 @@ public class AdminEventService {
         PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100));
         return transactionTemplate.execute(tx -> {
             Page<Event> events = eventRepository.search(status == null, Objects.toString(status, ""),
-                    region == null, Objects.toString(region, ""), source == null, Objects.toString(source, ""),
+                    region == null, Objects.toString(region, ""),
+                    categoryFilter == null, categoryFilter == null ? EventCategory.EVENT : categoryFilter,
+                    source == null, Objects.toString(source, ""),
                     keyword == null, keyword == null ? "" : likePattern(keyword), pageable);
             Map<Long, EventTranslation> originals = originals(events.getContent());
             return PageResponse.from(events, event -> new AdminEventSummaryResponse(event.getId(),
                     title(originals.get(event.getId())), event.getStartsOn(), event.getEndsOn(),
                     event.getRegionCode(), event.getExternalSource(), event.getExternalId(), event.getStatus(),
-                    event.isMulticultural(), event.getRevision(), event.getUpdatedAt()));
+                    event.isMulticultural(), event.getCategory().name(), event.getRevision(), event.getUpdatedAt()));
         });
     }
 
@@ -137,6 +153,9 @@ public class AdminEventService {
             } else {
                 event.editMulticultural(EventKeywords.multicultural(title, description), false);
             }
+            // 관리자 등록 행사는 수집 대상이 아니라 잠그지 않는다. 비우면 EVENT
+            event.editCategory(request.category() == null ? EventCategory.EVENT : EventCategory.parse(request.category()),
+                    false);
             eventRepository.save(event);
             translationRepository.save(new EventTranslation(event.getId(), ORIGINAL, title, description, venue,
                     event.getRevision()));
@@ -240,6 +259,10 @@ public class AdminEventService {
             }
             changed |= textChanged;
             validateDates(event.getStartsOn(), event.getEndsOn());
+            // 카테고리는 잠가서 수집이 덮어쓰지 않게 한다. 번역할 글이 아니라 revision 은 올리지 않는다
+            if (request.category() != null) {
+                event.editCategory(EventCategory.parse(request.category()), true);
+            }
 
             event.editedBy(adminId);
             if (changed) {
@@ -310,8 +333,9 @@ public class AdminEventService {
                 original == null ? null : original.getDescription(), original == null ? null : original.getVenue(),
                 event.getStartsOn(), event.getEndsOn(), event.getStartsAt(), event.getEndsAt(), event.isTimeUnknown(),
                 event.getPriceInfo(), event.getApplicationDeadline(), event.getApplicationUrl(), event.getSourceUrl(),
-                event.getRegionCode(), event.isMulticultural(), event.getExternalSource(), event.getExternalId(),
-                event.getStatus(), event.getRevision(), lockedFields(event, original), tags, translated,
+                event.getRegionCode(), event.isMulticultural(), event.getCategory().name(), event.getExternalSource(),
+                event.getExternalId(), event.getStatus(), event.getRevision(), lockedFields(event, original), tags,
+                translated,
                 event.getCreatedAt(), event.getUpdatedAt());
     }
 
@@ -337,6 +361,7 @@ public class AdminEventService {
         addIf(locked, event.isSourceUrlLocked(), "sourceUrl");
         addIf(locked, event.isRegionCodeLocked(), "region");
         addIf(locked, event.isMulticulturalLocked(), "multicultural");
+        addIf(locked, event.isCategoryLocked(), "category");
         return locked;
     }
 

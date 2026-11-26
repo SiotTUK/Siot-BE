@@ -1,5 +1,6 @@
 package com.siot.backend.event.dto;
 
+import com.siot.backend.event.domain.EventCategory;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -31,7 +32,10 @@ public record AdminEventCreateRequest(
         @Schema(description = "지역", allowableValues = {"SIHEUNG", "GYEONGGI"}, example = "SIHEUNG")
         @NotNull @Pattern(regexp = REGION_PATTERN) String region,
         @Schema(description = "다문화·외국인 대상 행사. 비우면 행사명·설명 키워드로 정한다", nullable = true, example = "true")
-        Boolean multicultural) {
+        Boolean multicultural,
+        @Schema(description = "EVE-10 카테고리. 비우면 EVENT. 한국어 강좌 등은 EDUCATION", nullable = true,
+                allowableValues = {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"}, example = "EDUCATION")
+        @Pattern(regexp = EventCategory.PATTERN) String category) {
 
     public static final String URL_PATTERN = "^https?://\\S+$";
     public static final String REGION_PATTERN = "SIHEUNG|GYEONGGI";

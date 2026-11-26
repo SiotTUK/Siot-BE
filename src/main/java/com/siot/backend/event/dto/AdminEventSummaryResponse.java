@@ -19,6 +19,8 @@ public record AdminEventSummaryResponse(
         @Schema(description = "상태. DELETED 는 회원에게 보이지 않고 다시 수집해도 살아나지 않는다",
                 allowableValues = {"ACTIVE", "DELETED"}) String status,
         @Schema(description = "다문화 행사") boolean multicultural,
+        @Schema(description = "EVE-10 카테고리", allowableValues = {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"})
+        String category,
         @Schema(description = "내용 판 번호 (바뀔 때마다 +1, 번역을 다시 만든다)", example = "1") int revision,
         @Schema(description = "마지막 수정 시각") OffsetDateTime updatedAt) {
 }

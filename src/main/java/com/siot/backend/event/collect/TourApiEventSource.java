@@ -1,5 +1,6 @@
 package com.siot.backend.event.collect;
 
+import com.siot.backend.event.domain.EventCategory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -110,7 +111,7 @@ public class TourApiEventSource implements EventSource {
         return new CollectedEvent(event.externalId(), event.title(), event.startsOn(), event.endsOn(),
                 event.startsAt(), event.endsAt(), event.priceInfo(),
                 sourceUrl != null ? sourceUrl : event.sourceUrl(), event.venue(),
-                description != null ? description : event.description(), event.regionCode());
+                description != null ? description : event.description(), event.regionCode(), event.category());
     }
 
     private String requestDetail(EventProperties.TourApi api, String contentId) {
@@ -143,6 +144,7 @@ public class TourApiEventSource implements EventSource {
             return null;
         }
         return new CollectedEvent(id, title, startsOn, endsOn, null, null, null, null,
-                EventTexts.clean(DataGoKrResponses.text(item, "addr1")), null, EventRegion.SIHEUNG);
+                EventTexts.clean(DataGoKrResponses.text(item, "addr1")), null, EventRegion.SIHEUNG,
+                EventCategory.fromTourApi(DataGoKrResponses.text(item, "lclsSystm2"), DataGoKrResponses.text(item, "cat2")));
     }
 }

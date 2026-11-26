@@ -1,6 +1,7 @@
 package com.siot.backend.event.repository;
 
 import com.siot.backend.event.domain.Event;
+import com.siot.backend.event.domain.EventCategory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -54,6 +55,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             WHERE e.status = 'ACTIVE'
               AND COALESCE(e.endsOn, e.startsOn) >= :today
               AND (:anyRegion = true OR e.regionCode = :region)
+              AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
             ORDER BY COALESCE(e.startsOn, e.endsOn) ASC, e.id ASC
@@ -63,11 +65,13 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             WHERE e.status = 'ACTIVE'
               AND COALESCE(e.endsOn, e.startsOn) >= :today
               AND (:anyRegion = true OR e.regionCode = :region)
+              AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
             """)
     Page<Event> findUpcoming(@Param("today") LocalDate today, @Param("anyRegion") boolean anyRegion,
-                             @Param("region") String region, @Param("from") LocalDate from,
+                             @Param("region") String region,
+                             @Param("anyCategory") boolean anyCategory, @Param("category") EventCategory category, @Param("from") LocalDate from,
                              @Param("to") LocalDate to, Pageable pageable);
 
     /** 지난 행사 (종료일 < today), 기간 [from, to] 와 겹치는 것. 최근에 끝난 순 */
@@ -76,6 +80,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             WHERE e.status = 'ACTIVE'
               AND COALESCE(e.endsOn, e.startsOn) < :today
               AND (:anyRegion = true OR e.regionCode = :region)
+              AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
             ORDER BY COALESCE(e.endsOn, e.startsOn) DESC, COALESCE(e.startsOn, e.endsOn) DESC, e.id DESC
@@ -85,22 +90,26 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             WHERE e.status = 'ACTIVE'
               AND COALESCE(e.endsOn, e.startsOn) < :today
               AND (:anyRegion = true OR e.regionCode = :region)
+              AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
             """)
     Page<Event> findPast(@Param("today") LocalDate today, @Param("anyRegion") boolean anyRegion,
-                         @Param("region") String region, @Param("from") LocalDate from,
+                         @Param("region") String region,
+                         @Param("anyCategory") boolean anyCategory, @Param("category") EventCategory category, @Param("from") LocalDate from,
                          @Param("to") LocalDate to, Pageable pageable);
 
-    /** 기간 [from, to] 에 하루라도 걸치는 보이는 행사 (EVE-03 달력). 시작일 순 */
+    /** 기간 [from, to] 에 하루라도 걸치는 보이는 행사 (EVE-03 달력). 시작일 순. anyCategory=false 면 그 카테고리만 */
     @Query("""
             SELECT e FROM Event e
             WHERE e.status = 'ACTIVE'
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
+              AND (:anyCategory = true OR e.category = :category)
             ORDER BY COALESCE(e.startsOn, e.endsOn) ASC, e.id ASC
             """)
-    List<Event> findOverlapping(@Param("from") LocalDate from, @Param("to") LocalDate to);
+    List<Event> findOverlapping(@Param("from") LocalDate from, @Param("to") LocalDate to,
+                                @Param("anyCategory") boolean anyCategory, @Param("category") EventCategory category);
 
     /** 진행 예정·진행 중인 보이는 행사 전부 (EVE-05 추천 후보) */
     @Query("""
@@ -123,6 +132,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             SELECT e FROM Event e
             WHERE (:anyStatus = true OR e.status = :status)
               AND (:anyRegion = true OR e.regionCode = :region)
+              AND (:anyCategory = true OR e.category = :category)
               AND (:anySource = true OR e.externalSource = :source)
               AND (:anyTitle = true OR EXISTS (
                     SELECT 1 FROM EventTranslation t
@@ -133,13 +143,14 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             SELECT count(e) FROM Event e
             WHERE (:anyStatus = true OR e.status = :status)
               AND (:anyRegion = true OR e.regionCode = :region)
+              AND (:anyCategory = true OR e.category = :category)
               AND (:anySource = true OR e.externalSource = :source)
               AND (:anyTitle = true OR EXISTS (
                     SELECT 1 FROM EventTranslation t
                     WHERE t.eventId = e.id AND t.language = 'ko' AND LOWER(t.title) LIKE :titlePattern ESCAPE '!'))
             """)
     Page<Event> search(@Param("anyStatus") boolean anyStatus, @Param("status") String status,
-                       @Param("anyRegion") boolean anyRegion, @Param("region") String region,
+                       @Param("anyRegion") boolean anyRegion, @Param("region") String region, @Param("anyCategory") boolean anyCategory, @Param("category") EventCategory category,
                        @Param("anySource") boolean anySource, @Param("source") String source,
                        @Param("anyTitle") boolean anyTitle, @Param("titlePattern") String titlePattern,
                        Pageable pageable);

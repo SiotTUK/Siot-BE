@@ -25,6 +25,9 @@ public record EventDetailResponse(
         @Schema(description = "원문 링크", nullable = true, example = "https://www.siheung.go.kr") String sourceUrl,
         @Schema(description = "지역", allowableValues = {"SIHEUNG", "GYEONGGI"}, nullable = true, example = "SIHEUNG")
         String region,
+        @Schema(description = "EVE-10 카테고리", allowableValues = {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"},
+                example = "FESTIVAL") String category,
+        @Schema(description = "카테고리 이름 (회원 언어)", example = "축제") String categoryName,
         @Schema(description = "다문화·외국인 대상 행사", example = "false") boolean multicultural,
         @Schema(description = "내가 이 행사 알림을 켜 두었으면 true (EVE-06)", example = "false") boolean subscribed,
         @Schema(description = "글(행사명·설명·장소)의 언어", example = "en") String language,

@@ -55,9 +55,13 @@ public class AdminEventController {
             @Parameter(description = "출처", schema = @Schema(allowableValues = {"GGC", "FESTIVAL_STD", "TOURAPI", "MANUAL"}))
             @RequestParam(required = false) String source,
             @Parameter(description = "행사명 검색어") @RequestParam(required = false) String title,
+            @Parameter(description = "카테고리", schema = @Schema(allowableValues =
+                    {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"}))
+            @RequestParam(required = false) String category,
             @Parameter(description = "페이지 (0부터)") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "페이지 크기 (최대 100)") @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(ApiResponse.of(adminEventService.list(status, region, source, title, page, size)));
+        return ResponseEntity.ok(ApiResponse.of(
+                adminEventService.list(status, region, source, title, category, page, size)));
     }
 
     @Operation(summary = "ADM-05 행사 상세", description = "한국어 원문과 잠긴 칸, 태그, 번역이 끝난 언어. 지운 행사도 볼 수 있다.")

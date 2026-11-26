@@ -4,6 +4,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.siot.backend.TestcontainersConfiguration;
 import com.siot.backend.auth.service.SignupVerificationService;
 import com.siot.backend.event.collect.CollectedEvent;
+import com.siot.backend.event.domain.EventCategory;
 import com.siot.backend.event.collect.EventChangeNotifier;
 import com.siot.backend.event.collect.EventChangeNotifier.ScheduleChange;
 import com.siot.backend.event.collect.EventCollectionService;
@@ -160,6 +161,61 @@ class EventApiIntegrationTest {
         mockMvc.perform(get("/api/events").param("region", "SEOUL").cookie(member))
                 .andExpect(status().isBadRequest());
         mockMvc.perform(get("/api/events")).andExpect(status().isUnauthorized());
+    }
+
+    /** EVE-10 카테고리: 수집할 때 출처 분류로 정하고, 목록·달력은 카테고리로 거르고, 관리자가 고치면 수집이 덮어쓰지 않는다 */
+    @Test
+    void categoryComesFromSourceFiltersListsAndSurvivesRecollectionWhenAdminEdits() throws Exception {
+        CollectedEvent concert = new CollectedEvent("c1", "시흥 합창 공연", LocalDate.of(2026, 12, 5),
+                LocalDate.of(2026, 12, 5), null, null, null, "https://ggc.test/c1", null, null, EventRegion.SIHEUNG,
+                EventCategory.fromGgc("공연"));
+        CollectedEvent exhibition = new CollectedEvent("x1", "시흥 사진 전시", LocalDate.of(2026, 12, 1),
+                LocalDate.of(2026, 12, 20), null, null, null, "https://ggc.test/x1", null, null, EventRegion.SIHEUNG,
+                EventCategory.fromGgc("전시"));
+        fetchReturns(ggc, List.of(concert, exhibition));
+        collectionService.collectAll();
+        long concertId = jdbc.queryForObject("SELECT event_id FROM event WHERE external_id = 'c1'", Long.class);
+        long exhibitionId = jdbc.queryForObject("SELECT event_id FROM event WHERE external_id = 'x1'", Long.class);
+
+        mockMvc.perform(get("/api/events").param("category", "PERFORMANCE").cookie(member))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[*].eventId").value(contains(ids(concertId))))
+                .andExpect(jsonPath("$.data.content[0].category").value("PERFORMANCE"))
+                .andExpect(jsonPath("$.data.content[0].categoryName").value("공연"));
+        mockMvc.perform(get("/api/events").param("category", "exhibition").cookie(member)) // 대소문자 무시
+                .andExpect(jsonPath("$.data.content[*].eventId").value(contains(ids(exhibitionId))));
+        mockMvc.perform(get("/api/events/calendar").param("year", "2026").param("month", "12")
+                        .param("category", "EXHIBITION").cookie(member))
+                .andExpect(jsonPath("$.data[*].eventId").value(contains(ids(exhibitionId))));
+        mockMvc.perform(get("/api/events/" + concertId).cookie(member))
+                .andExpect(jsonPath("$.data.category").value("PERFORMANCE"));
+        mockMvc.perform(get("/api/events").param("category", "SPORTS").cookie(member))
+                .andExpect(status().isBadRequest());
+
+        // 관리자가 카테고리를 고치면 잠근다 → 다시 수집해도 그대로. revision(번역)은 올리지 않는다
+        mockMvc.perform(patch("/api/admin/events/" + concertId).with(csrf()).cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"category\": \"FESTIVAL\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.category").value("FESTIVAL"))
+                .andExpect(jsonPath("$.data.lockedFields").value(contains("category")))
+                .andExpect(jsonPath("$.data.revision").value(1));
+        collectionService.collectAll();
+        mockMvc.perform(get("/api/admin/events").param("category", "FESTIVAL").cookie(admin))
+                .andExpect(jsonPath("$.data.content[*].eventId").value(contains(ids(concertId))));
+
+        // 관리자 등록: 비우면 EVENT, 한국어 강좌는 EDUCATION
+        mockMvc.perform(post("/api/admin/events").with(csrf()).cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"title": "외국인 한국어 교실", "startsOn": "2026-12-10", "region": "SIHEUNG",
+                                 "category": "EDUCATION"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.category").value("EDUCATION"));
+        mockMvc.perform(post("/api/admin/events").with(csrf()).cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"title": "카테고리 잘못", "startsOn": "2026-12-11", "region": "SIHEUNG", "category": "SPORTS"}
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

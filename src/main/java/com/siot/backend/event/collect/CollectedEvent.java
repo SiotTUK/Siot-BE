@@ -1,5 +1,7 @@
 package com.siot.backend.event.collect;
 
+import com.siot.backend.event.domain.EventCategory;
+
 import java.time.LocalDate;
 import java.time.LocalTime;
 
@@ -17,8 +19,23 @@ import java.time.LocalTime;
  * @param venue       장소 (ko)
  * @param description 상세 설명 (ko)
  * @param regionCode  {@link EventRegion}
+ * @param category    출처 분류를 옮긴 카테고리 (EVE-10). null 이면 EVENT
  */
 public record CollectedEvent(String externalId, String title, LocalDate startsOn, LocalDate endsOn,
                              LocalTime startsAt, LocalTime endsAt, String priceInfo, String sourceUrl,
-                             String venue, String description, String regionCode) {
+                             String venue, String description, String regionCode, EventCategory category) {
+
+    public CollectedEvent {
+        if (category == null) {
+            category = EventCategory.EVENT;
+        }
+    }
+
+    /** 카테고리를 모르는 행사 (EVENT) */
+    public CollectedEvent(String externalId, String title, LocalDate startsOn, LocalDate endsOn,
+                          LocalTime startsAt, LocalTime endsAt, String priceInfo, String sourceUrl,
+                          String venue, String description, String regionCode) {
+        this(externalId, title, startsOn, endsOn, startsAt, endsAt, priceInfo, sourceUrl, venue, description,
+                regionCode, EventCategory.EVENT);
+    }
 }

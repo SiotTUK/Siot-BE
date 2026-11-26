@@ -83,6 +83,7 @@ public class EventUpsertService {
         event.collectSchedule(collected.startsOn(), collected.endsOn(), collected.startsAt(), collected.endsAt());
         event.collectDetails(collected.regionCode(), collected.priceInfo(), collected.sourceUrl(),
                 EventKeywords.multicultural(collected.title(), collected.description()));
+        event.collectCategory(collected.category());
         eventRepository.save(event);
         translationRepository.save(new EventTranslation(event.getId(), ORIGINAL_LANGUAGE, collected.title(),
                 collected.description(), collected.venue(), event.getRevision()));
@@ -112,6 +113,8 @@ public class EventUpsertService {
             event.increaseRevision();
             original.markSourceRevision(event.getRevision());
         }
+        // 카테고리는 번역할 글이 아니라 revision 을 올리지 않는다 (번역을 다시 만들 필요 없음)
+        changed |= event.collectCategory(collected.category());
         if (scheduleChanged) {
             changes.add(new ScheduleChange(event.getId(), oldStartsOn, oldEndsOn, oldStartsAt, oldEndsAt,
                     event.getStartsOn(), event.getEndsOn(), event.getStartsAt(), event.getEndsAt()));

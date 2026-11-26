@@ -1,8 +1,13 @@
 package com.siot.backend.rag.service;
 
+import com.siot.backend.event.domain.EventCategory;
+
 import java.text.Normalizer;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -25,7 +30,48 @@ public final class EventIntentDetector {
             "\\b(events?|festivals?|concerts?|exhibitions?|performances?|fairs?|expos?)\\b",
             Pattern.CASE_INSENSITIVE);
 
+    /**
+     * CB-10 카테고리: 질문에 이 단어가 있으면 그 카테고리 행사를 먼저 보여 준다 (EVE-10 카테고리와 같은 값).
+     * 행사 질문인지는 {@link #detect} 로 따로 판단하고, 여기서는 순서만 정한다.
+     */
+    private static final Map<EventCategory, List<String>> CATEGORY_WORDS = Map.of(
+            EventCategory.FESTIVAL, List.of("축제", "페스티벌", "节日", "庆典", "文化节", "lễ hội"),
+            EventCategory.PERFORMANCE, List.of("공연", "콘서트", "음악회", "연극", "뮤지컬", "演出", "音乐会",
+                    "biểu diễn", "buổi hòa nhạc"),
+            EventCategory.EXHIBITION, List.of("전시", "展览", "triển lãm"),
+            EventCategory.EDUCATION, List.of("교육", "강좌", "강의", "수업", "체험", "课程", "教育", "体验",
+                    "lớp học", "khóa học", "trải nghiệm"));
+
+    private static final Map<EventCategory, Pattern> CATEGORY_WORDS_EN = Map.of(
+            EventCategory.FESTIVAL, Pattern.compile("\\bfestivals?\\b", Pattern.CASE_INSENSITIVE),
+            EventCategory.PERFORMANCE, Pattern.compile("\\b(concerts?|performances?|shows?|musicals?|plays?)\\b",
+                    Pattern.CASE_INSENSITIVE),
+            EventCategory.EXHIBITION, Pattern.compile("\\b(exhibitions?|exhibits?|galler(y|ies))\\b",
+                    Pattern.CASE_INSENSITIVE),
+            EventCategory.EDUCATION, Pattern.compile("\\b(class(es)?|courses?|workshops?|lectures?|lessons?)\\b",
+                    Pattern.CASE_INSENSITIVE));
+
     private EventIntentDetector() {
+    }
+
+    /** 질문이 가리키는 행사 카테고리 (없으면 빈 집합). "행사"·"event" 는 특정 카테고리로 보지 않는다 */
+    public static Set<EventCategory> categories(String question) {
+        if (question == null || question.isBlank()) {
+            return Set.of();
+        }
+        String lower = Normalizer.normalize(question, Normalizer.Form.NFC).toLowerCase(Locale.ROOT);
+        Set<EventCategory> found = EnumSet.noneOf(EventCategory.class);
+        CATEGORY_WORDS.forEach((category, words) -> {
+            if (words.stream().anyMatch(lower::contains)) {
+                found.add(category);
+            }
+        });
+        CATEGORY_WORDS_EN.forEach((category, pattern) -> {
+            if (pattern.matcher(question).find()) {
+                found.add(category);
+            }
+        });
+        return found;
     }
 
     public static boolean detect(String question) {
