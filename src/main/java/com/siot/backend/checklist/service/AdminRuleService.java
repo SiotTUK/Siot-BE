@@ -33,6 +33,8 @@ public class AdminRuleService {
     private final NotificationService notificationService;
     private final GuideTranslationGenerator guideTranslationGenerator;
     private final RuleCategoryService ruleCategoryService;
+    private final RuleResponseAssembler assembler;
+    private final com.siot.backend.checklist.repository.GuideSourceRepository guideSourceRepository;
     private final Clock clock;
 
     /**
@@ -49,10 +51,12 @@ public class AdminRuleService {
             throw new BusinessException(ErrorCode.DUPLICATE_GUIDE_CODE);
         }
 
+        String content = contentOf(request.content(), request.points());
         OffsetDateTime now = OffsetDateTime.now(clock);
         Guide guide = Guide.create(code, "RULE", ItemType.INFO, category, request.sortOrder(), null, request.faq());
         guide.updateRule(category, request.sortOrder(), request.faq(), blankToNull(request.contact()),
-                blankToNull(request.sourceUrl()), adminId, now);
+                firstSourceUrl(request.sources(), blankToNull(request.sourceUrl())), adminId, now);
+        guide.updateCheckedOn(request.checkedOn());
         try {
             guide = guideRepository.saveAndFlush(guide);
         } catch (DataIntegrityViolationException e) {
@@ -65,7 +69,7 @@ public class AdminRuleService {
         ko.update(
                 request.title().strip(),
                 blankToNull(request.summary()),
-                blankToNull(request.content()),
+                content,
                 blankToNull(request.badge()),
                 blankToNull(request.place()),
                 request.docs() == null ? List.of() : request.docs().stream().map(String::strip).toList(),
@@ -74,7 +78,9 @@ public class AdminRuleService {
                 blankToNull(request.penalty()),
                 blankToNull(request.sourceName())
         );
+        ko.updateRuleFields(points(request.points()), blankToNull(request.when()), blankToNull(request.contact()));
         guideTranslationRepository.save(ko);
+        replaceSources(guide.getId(), request.sources());
 
         // RUL-13: 자동 번역 실행 (en, zh, vi) - 본문과 카테고리명
         guideTranslationGenerator.regenerate(ko);
@@ -94,11 +100,13 @@ public class AdminRuleService {
                 .filter(g -> "RULE".equals(g.getKind()) && !g.isDeleted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.GUIDE_NOT_FOUND));
 
+        String content = contentOf(request.content(), request.points());
         OffsetDateTime now = OffsetDateTime.now(clock);
         String category = request.category() != null ? request.category().strip() : null; // null = 그대로
         guide.updateRule(category, request.sortOrder() != null ? request.sortOrder() : guide.getSortOrder(),
                 request.faq() != null ? request.faq() : guide.isFaq(),
-                request.contact(), request.sourceUrl(), adminId, now);
+                request.contact(), firstSourceUrl(request.sources(), request.sourceUrl()), adminId, now);
+        guide.updateCheckedOn(request.checkedOn());
         guide.recordEdit(adminId, request.noticeChanged(), now);
 
         GuideTranslation ko = guideTranslationRepository.findByGuideIdAndLanguage(guide.getId(), "ko")
@@ -106,7 +114,7 @@ public class AdminRuleService {
         ko.update(
                 request.title().strip(),
                 blankToNull(request.summary()),
-                blankToNull(request.content()),
+                content,
                 blankToNull(request.badge()),
                 blankToNull(request.place()),
                 request.docs() == null ? List.of() : request.docs().stream().map(String::strip).toList(),
@@ -115,9 +123,14 @@ public class AdminRuleService {
                 blankToNull(request.penalty()),
                 blankToNull(request.sourceName())
         );
+        ko.updateRuleFields(points(request.points()), blankToNull(request.when()),
+                request.contact() != null ? blankToNull(request.contact()) : ko.getContact());
         guideTranslationRepository.save(ko);
+        if (request.sources() != null) {
+            replaceSources(guide.getId(), request.sources());
+        }
 
-        // RUL-13, COM-02: 원문이 바뀌었으므로 번역을 다시 만든다. 새 카테고리면 카테고리명도 번역한다
+        // RUL-13, COM-02: 원문이 바뀌었으므로 번역을 다시 만든다 (사람이 확인한 번역은 그대로). 새 카테고리면 카테고리명도 번역한다
         guideTranslationGenerator.regenerate(ko);
         ruleCategoryService.ensureTranslations(guide.getCategory());
 
@@ -189,41 +202,40 @@ public class AdminRuleService {
     }
 
     private RuleResponse toRuleResponse(Guide guide, GuideTranslation tr) {
-        GuideDocumentReference docRef = guideDocumentReferenceRepository
-                .findFirstByGuideIdOrderByCreatedAtDesc(guide.getId())
-                .orElse(null);
-        Integer pageStart = docRef != null ? docRef.getPageStart() : null;
-        Integer pageEnd = docRef != null ? docRef.getPageEnd() : null;
-        String sourcePages = null;
-        if (pageStart != null) {
-            sourcePages = (pageEnd != null && !pageEnd.equals(pageStart))
-                    ? String.format("p.%d~%d", pageStart, pageEnd)
-                    : String.format("p.%d", pageStart);
-        }
+        return assembler.assembleKorean(guide, tr);
+    }
 
-        return new RuleResponse(
-                guide.getCode(),
-                guide.getCategory(),
-                guide.getCategory(), // 관리자 응답은 한국어
-                tr != null ? tr.getTitle() : guide.getCode(),
-                tr != null ? tr.getSummary() : null,
-                tr != null ? tr.getContent() : null,
-                tr != null ? tr.getBadge() : null,
-                tr != null ? tr.getPlace() : null,
-                tr != null && tr.getDocs() != null ? tr.getDocs() : Collections.emptyList(),
-                tr != null ? tr.getFee() : null,
-                tr != null ? tr.getLaw() : null,
-                tr != null ? tr.getPenalty() : null,
-                guide.getContact(),
-                guide.getSourceUrl(),
-                tr != null ? tr.getSourceName() : null,
-                guide.getSortOrder(),
-                guide.isFaq(),
-                guide.getNoticeChangedAt(),
-                pageStart,
-                pageEnd,
-                sourcePages
-        );
+    /** 본문: 보낸 본문, 없으면 문장 목록을 줄바꿈으로 이은 글. 둘 다 없으면 400 */
+    private static String contentOf(String content, List<String> points) {
+        String value = blankToNull(content);
+        if (value != null) {
+            return value;
+        }
+        List<String> lines = points(points);
+        if (lines.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "본문(content) 또는 문장 목록(points)을 보내 주세요.");
+        }
+        return String.join("\n", lines);
+    }
+
+    private static List<String> points(List<String> points) {
+        return points == null ? List.of() : points.stream().map(String::strip).filter(p -> !p.isEmpty()).toList();
+    }
+
+    /** 출처 목록을 보내면 첫 출처 링크, 아니면 sourceUrl */
+    private static String firstSourceUrl(List<com.siot.backend.checklist.dto.RuleSourceRequest> sources, String sourceUrl) {
+        return sources != null && !sources.isEmpty() ? sources.get(0).url().strip() : sourceUrl;
+    }
+
+    private void replaceSources(Long guideId, List<com.siot.backend.checklist.dto.RuleSourceRequest> sources) {
+        guideSourceRepository.deleteByGuideId(guideId);
+        if (sources == null) {
+            return;
+        }
+        for (int i = 0; i < sources.size(); i++) {
+            guideSourceRepository.save(GuideSource.of(guideId, i + 1, sources.get(i).name().strip(),
+                    sources.get(i).url().strip()));
+        }
     }
 
     private static String blankToNull(String value) {

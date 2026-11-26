@@ -64,6 +64,10 @@ public class Guide {
     /** 문의 전화 (예: 1345) */
     private String contact;
 
+    /** #14 공식 페이지와 대조해 확인한 날 */
+    @Column(name = "checked_on")
+    private java.time.LocalDate checkedOn;
+
     @Column(name = "created_by")
     private Long createdBy;
 
@@ -122,6 +126,11 @@ public class Guide {
         if (sourceUrl != null) this.sourceUrl = sourceUrl;
         this.updatedBy = adminId;
         this.updatedAt = now;
+    }
+
+    /** #14 확인일. null 이면 그대로 */
+    public void updateCheckedOn(java.time.LocalDate checkedOn) {
+        if (checkedOn != null) this.checkedOn = checkedOn;
     }
 
     public static Guide create(String code, String kind, ItemType itemType, String category, int sortOrder, String lifeChangeCode, boolean faq) {

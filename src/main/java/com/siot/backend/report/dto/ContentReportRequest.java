@@ -39,7 +39,18 @@ public record ContentReportRequest(
 
         @Size(max = 2000)
         @Schema(description = "상세 설명 (선택)", nullable = true, example = "수수료가 인상되어 35,000원으로 변경되었습니다.")
-        String description
+        String description,
+
+        @Size(max = 50)
+        @Schema(description = "#14 안내 항목 코드 (생활수칙 슬러그 waste-food, 체크리스트 CL-01, 생활 변화 할 일 LC-01-1). "
+                + "guideId 대신 보낼 수 있다. eventId·guideId·guideCode 중 대상은 하나", nullable = true, example = "waste-food")
+        String guideCode
 ) {
     public static final String REASON_PATTERN = "TRANSLATION|CONTENT|OTHER";
+
+    /** guideCode 없이 */
+    public ContentReportRequest(Long guideId, Long eventId, String targetTitleSnapshot, String quotedText,
+                                String language, String reason, String description) {
+        this(guideId, eventId, targetTitleSnapshot, quotedText, language, reason, description, null);
+    }
 }

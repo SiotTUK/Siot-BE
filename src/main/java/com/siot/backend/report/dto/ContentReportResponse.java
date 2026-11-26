@@ -53,9 +53,25 @@ public record ContentReportResponse(
         OffsetDateTime createdAt,
 
         @Schema(description = "최종 수정 시각")
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+
+        @Schema(description = "#14 대상 코드: 행사는 eventId, 안내 항목은 code (waste-food, CL-01, LC-01-1). 대상을 지웠으면 null",
+                nullable = true, example = "waste-food")
+        String targetCode,
+
+        @Schema(description = "#14 대상 종류: EVENT / RULE(생활수칙) / CHECKLIST / LIFE_CHANGE_TASK. 관리자 화면에서 대상 화면으로 갈 때 쓴다",
+                nullable = true, example = "RULE")
+        String targetKind
 ) {
+    /** 대상 항목을 모를 때 (안내 항목 코드·종류 없음) */
     public static ContentReportResponse from(ContentReport r) {
+        return from(r, null);
+    }
+
+    /** @param guide 신고 대상 안내 항목 (행사 신고거나 지웠으면 null) */
+    public static ContentReportResponse from(ContentReport r, com.siot.backend.checklist.domain.Guide guide) {
+        String targetCode = r.getEventId() != null ? r.getEventId().toString() : guide != null ? guide.getCode() : null;
+        String targetKind = r.getEventId() != null ? "EVENT" : guide != null ? guide.getKind() : null;
         return new ContentReportResponse(
                 r.getId(),
                 r.getReporterUserId(),
@@ -72,7 +88,9 @@ public record ContentReportResponse(
                 r.getProcessedBy(),
                 r.getProcessedAt(),
                 r.getCreatedAt(),
-                r.getUpdatedAt()
+                r.getUpdatedAt(),
+                targetCode,
+                targetKind
         );
     }
 }

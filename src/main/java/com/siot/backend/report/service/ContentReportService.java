@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -49,24 +50,25 @@ public class ContentReportService {
      */
     @Transactional
     public ContentReportResponse createReport(Long reporterUserId, ContentReportRequest request) {
-        if ((request.eventId() == null) == (request.guideId() == null)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "신고 대상은 행사(eventId) 또는 안내 항목(guideId) 중 하나입니다.");
+        Long guideId = guideId(request);
+        if ((request.eventId() == null) == (guideId == null)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "신고 대상은 행사(eventId) 또는 안내 항목(guideId·guideCode) 중 하나입니다.");
         }
-        String title = request.eventId() != null ? eventTitle(request.eventId()) : ruleTitle(request.guideId());
+        String title = request.eventId() != null ? eventTitle(request.eventId()) : ruleTitle(guideId);
         String snapshot = request.targetTitleSnapshot() == null || request.targetTitleSnapshot().isBlank()
                 ? title : request.targetTitleSnapshot().strip();
 
         ContentReport report = ContentReport.create(
                 reporterUserId,
                 request.eventId(),
-                request.guideId(),
+                guideId,
                 snapshot,
                 request.quotedText().strip(),
                 SupportedLanguages.orDefault(request.language()),
                 request.reason(),
                 request.description() == null || request.description().isBlank() ? null : request.description().strip()
         );
-        return ContentReportResponse.from(contentReportRepository.save(report));
+        return withTarget(contentReportRepository.save(report));
     }
 
     /** 보이는 행사의 한국어 제목. 없거나 지운 행사면 404 */
@@ -75,6 +77,26 @@ public class ContentReportService {
                 .filter(found -> !found.isDeleted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.EVENT_NOT_FOUND));
         return eventTranslationRepository.findOriginal(event.getId()).map(EventTranslation::getTitle).orElse(null);
+    }
+
+    /** #14 guideId, 없으면 guideCode 로 찾은 항목 ID. 둘 다 보내면 같은 항목이어야 한다. 코드가 없거나 지운 항목이면 404 */
+    private Long guideId(ContentReportRequest request) {
+        if (request.guideCode() == null || request.guideCode().isBlank()) {
+            return request.guideId();
+        }
+        Guide guide = guideRepository.findByCode(request.guideCode().strip())
+                .filter(found -> !found.isDeleted())
+                .orElseThrow(() -> new BusinessException(ErrorCode.GUIDE_NOT_FOUND));
+        if (request.guideId() != null && !request.guideId().equals(guide.getId())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "guideId 와 guideCode 가 다른 항목입니다.");
+        }
+        return guide.getId();
+    }
+
+    /** 대상 항목 코드·종류를 담은 응답 (ADM-07 에서 대상 화면으로 이동) */
+    private ContentReportResponse withTarget(ContentReport report) {
+        Guide guide = report.getGuideId() == null ? null : guideRepository.findById(report.getGuideId()).orElse(null);
+        return ContentReportResponse.from(report, guide);
     }
 
     /** 안내 항목(생활수칙·체크리스트·생활 변화 할 일)의 한국어 제목. 없거나 지웠으면 404 */
@@ -96,7 +118,10 @@ public class ContentReportService {
         } else {
             page = contentReportRepository.findAllByOrderByCreatedAtDesc(pageable);
         }
-        return PageResponse.from(page, ContentReportResponse::from);
+        Map<Long, Guide> guides = guideRepository.findAllById(page.getContent().stream()
+                .map(ContentReport::getGuideId).filter(java.util.Objects::nonNull).distinct().toList()).stream()
+                .collect(java.util.stream.Collectors.toMap(Guide::getId, g -> g));
+        return PageResponse.from(page, r -> ContentReportResponse.from(r, r.getGuideId() == null ? null : guides.get(r.getGuideId())));
     }
 
     /**
@@ -105,7 +130,7 @@ public class ContentReportService {
     public ContentReportResponse getReport(Long reportId) {
         ContentReport report = contentReportRepository.findById(reportId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_REPORT_NOT_FOUND));
-        return ContentReportResponse.from(report);
+        return withTarget(report);
     }
 
     /**
@@ -118,7 +143,7 @@ public class ContentReportService {
 
         String memo = request.adminMemo() == null || request.adminMemo().isBlank() ? null : request.adminMemo().strip();
         report.process(checkStatus(request.status()), memo, adminUserId, OffsetDateTime.now(clock));
-        return ContentReportResponse.from(report);
+        return withTarget(report);
     }
 
     private static String checkStatus(String status) {

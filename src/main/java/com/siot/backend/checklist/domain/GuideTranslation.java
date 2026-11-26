@@ -58,6 +58,33 @@ public class GuideTranslation {
     @Column(name = "source_name")
     private String sourceName;
 
+    /** #14 확인된 문장 목록 (생활수칙 본문, 순서 유지) */
+    @Column(columnDefinition = "text[]", nullable = false)
+    private List<String> points = new ArrayList<>();
+
+    /** #14 시기 (FE facts.when) */
+    @Column(columnDefinition = "text")
+    private String timing;
+
+    /** #14 언어별 문의처. 없으면 Guide.contact */
+    @Column(columnDefinition = "text")
+    private String contact;
+
+    /** #14 사람이 확인한 번역. true 면 자동 번역({@code GuideTranslationGenerator})이 덮어쓰지 않는다 */
+    @Column(nullable = false)
+    private boolean reviewed = false;
+
+    /** #14 생활수칙 칸: 문장 목록·시기·언어별 문의처 (null 이면 지움) */
+    public void updateRuleFields(List<String> points, String timing, String contact) {
+        this.points = points == null ? new ArrayList<>() : new ArrayList<>(points);
+        this.timing = timing;
+        this.contact = contact;
+    }
+
+    public void markReviewed(boolean reviewed) {
+        this.reviewed = reviewed;
+    }
+
     public static GuideTranslation create(Long guideId, String language) {
         GuideTranslation translation = new GuideTranslation();
         translation.guideId = guideId;

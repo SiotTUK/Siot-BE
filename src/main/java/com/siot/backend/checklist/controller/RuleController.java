@@ -26,19 +26,22 @@ public class RuleController {
 
     private final RuleService ruleService;
 
-    @Operation(summary = "RUL-04 자주 묻는 질문 FAQ TOP 5 조회", description = "is_faq=true 인 생활수칙 상위 5개를 정렬순으로 조회합니다.")
+    @Operation(summary = "RUL-04 자주 묻는 질문",
+            description = "질문·답변(요청 언어, 없으면 한국어)과 자세히 볼 생활수칙 코드(ruleCode), 순서대로. "
+                    + "#14 이전에는 is_faq 생활수칙 목록을 돌려주었다.")
     @GetMapping("/faq")
-    public ResponseEntity<ApiResponse<List<RuleResponse>>> getFaqTop5(
+    public ResponseEntity<ApiResponse<List<com.siot.backend.checklist.dto.RuleFaqResponse>>> getFaqs(
             @Parameter(description = "언어 (ko/en/zh/vi). 생략 시 ko") @RequestParam(required = false) String language) {
-
-        List<RuleResponse> faqList = ruleService.getFaqTop5(language);
-        return ResponseEntity.ok(ApiResponse.of(faqList));
+        return ResponseEntity.ok(ApiResponse.of(ruleService.getFaqs(language)));
     }
 
-    @Operation(summary = "카테고리별 생활수칙 목록 조회", description = "카테고리를 지정하지 않거나 '전체'면 전체 생활수칙을 정렬순으로 반환합니다.")
+    @Operation(summary = "카테고리별 생활수칙 목록 조회",
+            description = "카테고리를 지정하지 않거나 '전체'면 전체 생활수칙을 카테고리 순서·정렬순으로 반환합니다. "
+                    + "본문은 points(문장 목록), 시기는 when, 출처는 sources.")
     @GetMapping
     public ResponseEntity<ApiResponse<List<RuleResponse>>> getRules(
-            @Parameter(description = "분류 (쓰레기 배출, 교통질서 등)") @RequestParam(required = false) String category,
+            @Parameter(description = "분류: 한국어 이름(쓰레기 등) 또는 FE 키(order, waste, traffic, tax, living, support)")
+            @RequestParam(required = false) String category,
             @Parameter(description = "언어 (ko/en/zh/vi). 생략 시 ko") @RequestParam(required = false) String language) {
 
         List<RuleResponse> list = ruleService.getRules(category, language);

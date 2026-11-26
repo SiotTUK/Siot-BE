@@ -42,12 +42,14 @@ class RuleCategoryServiceTest {
     private RuleCategoryTranslationRepository translationRepository;
     @Mock
     private Translator translator;
+    @Mock
+    private com.siot.backend.checklist.repository.RuleCategoryRepository categoryRepository;
 
     private RuleCategoryService service;
 
     @BeforeEach
     void setUp() {
-        service = new RuleCategoryService(guideRepository, translationRepository, translator,
+        service = new RuleCategoryService(guideRepository, translationRepository, translator, categoryRepository,
                 Clock.fixed(Instant.parse("2026-11-26T00:00:00Z"), ZoneId.of("Asia/Seoul")));
     }
 

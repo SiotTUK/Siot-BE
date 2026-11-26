@@ -47,9 +47,8 @@ public record RuleCreateRequest(
         @Schema(description = "요약")
         String summary,
 
-        @NotBlank
         @Size(max = 20000)
-        @Schema(description = "본문 (한국어 원문)")
+        @Schema(description = "본문 (한국어 원문). 비우면 points 를 줄바꿈으로 이어 채운다. content·points 중 하나는 필수")
         String content,
 
         @Size(max = 100)
@@ -78,7 +77,22 @@ public record RuleCreateRequest(
 
         @Size(max = 255)
         @Schema(description = "출처 이름")
-        String sourceName
+        String sourceName,
+
+        @Size(max = 30)
+        @Schema(description = "#14 확인된 문장 목록 (한국어, 순서대로, 최대 30개)")
+        List<@NotBlank @Size(max = 2000) String> points,
+
+        @Size(max = 2000)
+        @Schema(description = "#14 시기 (한국어)")
+        String when,
+
+        @Size(max = 10)
+        @Schema(description = "#14 출처 목록 (순서대로, 최대 10개). 보내면 sourceUrl 은 첫 출처 링크가 된다")
+        List<@jakarta.validation.Valid RuleSourceRequest> sources,
+
+        @Schema(description = "#14 공식 페이지와 대조해 확인한 날", example = "2026-11-25")
+        java.time.LocalDate checkedOn
 ) {
     /** 비어 있거나 http(s) 링크 (javascript: 등 막기) */
     public static final String SOURCE_URL_PATTERN = "^$|^\\s*https?://\\S+\\s*$";

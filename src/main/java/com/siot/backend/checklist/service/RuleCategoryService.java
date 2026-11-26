@@ -1,11 +1,13 @@
 package com.siot.backend.checklist.service;
 
 import com.siot.backend.checklist.domain.Guide;
+import com.siot.backend.checklist.domain.RuleCategory;
 import com.siot.backend.checklist.domain.RuleCategoryTranslation;
 import com.siot.backend.checklist.domain.RuleCategoryTranslationId;
 import com.siot.backend.checklist.dto.AdminRuleCategoryResponse;
 import com.siot.backend.checklist.dto.RuleCategoryResponse;
 import com.siot.backend.checklist.repository.GuideRepository;
+import com.siot.backend.checklist.repository.RuleCategoryRepository;
 import com.siot.backend.checklist.repository.RuleCategoryTranslationRepository;
 import com.siot.backend.global.common.SupportedLanguages;
 import com.siot.backend.global.exception.BusinessException;
@@ -39,20 +41,47 @@ public class RuleCategoryService {
     private final GuideRepository guideRepository;
     private final RuleCategoryTranslationRepository translationRepository;
     private final Translator translator;
+    private final RuleCategoryRepository categoryRepository;
     private final Clock clock;
 
-    /** 사용자: 카테고리 목록과 요청 언어의 이름 */
+    /** 사용자: 카테고리 목록과 요청 언어의 이름. #14 피그마 M06 순서(rule_category.sort_order), 그다음 이름순 */
     public List<RuleCategoryResponse> getCategories(String language) {
         String lang = SupportedLanguages.orDefault(language);
         List<String> categories = guideRepository.findDistinctCategoriesByKind(RULE);
         Map<String, String> names = SupportedLanguages.DEFAULT.equals(lang) || categories.isEmpty() ? Map.of()
                 : translationRepository.findByLanguageAndCategoryIn(lang, categories).stream()
                 .collect(Collectors.toMap(RuleCategoryTranslation::getCategory, RuleCategoryTranslation::getName));
+        Map<String, RuleCategory> meta = categories.isEmpty() ? Map.of()
+                : categoryRepository.findAllById(categories).stream()
+                .collect(Collectors.toMap(RuleCategory::getCategory, c -> c));
         return categories.stream()
-                .map(c -> SupportedLanguages.DEFAULT.equals(lang)
-                        ? new RuleCategoryResponse(c, c, true)
-                        : new RuleCategoryResponse(c, names.getOrDefault(c, c), names.containsKey(c)))
+                .map(c -> {
+                    RuleCategory m = meta.get(c);
+                    String key = m == null ? null : m.getCategoryKey();
+                    int order = m == null ? RuleCategory.DEFAULT_SORT_ORDER : m.getSortOrder();
+                    return SupportedLanguages.DEFAULT.equals(lang)
+                            ? new RuleCategoryResponse(c, c, true, key, order)
+                            : new RuleCategoryResponse(c, names.getOrDefault(c, c), names.containsKey(c), key, order);
+                })
+                .sorted(java.util.Comparator.comparingInt(RuleCategoryResponse::sortOrder)
+                        .thenComparing(RuleCategoryResponse::category))
                 .toList();
+    }
+
+    /** #14 FE 키 (없으면 null) */
+    public String keyOf(String category) {
+        if (category == null) {
+            return null;
+        }
+        return categoryRepository.findById(category).map(RuleCategory::getCategoryKey).orElse(null);
+    }
+
+    /** #14 목록 필터: FE 키(waste 등)를 보내면 한국어 카테고리 이름으로 바꾼다. 키가 아니면 그대로 */
+    public String resolve(String categoryOrKey) {
+        if (categoryOrKey == null) {
+            return null;
+        }
+        return categoryRepository.findByCategoryKey(categoryOrKey).map(RuleCategory::getCategory).orElse(categoryOrKey);
     }
 
     /** 요청 언어의 카테고리명. 번역이 없으면 한국어 원문 */
@@ -140,6 +169,14 @@ public class RuleCategoryService {
             guide.updateRule(target, guide.getSortOrder(), guide.isFaq(), null, null, adminId, now);
         }
         translationRepository.deleteByCategory(category);
+        // #14 FE 키·순서도 새 이름으로 옮긴다 (새 이름에 이미 있으면 그쪽을 쓴다)
+        categoryRepository.findById(category).ifPresent(old -> {
+            categoryRepository.delete(old);
+            categoryRepository.flush();
+            if (!categoryRepository.existsById(target)) {
+                categoryRepository.save(RuleCategory.of(target, old.getCategoryKey(), old.getSortOrder()));
+            }
+        });
         ensureTranslations(target);
         log.info("Rule category renamed: '{}' -> '{}' ({} rules)", category, target, rules.size());
         return adminResponse(target);

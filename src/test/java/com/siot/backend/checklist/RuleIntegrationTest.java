@@ -94,7 +94,7 @@ class RuleIntegrationTest {
                 .andExpect(jsonPath("$.data.content").value("EN 본문입니다"))
                 .andExpect(jsonPath("$.data.categoryName").value("EN " + category));
         mockMvc.perform(get("/api/rules/faq").cookie(user))
-                .andExpect(jsonPath("$.data[*].code", hasItem(code)));
+                .andExpect(jsonPath("$.data[*].ruleCode", hasItem(code)));
         mockMvc.perform(get("/api/rules/categories").param("language", "zh").cookie(user))
                 .andExpect(jsonPath("$.data[?(@.category == '" + category + "')].name", hasItem("ZH " + category)));
 
@@ -122,7 +122,7 @@ class RuleIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("GUIDE_NOT_FOUND"));
         mockMvc.perform(get("/api/rules/faq").cookie(user))
-                .andExpect(jsonPath("$.data[*].code", not(hasItem(code))));
+                .andExpect(jsonPath("$.data[*].ruleCode", not(hasItem(code))));
         mockMvc.perform(get("/api/admin/rules").param("keyword", code).cookie(admin))
                 .andExpect(jsonPath("$.data.length()").value(0));
         mockMvc.perform(get("/api/admin/rules").param("keyword", code).param("includeDeleted", "true").cookie(admin))

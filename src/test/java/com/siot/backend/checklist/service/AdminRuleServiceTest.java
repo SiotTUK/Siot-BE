@@ -48,11 +48,24 @@ class AdminRuleServiceTest {
     private GuideTranslationGenerator guideTranslationGenerator;
     @Mock
     private RuleCategoryService ruleCategoryService;
+    @Mock
+    private com.siot.backend.checklist.repository.GuideSourceRepository guideSourceRepository;
+    @Mock
+    private RuleResponseAssembler assembler;
     @Spy
     private Clock clock = Clock.fixed(Instant.parse("2026-11-20T12:00:00Z"), ZoneId.of("Asia/Seoul"));
 
     @InjectMocks
     private AdminRuleService adminRuleService;
+
+    /** 응답은 실제 조립기로 만든다 (assembler 는 생성자 주입용 mock) */
+    @org.junit.jupiter.api.BeforeEach
+    void realAssembler() {
+        RuleResponseAssembler real = new RuleResponseAssembler(guideTranslationRepository,
+                guideDocumentReferenceRepository, guideSourceRepository, ruleCategoryService);
+        org.mockito.Mockito.lenient().when(assembler.assembleKorean(any(), any()))
+                .thenAnswer(inv -> real.assembleKorean(inv.getArgument(0), inv.getArgument(1)));
+    }
 
     @Test
     @DisplayName("관리자 생활수칙 등록(RUL-09) 및 다국어 자동 번역 생성(RUL-13) 검증")
@@ -62,7 +75,8 @@ class AdminRuleServiceTest {
         RuleCreateRequest req = new RuleCreateRequest(
                 "RUL-09", "쓰레기 배출", 10, false, "031-310-2114", "https://siheung.go.kr",
                 "대형 폐기물 스티커 배출 방법", "요약", "본문", "스티커 부착", "지정 장소",
-                List.of("스티커"), "수수료", "법령", "과태료", "시흥시청"
+                List.of("스티커"), "수수료", "법령", "과태료", "시흥시청",
+                null, null, null, null
         );
 
         given(guideRepository.findByCode("RUL-09")).willReturn(Optional.empty());
@@ -104,7 +118,8 @@ class AdminRuleServiceTest {
                 "쓰레기 배출", 1, true, "031-111", "https://siheung.go.kr",
                 "종량제 봉투 배출 규정 개정", "요약", "본문", "배지", "장소",
                 Collections.emptyList(), "수수료 인상", "법령", "과태료", "출처",
-                true // noticeChanged = true
+                true, // noticeChanged = true
+                null, null, null, null
         );
 
         // when
@@ -125,7 +140,7 @@ class AdminRuleServiceTest {
         given(guideRepository.findByCode("RUL-03")).willReturn(Optional.of(deleted));
         RuleCreateRequest req = new RuleCreateRequest(
                 " RUL-03 ", "교통질서", 1, false, null, null, "제목", null, "본문", null, null,
-                null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> adminRuleService.createRule(99L, req))
                 .isInstanceOf(com.siot.backend.global.exception.BusinessException.class)

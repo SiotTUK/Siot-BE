@@ -205,3 +205,12 @@ en / zh / vi 문구와 장소·준비물·과태료 등 상세는 관리자 화�
 | RUL-07 납부 마감 알림 | `bill_translation.reminder` (기한이 있어야 true, CHECK). 매일 9시 D-7·D-1 에 `notification.kind = BILL_DUE`, `notification.bill_translation_id` (번역 삭제 시 SET NULL, 알림 대상 하나 CHECK 에 포함). 설정은 TAX 를 따른다 |
 | NTF-02 행사 알림 받을 시점 | `event_subscription.lead_days` (1: 24시간 전(기본) / 3 / 7: 그날 오전 9시) |
 | NTF-03·05 이메일 수신 설정 | `notification_preference.email_enabled` (기본 true). 발송 시점에 보고 꺼져 있으면 `notification.email_status = SKIPPED` |
+
+## 알림 시점 선택, 행사 변경 즉시 알림, 생활수칙 FE 구조 (2026_11_26_1500 ~ 1610)
+
+| 요구사항 | DB 변경 |
+|---|---|
+| NTF-03 사전 알림 시점 (BE #16) | `notification_preference.lead_days_list` INTEGER[] — 받을 D-n 들. NULL = 기본 시점 전부. 예전 `lead_days` 는 쓰지 않음 |
+| NTF-02 일정 변경 즉시 알림 (BE #15) | 스키마 변경 없음. 수집·관리자 수정 커밋 뒤 `NotificationEventChangeNotifier` 가 만들고, 매시 작업은 보완 |
+| 생활수칙 FE 구조 (BE #14) | `guide_translation.points`(문장 목록)·`timing`(시기)·`contact`(언어별 문의처)·`reviewed`(사람이 확인한 번역, 자동 번역이 덮어쓰지 않음), `guide.checked_on`, `guide_source`(출처 목록), `rule_category`(FE 키·순서), `rule_faq`·`rule_faq_translation`(FAQ 질문·답변) |
+| 생활수칙 시드 | `V2026_11_26_1610__seed_fe_rules.sql` — `scripts/generate_rule_seed.mjs` 로 Siot-FE `src/features/rules/content.ts`·`messages.ts` 에서 만든다 (손으로 고치지 않음). 18개 항목·FAQ 5개·카테고리 6개·4개 언어 |

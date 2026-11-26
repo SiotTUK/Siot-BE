@@ -39,6 +39,11 @@ public class GuideTranslationGenerator {
             Map<String, String> sourceNames = translateSafely(ko.getSourceName());
             List<Map<String, String>> docs = ko.getDocs() == null ? List.of()
                     : ko.getDocs().stream().map(this::translateSafely).toList();
+            // #14 생활수칙 칸: 문장 목록·시기·언어별 문의처
+            List<Map<String, String>> points = ko.getPoints() == null ? List.of()
+                    : ko.getPoints().stream().map(this::translateSafely).toList();
+            Map<String, String> timings = translateSafely(ko.getTiming());
+            Map<String, String> contacts = translateSafely(ko.getContact());
 
             for (String lang : Translator.TARGET_LANGUAGES) {
                 if (!titles.containsKey(lang)) {
@@ -49,6 +54,15 @@ public class GuideTranslationGenerator {
                 }
                 GuideTranslation tr = guideTranslationRepository.findByGuideIdAndLanguage(guideId, lang)
                         .orElseGet(() -> GuideTranslation.create(guideId, lang));
+                if (tr.isReviewed()) {
+                    // #14 사람이 확인한 번역은 자동 번역으로 덮어쓰지 않는다 (관리자 문구 저장으로만 고친다)
+                    log.info("Keep reviewed {} translation of guide {}", lang, guideId);
+                    continue;
+                }
+                List<String> translatedPoints = new ArrayList<>();
+                for (int i = 0; i < points.size(); i++) {
+                    translatedPoints.add(points.get(i).getOrDefault(lang, ko.getPoints().get(i)));
+                }
                 List<String> translatedDocs = new ArrayList<>();
                 for (int i = 0; i < docs.size(); i++) {
                     translatedDocs.add(docs.get(i).getOrDefault(lang, ko.getDocs().get(i)));
@@ -66,6 +80,7 @@ public class GuideTranslationGenerator {
                         penalties.get(lang),
                         truncate(sourceNames.get(lang), VARCHAR_DEFAULT)
                 );
+                tr.updateRuleFields(translatedPoints, timings.get(lang), contacts.get(lang));
                 guideTranslationRepository.save(tr);
             }
         } catch (Exception e) {

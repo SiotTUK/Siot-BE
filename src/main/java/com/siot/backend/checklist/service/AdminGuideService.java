@@ -63,6 +63,15 @@ public class AdminGuideService {
                 request.docs() == null ? List.of() : request.docs().stream().map(String::strip).toList(),
                 blankToNull(request.fee()), blankToNull(request.law()), blankToNull(request.penalty()),
                 blankToNull(request.sourceName()));
+        // #14 생활수칙 칸: 보낸 것만 바꾼다
+        translation.updateRuleFields(
+                request.points() != null ? request.points().stream().map(String::strip).toList() : translation.getPoints(),
+                request.when() != null ? blankToNull(request.when()) : translation.getTiming(),
+                request.contact() != null ? blankToNull(request.contact()) : translation.getContact());
+        // #14 관리자가 직접 고친 번역은 사람이 확인한 것으로 보고 자동 번역이 덮어쓰지 않는다
+        if (!"ko".equals(lang)) {
+            translation.markReviewed(true);
+        }
         translation = translationRepository.save(translation);
         // COM-02: 한국어 원문을 고치면 en/zh/vi 번역을 다시 만든다 (다른 언어를 고치면 그 언어만 바뀐다)
         if ("ko".equals(lang)) {

@@ -40,9 +40,8 @@ public record RuleUpdateRequest(
         @Schema(description = "요약")
         String summary,
 
-        @NotBlank
         @Size(max = 20000)
-        @Schema(description = "본문 (한국어)")
+        @Schema(description = "본문 (한국어). 비우면 points 를 줄바꿈으로 이어 채운다. content·points 중 하나는 필수")
         String content,
 
         @Size(max = 100)
@@ -75,6 +74,21 @@ public record RuleUpdateRequest(
 
         @NotNull
         @Schema(description = "실제 안내 내용 변경 여부 (NTF-07: 변경 알림 발송 유도)", example = "true")
-        Boolean noticeChanged
+        Boolean noticeChanged,
+
+        @Size(max = 30)
+        @Schema(description = "#14 확인된 문장 목록 (한국어, 순서대로). 보낸 값으로 바꾼다 (생략하면 비움)")
+        List<@NotBlank @Size(max = 2000) String> points,
+
+        @Size(max = 2000)
+        @Schema(description = "#14 시기 (한국어)")
+        String when,
+
+        @Size(max = 10)
+        @Schema(description = "#14 출처 목록. 보내면 통째로 바꾸고 sourceUrl 은 첫 출처 링크가 된다. 생략하면 그대로")
+        List<@jakarta.validation.Valid RuleSourceRequest> sources,
+
+        @Schema(description = "#14 공식 페이지와 대조해 확인한 날. 생략하면 그대로", example = "2026-11-25")
+        java.time.LocalDate checkedOn
 ) {
 }

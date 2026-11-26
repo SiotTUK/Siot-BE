@@ -29,6 +29,17 @@ public record GuideTranslationUpdateRequest(
         @Schema(description = "안 하면 받는 불이익", nullable = true, example = "과태료") @Size(max = 2000) String penalty,
         @Schema(description = "출처 이름 (링크는 항목 공통 source_url)", nullable = true, example = "하이코리아") @Size(max = 255) String sourceName,
         @Schema(description = "true = 실제 안내 내용 변경 (notice_changed_at 기록, 상세 화면 '변경됨' 표시), false = 오타 수정 같은 단순 수정 (NTF-07)", example = "false")
-        @NotNull Boolean noticeChanged
+        @NotNull Boolean noticeChanged,
+        @ArraySchema(arraySchema = @Schema(description = "#14 생활수칙 문장 목록 (순서대로). 생략하면 그대로", nullable = true))
+        @Size(max = 30) List<@NotBlank @Size(max = 2000) String> points,
+        @Schema(description = "#14 생활수칙 시기. 생략하면 그대로, 빈 문자열이면 지움", nullable = true) @Size(max = 2000) String when,
+        @Schema(description = "#14 이 언어의 문의처 문구. 생략하면 그대로, 빈 문자열이면 지움", nullable = true) @Size(max = 2000) String contact
 ) {
+
+    /** 생활수칙 칸(points·when·contact)은 그대로 둔다 */
+    public GuideTranslationUpdateRequest(String title, String summary, String content, String badge, String place,
+                                         List<String> docs, String fee, String law, String penalty, String sourceName,
+                                         Boolean noticeChanged) {
+        this(title, summary, content, badge, place, docs, fee, law, penalty, sourceName, noticeChanged, null, null, null);
+    }
 }

@@ -203,16 +203,18 @@ class ChatIntegrationTest {
                 .andExpect(jsonPath("$.data.answer.sources.length()").value(0))
                 .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value("CL-01"));
 
-        // 임베딩부터 실패 → 질문에 제목이 들어 있는 항목
+        // 임베딩부터 실패 → 질문에 제목이 들어 있는 항목. 제목 전체가 들어 있는 생활수칙(#14 시드 tax-car "자동차세")이 먼저,
+        // 첫 단어만 맞는 체크리스트(CL-10 "자동차세 내기")가 다음
         when(queryEmbedder.embedQuery(anyString())).thenThrow(new AiUnavailableException("quota"));
         ask(session, conversationId, "자동차세는 언제 내요?")
                 .andExpect(jsonPath("$.data.answer.answerStatus").value("ERROR"))
-                .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value("CL-10"))
-                .andExpect(jsonPath("$.data.answer.relatedPages[0].title").value("자동차세 내기"));
+                .andExpect(jsonPath("$.data.answer.relatedPages[0].code").value("tax-car"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[1].code").value("CL-10"))
+                .andExpect(jsonPath("$.data.answer.relatedPages[1].title").value("자동차세 내기"));
 
         // 대화 기록에서도 같은 링크
         mockMvc.perform(get("/api/chat/conversations/{id}/messages", conversationId).cookie(session))
-                .andExpect(jsonPath("$.data[3].relatedPages[0].code").value("CL-10"));
+                .andExpect(jsonPath("$.data[3].relatedPages[1].code").value("CL-10"));
     }
 
     @Test
