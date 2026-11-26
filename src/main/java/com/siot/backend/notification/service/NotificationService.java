@@ -16,6 +16,7 @@ import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.notification.domain.EmailDeliveryStatus;
 import com.siot.backend.notification.domain.Notification;
+import com.siot.backend.notification.domain.NotificationLeadDays;
 import com.siot.backend.notification.domain.NotificationPreference;
 import com.siot.backend.notification.dto.NotificationPreferenceResponse;
 import com.siot.backend.notification.dto.NotificationPreferenceUpdateRequest;
@@ -120,7 +121,7 @@ public class NotificationService {
                     case "EVENT" -> 1;
                     default -> 0;
                 };
-                responses.add(new NotificationPreferenceResponse(kind, true, defaultLeadDays));
+                responses.add(NotificationPreferenceResponse.defaults(kind, defaultLeadDays));
             }
         }
         return responses;
@@ -143,6 +144,17 @@ public class NotificationService {
         if (leadDays < 0 || leadDays > 365) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "leadDays 는 0~365 입니다.");
         }
+        if (request.leadDaysList() != null) {
+            List<Integer> available = NotificationLeadDays.available(kind);
+            if (available.isEmpty()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, kind + " 는 알림 시점을 고를 수 없습니다.");
+            }
+            if (request.leadDaysList().isEmpty() || request.leadDaysList().stream()
+                    .anyMatch(day -> day == null || !available.contains(day))) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "leadDaysList 는 " + available
+                        + " 중 하나 이상입니다. 모두 끄려면 enabled=false 로 보내 주세요.");
+            }
+        }
 
         NotificationPreference preference = preferenceRepository.findByKindAndUserId(kind, userId)
                 .map(existing -> {
@@ -153,6 +165,7 @@ public class NotificationService {
                         NotificationPreference.of(kind, userId, request.enabled(), leadDays)
                 ));
         preference.updateEmailEnabled(request.emailEnabled());
+        preference.updateLeadDaysList(request.leadDaysList());
 
         return NotificationPreferenceResponse.from(preference);
     }

@@ -98,7 +98,8 @@ public class NotificationController {
                 kind,
                 request.enabled() != null ? request.enabled() : true,
                 request.leadDays(),
-                request.emailEnabled()
+                request.emailEnabled(),
+                request.leadDaysList()
         );
         return ResponseEntity.ok(ApiResponse.of(notificationService.updatePreference(principal.getId(), updated)));
     }

@@ -116,4 +116,30 @@ class NotificationServiceTest {
         }
         org.mockito.Mockito.verify(preferenceRepository, org.mockito.Mockito.never()).save(any());
     }
+
+    @Test
+    @DisplayName("NTF-03 알림 시점: 고를 수 있는 값 중 하나 이상만 저장하고, 기본은 전부")
+    void updatePreference_leadDaysList() {
+        given(preferenceRepository.findByKindAndUserId("TAX", 1L)).willReturn(Optional.empty());
+        given(preferenceRepository.save(any(NotificationPreference.class))).willAnswer(inv -> inv.getArgument(0));
+
+        NotificationPreferenceResponse res = notificationService.updatePreference(1L,
+                new NotificationPreferenceUpdateRequest("TAX", true, null, null, List.of(1)));
+        assertThat(res.leadDaysList()).containsExactly(1);
+        assertThat(res.availableLeadDays()).containsExactly(7, 1);
+
+        given(preferenceRepository.findByUserId(1L)).willReturn(List.of());
+        assertThat(notificationService.getPreferences(1L))
+                .filteredOn(p -> p.kind().equals("STAY_EXPIRY")).singleElement()
+                .satisfies(p -> assertThat(p.leadDaysList()).containsExactly(120, 60, 30, 14, 7, 1));
+
+        for (NotificationPreferenceUpdateRequest bad : List.of(
+                new NotificationPreferenceUpdateRequest("TAX", true, null, null, List.of()),
+                new NotificationPreferenceUpdateRequest("TAX", true, null, null, List.of(3)),
+                new NotificationPreferenceUpdateRequest("EVENT", true, null, null, List.of(1)))) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> notificationService.updatePreference(1L, bad))
+                    .extracting(e -> ((com.siot.backend.global.exception.BusinessException) e).getErrorCode())
+                    .isEqualTo(com.siot.backend.global.exception.ErrorCode.INVALID_INPUT);
+        }
+    }
 }

@@ -132,7 +132,7 @@ public class NotificationScheduler {
             List<AppUser> users = appUserRepository.findImpendingStayUsers(targetDate, targetDate);
 
             for (AppUser user : users) {
-                if (isPreferenceDisabled(user.getId(), "STAY_EXPIRY")) {
+                if (isLeadDaySkipped(user.getId(), "STAY_EXPIRY", leadDays)) {
                     continue;
                 }
 
@@ -195,7 +195,7 @@ public class NotificationScheduler {
                 if (user.getUserType() != UserType.NEW) {
                     continue;
                 }
-                if (isPreferenceDisabled(user.getId(), CHECKLIST_DEADLINE_PREFERENCE)) {
+                if (isLeadDaySkipped(user.getId(), CHECKLIST_DEADLINE_PREFERENCE, leadDays)) {
                     continue;
                 }
                 if (registrationGuideId.isPresent() && isChecklistClosed(user.getId(), registrationGuideId.get())) {
@@ -243,7 +243,7 @@ public class NotificationScheduler {
                 if (!deadline.equals(targetDeadline)) {
                     continue; // 범위에는 걸렸지만 이 회원의 기한(14일/15일)과 다름
                 }
-                if (isPreferenceDisabled(user.getId(), CHECKLIST_DEADLINE_PREFERENCE)) {
+                if (isLeadDaySkipped(user.getId(), CHECKLIST_DEADLINE_PREFERENCE, leadDays)) {
                     continue;
                 }
                 Guide guide = guideRepository.findByCode(reportCode).orElse(null);
@@ -277,7 +277,7 @@ public class NotificationScheduler {
 
         // 납부 시작일 (당일)
         for (CalendarSchedule schedule : calendarScheduleRepository.findImpendingSchedules(today, today)) {
-            notifyTaxSchedule(schedule, "start",
+            notifyTaxSchedule(schedule, "start", null,
                     (m, title) -> String.format(m.taxStartTitle(), title),
                     (m, title) -> String.format(m.taxStartBody(), title, schedule.getStartsOn(), schedule.getEndsOn()));
         }
@@ -285,7 +285,7 @@ public class NotificationScheduler {
         // 납부 마감 D-7, D-1
         for (int leadDays : TAX_LEAD_DAYS) {
             for (CalendarSchedule schedule : calendarScheduleRepository.findByEndsOnAndActiveTrue(today.plusDays(leadDays))) {
-                notifyTaxSchedule(schedule, "due:" + leadDays,
+                notifyTaxSchedule(schedule, "due:" + leadDays, leadDays,
                         (m, title) -> String.format(m.taxDueTitle(), title, leadDays),
                         (m, title) -> String.format(m.taxDueBody(), title, schedule.getEndsOn(), leadDays));
             }
@@ -454,14 +454,18 @@ public class NotificationScheduler {
                 .orElse(m.defaultEventTitle());
     }
 
-    /** 납부 대상 회원에게 세금 알림을 한 번씩 만든다. sourceKeyPart 로 시작일·마감 D-n 알림을 구분한다 */
-    private void notifyTaxSchedule(CalendarSchedule schedule, String sourceKeyPart,
+    /**
+     * 납부 대상 회원에게 세금 알림을 한 번씩 만든다. sourceKeyPart 로 시작일·마감 D-n 알림을 구분한다
+     *
+     * @param leadDays 마감 D-n 알림이면 n (회원이 고른 시점만 보낸다), 납부 시작일 알림이면 null
+     */
+    private void notifyTaxSchedule(CalendarSchedule schedule, String sourceKeyPart, Integer leadDays,
                                    BiFunction<NotificationMessages, String, String> titleOf,
                                    BiFunction<NotificationMessages, String, String> bodyOf) {
         String scheduleKind = schedule.getKind() != null ? schedule.getKind().toUpperCase() : "";
 
         for (AppUser user : appUserRepository.findAll()) {
-            if (isPreferenceDisabled(user.getId(), "TAX")) {
+            if ((leadDays == null ? isPreferenceDisabled(user.getId(), "TAX") : isLeadDaySkipped(user.getId(), "TAX", leadDays))) {
                 continue;
             }
             // 대상 사용자 필터링
@@ -516,6 +520,16 @@ public class NotificationScheduler {
     private boolean isPreferenceDisabled(Long userId, String kind) {
         return preferenceRepository.findByKindAndUserId(kind, userId)
                 .map(pref -> !pref.isEnabled())
+                .orElse(false);
+    }
+
+    /**
+     * NTF-03: 그 종류를 껐거나, 이 시점(D-n)을 고르지 않았으면 true. 설정이 없으면 기본 시점 전부를 보낸다.
+     * 시점을 바꿔도 sourceKey 에 D-n 이 들어 있어 이미 보낸 알림은 다시 만들지 않는다.
+     */
+    private boolean isLeadDaySkipped(Long userId, String kind, int leadDays) {
+        return preferenceRepository.findByKindAndUserId(kind, userId)
+                .map(pref -> !pref.isEnabled() || !pref.wantsLeadDay(leadDays))
                 .orElse(false);
     }
 }

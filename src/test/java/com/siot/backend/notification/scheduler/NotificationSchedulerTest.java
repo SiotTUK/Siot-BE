@@ -218,6 +218,27 @@ class NotificationSchedulerTest {
         verify(notificationRepository, never()).save(any());
     }
 
+    @Test
+    @DisplayName("NTF-03 알림 시점을 D-1 만 고르면 D-7 외국인등록 알림은 보내지 않고, D-7 을 고르면 보낸다")
+    void registration_followsChosenLeadDays() {
+        registrationUser();
+        given(checklistProgressRepository.findByUserIdAndGuideIdAndPeriodKey(USER_ID, CL01_GUIDE_ID, ChecklistProgress.ONCE))
+                .willReturn(Optional.empty());
+        NotificationPreference dayBeforeOnly = NotificationPreference.of("CHECKLIST_DEADLINE", USER_ID, true, 7);
+        dayBeforeOnly.updateLeadDaysList(List.of(1));
+        given(preferenceRepository.findByKindAndUserId("CHECKLIST_DEADLINE", USER_ID)).willReturn(Optional.of(dayBeforeOnly));
+
+        notificationScheduler.generateRegistrationNotifications();
+        verify(notificationRepository, never()).save(any());
+
+        NotificationPreference sevenDays = NotificationPreference.of("CHECKLIST_DEADLINE", USER_ID, true, 7);
+        sevenDays.updateLeadDaysList(List.of(7));
+        given(preferenceRepository.findByKindAndUserId("CHECKLIST_DEADLINE", USER_ID)).willReturn(Optional.of(sevenDays));
+
+        notificationScheduler.generateRegistrationNotifications();
+        assertThat(savedNotification().getSourceKey()).contains(":7:");
+    }
+
     // ---- NTF-08 체류지 변경 신고 ----
 
     private static final Long LC0101_GUIDE_ID = 201L;

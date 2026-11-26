@@ -64,8 +64,9 @@ public class BillDueNotifier {
 
     private boolean notify(BillTranslation bill, int leadDays) {
         Long userId = bill.getUserId();
+        // TAX 를 껐거나 이 시점(D-n)을 고르지 않았으면 보내지 않는다 (NTF-03)
         boolean disabled = preferenceRepository.findByKindAndUserId(PREFERENCE_KIND, userId)
-                .map(pref -> !pref.isEnabled())
+                .map(pref -> !pref.isEnabled() || !pref.wantsLeadDay(leadDays))
                 .orElse(false);
         if (disabled) {
             return false;
