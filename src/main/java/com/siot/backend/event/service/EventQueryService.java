@@ -143,7 +143,7 @@ public class EventQueryService {
                 event.getStartsOn(), event.getEndsOn(), event.getStartsAt(), event.getEndsAt(), event.isTimeUnknown(),
                 event.getPriceInfo(), event.getApplicationDeadline(), event.getApplicationUrl(), event.getSourceUrl(),
                 event.getRegionCode(), event.getCategory().name(), event.getCategory().displayName(language(userId)),
-                event.isMulticultural(), subscribed, text.language(), text.translated());
+                event.isMulticultural(), subscribed, text.language(), text.translated(), event.getThumbnailUrl());
     }
 
     /**
@@ -289,7 +289,7 @@ public class EventQueryService {
         return new EventSummaryResponse(event.getId(), text.title(), text.venue(), event.getStartsOn(),
                 event.getEndsOn(), event.getStartsAt(), event.getEndsAt(), event.isTimeUnknown(),
                 event.getRegionCode(), event.getCategory().name(), event.getCategory().displayName(language),
-                event.isMulticultural(), text.language(), text.translated());
+                event.isMulticultural(), text.language(), text.translated(), event.getThumbnailUrl());
     }
 
     /** 요청한 카테고리 코드. 비어 있으면 null (전체), 모르는 값이면 400 */

@@ -22,5 +22,7 @@ public record AdminEventSummaryResponse(
         @Schema(description = "EVE-10 카테고리", allowableValues = {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"})
         String category,
         @Schema(description = "내용 판 번호 (바뀔 때마다 +1, 번역을 다시 만든다)", example = "1") int revision,
-        @Schema(description = "마지막 수정 시각") OffsetDateTime updatedAt) {
+        @Schema(description = "마지막 수정 시각") OffsetDateTime updatedAt,
+        @Schema(description = "행사 사진 URL (http/https, BE #19). 없으면 null (화면은 분류별 기본 이미지)", nullable = true,
+                example = "https://tong.visitkorea.or.kr/cms/resource/09/3528809_image2_1.jpg") String thumbnailUrl) {
 }

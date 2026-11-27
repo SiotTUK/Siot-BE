@@ -87,6 +87,21 @@ class TourApiEventSourceTest {
         assertThat(moim.title()).isEqualTo("MOIM International");
         assertThat(moim.sourceUrl()).isNull();
         assertThat(moim.description()).isNull();
+        // BE #19 사진: firstimage (상세가 실패해도 목록의 사진은 남는다)
+        assertThat(festival.thumbnailUrl()).isEqualTo("https://tong.visitkorea.or.kr/cms/resource/09/3528809_image2_1.jpg");
+        assertThat(moim.thumbnailUrl()).isEqualTo("https://tong.visitkorea.or.kr/cms/resource/59/4104859_image2_1.jpg");
+    }
+
+    /** BE #19: firstimage 가 없으면 firstimage2, http(s) 가 아니거나 비면 null */
+    @Test
+    void imageFallsBackToSecondImageAndIgnoresNonHttp() throws Exception {
+        tools.jackson.databind.json.JsonMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        assertThat(TourApiEventSource.image(mapper.readTree("{\"firstimage\":\"\",\"firstimage2\":\"http://a.test/2.jpg\"}")))
+                .isEqualTo("http://a.test/2.jpg");
+        assertThat(TourApiEventSource.image(mapper.readTree("{\"firstimage\":\" https://a.test/1.jpg \"}")))
+                .isEqualTo("https://a.test/1.jpg");
+        assertThat(TourApiEventSource.image(mapper.readTree("{\"firstimage\":\"javascript:alert(1)\"}"))).isNull();
+        assertThat(TourApiEventSource.image(mapper.readTree("{}"))).isNull();
     }
 
     /** 저장할 시흥 행사 2건의 상세 요청 (순서 무관하게 받도록 서버는 ignoreExpectOrder) */

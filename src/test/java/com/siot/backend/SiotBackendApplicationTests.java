@@ -65,7 +65,7 @@ class SiotBackendApplicationTests {
     void flywayAppliedAllMigrations() {
         Integer applied = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = true", Integer.class);
-        assertThat(applied).isEqualTo(25);
+        assertThat(applied).isEqualTo(26);
     }
 
     @Test
@@ -116,6 +116,22 @@ class SiotBackendApplicationTests {
                 .andExpect(jsonPath("$.paths['/api/auth/login']").exists())
                 .andExpect(jsonPath("$.paths['/api/admin/guides/{code}/translations/{language}'].put").exists());
         mockMvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
+    }
+
+    /** BE #22: 페이지 파라미터는 page·size·sort 쿼리로, Map 이던 응답은 필드가 있는 스키마로 나온다 */
+    @Test
+    void swaggerDocsShowPageParamsAndSmallResponseSchemas() throws Exception {
+        for (String path : java.util.List.of("/api/members/me/notifications", "/api/members/me/event-subscriptions",
+                "/api/admin/reports")) {
+            mockMvc.perform(get("/v3/api-docs"))
+                    .andExpect(jsonPath("$.paths['" + path + "'].get.parameters[?(@.name == 'pageable')]").isEmpty())
+                    .andExpect(jsonPath("$.paths['" + path + "'].get.parameters[?(@.name == 'page')]").isNotEmpty())
+                    .andExpect(jsonPath("$.paths['" + path + "'].get.parameters[?(@.name == 'size')]").isNotEmpty());
+        }
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(jsonPath("$.components.schemas.UnreadCountResponse.properties.unreadCount").exists())
+                .andExpect(jsonPath("$.components.schemas.EventSubscriptionStatusResponse.properties.subscribed").exists())
+                .andExpect(jsonPath("$.components.schemas.EventSubscriptionStatusResponse.properties.leadDays").exists());
     }
 
     @Test

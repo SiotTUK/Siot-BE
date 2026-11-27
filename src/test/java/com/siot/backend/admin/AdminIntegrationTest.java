@@ -319,6 +319,43 @@ class AdminIntegrationTest {
                 String.class, guideId)).isEqualTo("English title");
     }
 
+    /** BE #23: 문구 조회·저장 응답에 생활수칙 칸(points·when·contact)과 번역 확인 여부(reviewed)가 나온다 */
+    @Test
+    void guideTextResponseIncludesRuleFieldsAndReviewed() throws Exception {
+        Cookie admin = login(ADMIN_EMAIL);
+        String code = "t-rule-" + ThreadLocalRandom.current().nextInt(100_000, 999_999);
+        jdbcTemplate.update("INSERT INTO guide (code, kind, category) VALUES (?, 'RULE', '쓰레기')", code);
+        long guideId = jdbcTemplate.queryForObject("SELECT guide_id FROM guide WHERE code = ?", Long.class, code);
+        jdbcTemplate.update("INSERT INTO guide_translation (guide_id, language, title, points, timing, contact, reviewed) "
+                + "VALUES (?, 'en', 'Food waste', ARRAY['Use the bin', 'Drain water'], 'Every day', 'Call 031', FALSE)", guideId);
+
+        mockMvc.perform(get("/api/admin/guides/{code}/translations/en", code).cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.points[0]").value("Use the bin"))
+                .andExpect(jsonPath("$.data.points[1]").value("Drain water"))
+                .andExpect(jsonPath("$.data.when").value("Every day"))
+                .andExpect(jsonPath("$.data.contact").value("Call 031"))
+                .andExpect(jsonPath("$.data.reviewed").value(false));
+
+        // 생활수칙 칸을 보내지 않고 저장하면 그대로 남고, ko 외 언어를 관리자가 고쳤으므로 reviewed=true
+        saveGuide(admin, code, "en", "Food waste rules", false)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.points[0]").value("Use the bin"))
+                .andExpect(jsonPath("$.data.when").value("Every day"))
+                .andExpect(jsonPath("$.data.reviewed").value(true));
+
+        // 체크리스트 항목은 빈 목록·null
+        String checklist = "T-" + ThreadLocalRandom.current().nextInt(100_000, 999_999);
+        jdbcTemplate.update("INSERT INTO guide (code, kind) VALUES (?, 'CHECKLIST')", checklist);
+        jdbcTemplate.update("INSERT INTO guide_translation (guide_id, language, title) "
+                + "SELECT guide_id, 'ko', '제목' FROM guide WHERE code = ?", checklist);
+        mockMvc.perform(get("/api/admin/guides/{code}/translations/ko", checklist).cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.points").isEmpty())
+                .andExpect(jsonPath("$.data.when").doesNotExist())
+                .andExpect(jsonPath("$.data.contact").doesNotExist());
+    }
+
     /** NTF-07: 체크리스트 항목의 출처 링크·문의 전화도 관리자가 고친다 */
     @Test
     void adminUpdatesGuideSourceUrlAndContact() throws Exception {

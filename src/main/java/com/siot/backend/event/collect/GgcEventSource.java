@@ -107,7 +107,8 @@ public class GgcEventSource implements EventSource {
         String homepage = EventTexts.clean(text(item, "homepage"));
         return new CollectedEvent(href, title, startsOn, endsOn, times[0], times[1],
                 EventTexts.clean(text(item, "incost")), homepage == null ? href : homepage,
-                null, null, region(item), EventCategory.fromGgc(text(item, "category")));
+                null, null, region(item), EventCategory.fromGgc(text(item, "category")),
+                EventTexts.imageUrl(text(item, "thumbnail")));
     }
 
     static String region(JsonNode item) {

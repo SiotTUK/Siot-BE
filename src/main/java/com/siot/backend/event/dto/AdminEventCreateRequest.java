@@ -35,7 +35,9 @@ public record AdminEventCreateRequest(
         Boolean multicultural,
         @Schema(description = "EVE-10 카테고리. 비우면 EVENT. 한국어 강좌 등은 EDUCATION", nullable = true,
                 allowableValues = {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"}, example = "EDUCATION")
-        @Pattern(regexp = EventCategory.PATTERN) String category) {
+        @Pattern(regexp = EventCategory.PATTERN) String category,
+        @Schema(description = "행사 사진 URL (http/https, BE #19)", nullable = true)
+        @Size(max = 2000) @Pattern(regexp = URL_PATTERN) String thumbnailUrl) {
 
     public static final String URL_PATTERN = "^https?://\\S+$";
     public static final String REGION_PATTERN = "SIHEUNG|GYEONGGI";

@@ -102,6 +102,13 @@ public class Event {
     @Column(name = "category_locked", nullable = false)
     private boolean categoryLocked = false;
 
+    /** BE #19 행사 사진 URL (http/https). 수집(TourAPI firstimage, 지지씨 thumbnail) 또는 관리자 입력 */
+    @Column(name = "thumbnail_url", columnDefinition = "text")
+    private String thumbnailUrl;
+
+    @Column(name = "thumbnail_url_locked", nullable = false)
+    private boolean thumbnailUrlLocked = false;
+
     @Column(nullable = false)
     private int revision = 1;
 
@@ -270,6 +277,17 @@ public class Event {
     public boolean editCategory(EventCategory value, boolean lock) {
         categoryLocked |= lock;
         return value != null && set(category, value, v -> category = v);
+    }
+
+    /** 관리자가 사진 URL 을 바꾼다 (null 이면 지움). lock=true 면 수집이 덮어쓰지 않는다 */
+    public boolean editThumbnailUrl(String value, boolean lock) {
+        thumbnailUrlLocked |= lock;
+        return set(thumbnailUrl, value, v -> thumbnailUrl = v);
+    }
+
+    /** 수집한 사진 URL 을 반영한다. 잠겼거나 수집 값이 없으면(null) 그대로 둔다. 바뀌었으면 true */
+    public boolean collectThumbnailUrl(String value) {
+        return !thumbnailUrlLocked && value != null && set(thumbnailUrl, value, v -> thumbnailUrl = v);
     }
 
     /** 수집한 카테고리를 반영한다. 관리자가 고쳤으면(잠금) 그대로 둔다. 바뀌었으면 true */

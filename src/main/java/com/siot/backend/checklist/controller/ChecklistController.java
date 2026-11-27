@@ -5,6 +5,7 @@ import com.siot.backend.checklist.dto.*;
 import com.siot.backend.checklist.service.ChecklistService;
 import com.siot.backend.checklist.service.MemberLifeChangeService;
 import com.siot.backend.global.common.ApiResponse;
+import com.siot.backend.global.common.SupportedLanguages;
 import com.siot.backend.global.config.openapi.ApiErrorCodes;
 import com.siot.backend.global.config.openapi.SuccessStatus;
 import com.siot.backend.global.exception.ErrorCode;
@@ -33,14 +34,15 @@ public class ChecklistController {
 
     @Operation(summary = "내 맞춤 체크리스트 및 진행률 조회",
             description = "온보딩 답과 등록된 생활 변화를 바탕으로 마감일·D-day를 실시간 계산하여 반환합니다.")
-    @ApiErrorCodes({ErrorCode.MEMBER_NOT_FOUND})
+    @ApiErrorCodes({ErrorCode.INVALID_INPUT})
     @GetMapping("/checklist")
     public ResponseEntity<ApiResponse<ChecklistSummaryResponse>> getMyChecklist(
             @AuthenticationPrincipal MemberPrincipal principal,
-            @Parameter(description = "화면 언어 (ko/en/zh/vi). 생략 시 회원 기본 언어")
+            @Parameter(description = "화면 언어 (ko/en/zh/vi). 생략 시 회원 기본 언어. 그 밖의 값은 400")
             @RequestParam(required = false) String language) {
 
-        ChecklistSummaryResponse response = checklistService.getMyChecklist(principal.getId(), language);
+        ChecklistSummaryResponse response = checklistService.getMyChecklist(principal.getId(),
+                SupportedLanguages.requireValid(language));
         return ResponseEntity.ok(ApiResponse.of(response));
     }
 
@@ -68,8 +70,9 @@ public class ChecklistController {
     }
 
     @Operation(summary = "생활 변화 등록 또는 기준일 수정",
-            description = "동일한 생활 변화를 다시 등록하면 기존 항목의 기준일(baseDate)만 변경됩니다.")
-    @ApiErrorCodes({ErrorCode.INVALID_LIFE_CHANGE_CODE})
+            description = "동일한 생활 변화를 다시 등록하면 기존 항목의 기준일(baseDate)만 변경됩니다. "
+                    + "이사(LC-01)는 기준일이 오늘(한국 시간) 이후면 400 LIFE_CHANGE_DATE_INVALID. 다른 생활 변화는 미래 날짜도 받습니다.")
+    @ApiErrorCodes({ErrorCode.INVALID_LIFE_CHANGE_CODE, ErrorCode.LIFE_CHANGE_DATE_INVALID})
     @PutMapping("/life-changes/{code}")
     public ResponseEntity<ApiResponse<LifeChangeResponse>> registerLifeChange(
             @AuthenticationPrincipal MemberPrincipal principal,

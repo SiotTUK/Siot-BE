@@ -33,7 +33,9 @@ public record AdminEventUpdateRequest(
         @Schema(description = "다문화·외국인 대상 행사", nullable = true) Boolean multicultural,
         @Schema(description = "EVE-10 카테고리. 보내면 잠가서 수집이 덮어쓰지 않는다", nullable = true,
                 allowableValues = {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"})
-        @Pattern(regexp = EventCategory.PATTERN) String category) {
+        @Pattern(regexp = EventCategory.PATTERN) String category,
+        @Schema(description = "행사 사진 URL (http/https, BE #19). \"\" 이면 비운다. 보내면 잠가서 수집이 덮어쓰지 않는다", nullable = true)
+        @Size(max = 2000) @Pattern(regexp = URL_OR_EMPTY) String thumbnailUrl) {
 
     public static final String URL_OR_EMPTY = "^$|^https?://\\S+$";
 }

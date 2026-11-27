@@ -108,10 +108,12 @@ public class TourApiEventSource implements EventSource {
         }
         String sourceUrl = EventTexts.firstUrl(DataGoKrResponses.text(item, "homepage"));
         String description = EventTexts.htmlToText(DataGoKrResponses.text(item, "overview"));
+        String thumbnailUrl = image(item);
         return new CollectedEvent(event.externalId(), event.title(), event.startsOn(), event.endsOn(),
                 event.startsAt(), event.endsAt(), event.priceInfo(),
                 sourceUrl != null ? sourceUrl : event.sourceUrl(), event.venue(),
-                description != null ? description : event.description(), event.regionCode(), event.category());
+                description != null ? description : event.description(), event.regionCode(), event.category(),
+                thumbnailUrl != null ? thumbnailUrl : event.thumbnailUrl());
     }
 
     private String requestDetail(EventProperties.TourApi api, String contentId) {
@@ -145,6 +147,13 @@ public class TourApiEventSource implements EventSource {
         }
         return new CollectedEvent(id, title, startsOn, endsOn, null, null, null, null,
                 EventTexts.clean(DataGoKrResponses.text(item, "addr1")), null, EventRegion.SIHEUNG,
-                EventCategory.fromTourApi(DataGoKrResponses.text(item, "lclsSystm2"), DataGoKrResponses.text(item, "cat2")));
+                EventCategory.fromTourApi(DataGoKrResponses.text(item, "lclsSystm2"), DataGoKrResponses.text(item, "cat2")),
+                image(item));
+    }
+
+    /** 대표 사진 firstimage(원본), 없으면 firstimage2(작은 사진) (BE #19) */
+    static String image(JsonNode item) {
+        String first = EventTexts.imageUrl(DataGoKrResponses.text(item, "firstimage"));
+        return first != null ? first : EventTexts.imageUrl(DataGoKrResponses.text(item, "firstimage2"));
     }
 }

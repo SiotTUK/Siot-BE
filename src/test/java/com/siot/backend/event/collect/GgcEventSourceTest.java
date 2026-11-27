@@ -108,6 +108,8 @@ class GgcEventSourceTest {
         assertThat(first.sourceUrl()).startsWith("https://www.siheung.go.kr/sac/portal/exhibition/view.do");
         assertThat(first.venue()).isNull();
         assertThat(first.description()).isNull();
+        assertThat(first.thumbnailUrl())   // BE #19
+                .isEqualTo("https://ggc.ggcf.kr/uploadimg/2023/file/SAC_PRFM202611090658259100_ratio_.jpg");
     }
 
     /** EVE-10 카테고리: 지지씨 category 공연·전시·교육·행사 → PERFORMANCE·EXHIBITION·EDUCATION·EVENT */

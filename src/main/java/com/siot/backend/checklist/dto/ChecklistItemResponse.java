@@ -13,7 +13,7 @@ public record ChecklistItemResponse(
         String code,
         @Schema(description = "항목 제목", example = "외국인등록")
         String title,
-        @Schema(description = "항목 구분: CHECKLIST / LIFE_CHANGE_TASK / RULE", example = "CHECKLIST")
+        @Schema(description = "항목 구분: CHECKLIST / LIFE_CHANGE_TASK (생활수칙 RULE 은 체크리스트에 나오지 않는다)", example = "CHECKLIST")
         String kind,
         @Schema(description = "REQUIRED(필수) / INFO(안내) / OPTIONAL(선택)", example = "REQUIRED")
         ItemType itemType,
@@ -66,8 +66,13 @@ public record ChecklistItemResponse(
         // CHK-08 경고 표시 (외국인등록 D-30, 체류지 변경 D-7, 기한 지남 등)
         @Schema(description = "CHK-08 경고 표시 여부 (외국인등록 D-30, 체류지 변경 D-7, 기한 초과 등)", example = "true")
         boolean warning,
-        @Schema(description = "CHK-08 경고 문구", example = "외국인등록 기한이 30일 이내로 임박했습니다. 기한 초과 시 과태료가 부과됩니다.")
+        @Schema(description = "CHK-08 경고 문구 (요청 언어, COM-02). 경고가 없으면 null", nullable = true,
+                example = "외국인등록 기한이 30일 이내로 임박했습니다. 기한 초과 시 과태료 및 불이익이 발생합니다.")
         String warningMessage,
+        @Schema(description = "CHK-08 경고 종류: OVERDUE(기한 지남) / REGISTRATION_DUE(외국인등록 D-30) / "
+                + "RESIDENCE_REPORT_DUE(체류지 변경 신고 D-7). 경고가 없으면 null", nullable = true,
+                allowableValues = {"OVERDUE", "REGISTRATION_DUE", "RESIDENCE_REPORT_DUE"}, example = "REGISTRATION_DUE")
+        String warningType,
 
         // CHK-06 출처 쪽수
         @Schema(description = "CHK-06 출처 안내책자 시작 쪽수", example = "12")

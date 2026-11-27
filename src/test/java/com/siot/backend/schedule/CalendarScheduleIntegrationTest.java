@@ -64,4 +64,30 @@ class CalendarScheduleIntegrationTest {
                 .andExpect(jsonPath("$.data[0].startsOn").value("2099-11-28"))
                 .andExpect(jsonPath("$.data[0].endsOn").value("2099-12-01"));
     }
+
+    /** BE #25: 범위 밖 연·월은 LocalDate 오류(500)가 아니라 400 INVALID_INPUT (행사 달력과 같은 범위) */
+    @Test
+    void outOfRangeYearOrMonthIsBadRequest() throws Exception {
+        AppUser account = users.save(AppUser.create("calendar-range@example.com", "unused"));
+
+        for (String[] params : List.of(
+                new String[]{"/api/schedules/monthly", "2026", "13"},
+                new String[]{"/api/schedules/monthly", "2026", "0"},
+                new String[]{"/api/schedules/monthly", "1999", "1"},
+                new String[]{"/api/schedules/monthly", "2101", "1"})) {
+            mockMvc.perform(get(params[0]).param("year", params[1]).param("month", params[2])
+                            .with(user(MemberPrincipal.from(account))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+        }
+        for (String year : List.of("1999", "2101", "1000000000")) {
+            mockMvc.perform(get("/api/schedules/yearly").param("year", year)
+                            .with(user(MemberPrincipal.from(account))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+        }
+        mockMvc.perform(get("/api/schedules/monthly").param("year", "2100").param("month", "12")
+                        .with(user(MemberPrincipal.from(account))))
+                .andExpect(status().isOk());
+    }
 }

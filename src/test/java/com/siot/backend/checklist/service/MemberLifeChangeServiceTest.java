@@ -13,7 +13,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -36,8 +35,16 @@ class MemberLifeChangeServiceTest {
     @Mock
     private MemberLifeChangeRepository memberLifeChangeRepository;
 
-    @InjectMocks
+    /** 오늘 = 2026-11-27 (한국 시간) */
+    private final java.time.Clock clock = java.time.Clock.fixed(
+            java.time.Instant.parse("2026-11-27T03:00:00Z"), java.time.ZoneId.of("Asia/Seoul"));
+
     private MemberLifeChangeService memberLifeChangeService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        memberLifeChangeService = new MemberLifeChangeService(memberLifeChangeRepository, clock);
+    }
 
     @Test
     @DisplayName("올바른 코드면 생활 변화를 새로 등록한다")
@@ -79,5 +86,27 @@ class MemberLifeChangeServiceTest {
         assertThatThrownBy(() -> memberLifeChangeService.deleteLifeChange(1L, "LC-01"))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.LIFE_CHANGE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("이사(LC-01)는 내일 이후 날짜면 저장 전에 LIFE_CHANGE_DATE_INVALID (BE #21)")
+    void register_futureMoveDate_rejected() {
+        assertThatThrownBy(() -> memberLifeChangeService.registerLifeChange(1L,
+                new LifeChangeRequest("LC-01", LocalDate.of(2026, 11, 28))))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.LIFE_CHANGE_DATE_INVALID);
+        verifyNoInteractions(memberLifeChangeRepository);
+    }
+
+    @Test
+    @DisplayName("이사일이 오늘이면 저장하고, 다른 생활 변화는 미래 날짜도 저장한다 (BE #21)")
+    void register_todayMoveAndFutureOtherDates_saved() {
+        given(memberLifeChangeRepository.findById(any(MemberLifeChangeId.class))).willReturn(Optional.empty());
+        given(memberLifeChangeRepository.save(any(MemberLifeChange.class))).willAnswer(inv -> inv.getArgument(0));
+
+        assertThat(memberLifeChangeService.registerLifeChange(1L,
+                new LifeChangeRequest("LC-01", LocalDate.of(2026, 11, 27))).baseDate()).isEqualTo("2026-11-27");
+        assertThat(memberLifeChangeService.registerLifeChange(1L,
+                new LifeChangeRequest("LC-07", LocalDate.of(2027, 1, 10))).baseDate()).isEqualTo("2027-01-10");
     }
 }

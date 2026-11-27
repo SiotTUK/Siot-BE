@@ -11,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -25,7 +27,12 @@ public class MemberLifeChangeService {
     /** DB 제약 ck_member_life_change_code 와 같은 규칙. 어긋나면 DB 오류(500) 대신 400 으로 막는다 */
     private static final Pattern LIFE_CHANGE_CODE = Pattern.compile("^LC-0[1-8]$");
 
+    /** 생활 변화: 이사. 이사일은 오늘(한국 시간)까지만 받는다 (BE #21) */
+    private static final String MOVE_CODE = "LC-01";
+
     private final MemberLifeChangeRepository memberLifeChangeRepository;
+    /** 한국 시간 (ClockConfig) */
+    private final Clock clock;
 
     public List<LifeChangeResponse> getLifeChanges(Long userId) {
         return memberLifeChangeRepository.findByUserId(userId).stream()
@@ -36,6 +43,10 @@ public class MemberLifeChangeService {
     @Transactional
     public LifeChangeResponse registerLifeChange(Long userId, LifeChangeRequest request) {
         validateCode(request.lifeChangeCode());
+        // 이사는 이미 한 일만 등록한다 (미래 이사일로 체류지 변경 신고 기한을 계산하지 않게). 출국·입학 등 다른 생활 변화는 미래 날짜 허용
+        if (MOVE_CODE.equals(request.lifeChangeCode()) && request.baseDate().isAfter(LocalDate.now(clock))) {
+            throw new BusinessException(ErrorCode.LIFE_CHANGE_DATE_INVALID);
+        }
         MemberLifeChangeId id = new MemberLifeChangeId(userId, request.lifeChangeCode());
 
         MemberLifeChange lifeChange = memberLifeChangeRepository.findById(id)

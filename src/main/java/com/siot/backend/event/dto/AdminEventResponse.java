@@ -37,5 +37,7 @@ public record AdminEventResponse(
         @Schema(description = "지금 원문 기준으로 번역이 끝난 언어 (ko 포함)", example = "[\"ko\", \"en\"]")
         List<String> translatedLanguages,
         @Schema(description = "등록 시각") OffsetDateTime createdAt,
-        @Schema(description = "마지막 수정 시각") OffsetDateTime updatedAt) {
+        @Schema(description = "마지막 수정 시각") OffsetDateTime updatedAt,
+        @Schema(description = "행사 사진 URL (http/https, BE #19). 없으면 null (화면은 분류별 기본 이미지)", nullable = true,
+                example = "https://tong.visitkorea.or.kr/cms/resource/09/3528809_image2_1.jpg") String thumbnailUrl) {
 }

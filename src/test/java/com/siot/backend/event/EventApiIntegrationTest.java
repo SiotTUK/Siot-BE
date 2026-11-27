@@ -424,6 +424,47 @@ class EventApiIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    // ================================================================ BE #19 행사 사진
+
+    @Test
+    void collectedPhotoIsShownAndAdminPhotoSurvivesRecollection() throws Exception {
+        fetchReturns(ggc, List.of(new CollectedEvent("photo1", "시흥 사진 축제", LocalDate.of(2026, 12, 18),
+                LocalDate.of(2026, 12, 18), null, null, null, "https://ggc.test/photo1", null, null,
+                EventRegion.SIHEUNG, null, "https://ggc.test/img/1.jpg")));
+        collectionService.collectAll();
+        long eventId = eventIdTitled("시흥 사진 축제");
+
+        mockMvc.perform(get("/api/events/" + eventId).cookie(member))
+                .andExpect(jsonPath("$.data.thumbnailUrl").value("https://ggc.test/img/1.jpg"));
+        mockMvc.perform(get("/api/events").cookie(member))
+                .andExpect(jsonPath("$.data.content[?(@.eventId == " + eventId + ")].thumbnailUrl")
+                        .value(contains("https://ggc.test/img/1.jpg")));
+
+        // 관리자가 사진을 바꾸면 잠기고, 번역할 글이 아니라 revision 은 그대로
+        int revision = JsonPath.read(mockMvc.perform(get("/api/admin/events/" + eventId).cookie(admin))
+                .andReturn().getResponse().getContentAsString(), "$.data.revision");
+        mockMvc.perform(patch("/api/admin/events/" + eventId).with(csrf()).cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"thumbnailUrl\": \"https://admin.test/poster.png\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.thumbnailUrl").value("https://admin.test/poster.png"))
+                .andExpect(jsonPath("$.data.lockedFields").value(org.hamcrest.Matchers.hasItem("thumbnailUrl")))
+                .andExpect(jsonPath("$.data.revision").value(revision));
+        mockMvc.perform(patch("/api/admin/events/" + eventId).with(csrf()).cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"thumbnailUrl\": \"ftp://bad\"}"))
+                .andExpect(status().isBadRequest());
+
+        // 다시 수집해도 관리자가 정한 사진은 그대로
+        collectionService.collectAll();
+        mockMvc.perform(get("/api/events/" + eventId).cookie(member))
+                .andExpect(jsonPath("$.data.thumbnailUrl").value("https://admin.test/poster.png"));
+    }
+
+    private long eventIdTitled(String title) {
+        return jdbc.queryForObject(
+                "SELECT event_id FROM event_translation WHERE language = 'ko' AND title = ?", Long.class, title);
+    }
+
     // ================================================================ EVE-08 수정
 
     @Test

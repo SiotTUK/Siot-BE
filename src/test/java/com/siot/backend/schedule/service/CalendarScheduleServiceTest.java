@@ -173,12 +173,37 @@ class CalendarScheduleServiceTest {
                 LocalDate.of(2027, 1, 1), LocalDate.of(2027, 12, 31)))
                 .willReturn(List.of(car2, resident, car1));
 
-        List<ScheduleResponse> responses = calendarScheduleService.getYearlySchedules(2027, "ko");
+        List<ScheduleResponse> responses = calendarScheduleService.getYearlySchedules(null, 2027, "ko");
 
         assertThat(responses).extracting(ScheduleResponse::startsOn).containsExactly(
                 LocalDate.of(2027, 6, 16), LocalDate.of(2027, 8, 16), LocalDate.of(2027, 12, 16));
         assertThat(responses).allSatisfy(r -> assertThat(r.personal()).isFalse());
         verifyNoInteractions(appUserRepository);
+    }
+
+    @Test
+    @DisplayName("연간 일정에 로그인 회원의 개인 일정(체류·자동차세·재산세)을 월간과 같은 규칙으로 넣는다 (BE #20)")
+    void getYearlySchedules_includesPersonalSchedules() {
+        AppUser user = AppUser.create("yearly@siot.kr", "hash");
+        user.updateOnboarding(UserType.LIVING, LocalDate.of(2025, 1, 1), Purpose.WORK,
+                Set.of(Residence.CAR, Residence.HOUSE), LocalDate.of(2027, 10, 20));
+        given(appUserRepository.findById(1L)).willReturn(Optional.of(user));
+        given(calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(
+                LocalDate.of(2027, 1, 1), LocalDate.of(2027, 12, 31))).willReturn(List.of());
+
+        List<ScheduleResponse> responses = calendarScheduleService.getYearlySchedules(1L, 2027, "en");
+
+        assertThat(responses).allSatisfy(r -> assertThat(r.personal()).isTrue());
+        assertThat(responses).extracting(ScheduleResponse::kind).containsExactly(
+                "TAX_CAR",              // 6월 16일
+                "STAY_EXTENSION_START", // 6월 20일 (만료 4개월 전)
+                "TAX_PROPERTY",         // 7월
+                "TAX_PROPERTY",         // 9월
+                "STAY_EXPIRY",          // 10월
+                "TAX_CAR");             // 12월
+        assertThat(responses).filteredOn(r -> r.kind().equals("STAY_EXPIRY"))
+                .singleElement().satisfies(r -> assertThat(r.startsOn()).isEqualTo(LocalDate.of(2027, 10, 20)));
+        assertThat(responses).allSatisfy(r -> assertThat(r.dDay()).isNotNull());
     }
 
     @Test
@@ -285,10 +310,10 @@ class CalendarScheduleServiceTest {
                 GuideTranslation.create(10L, "ko", "자동차세 납부", null, "본문", null, null, Collections.emptyList(),
                         null, null, null, null)));
 
-        assertThat(calendarScheduleService.getYearlySchedules(2027, "vi"))
+        assertThat(calendarScheduleService.getYearlySchedules(null, 2027, "vi"))
                 .singleElement().satisfies(r -> assertThat(r.title()).isEqualTo("자동차세 납부"));
         // 지원하지 않는 언어는 한국어로
-        assertThat(calendarScheduleService.getYearlySchedules(2027, "ja"))
+        assertThat(calendarScheduleService.getYearlySchedules(null, 2027, "ja"))
                 .singleElement().satisfies(r -> assertThat(r.title()).isEqualTo("자동차세 납부"));
     }
 }

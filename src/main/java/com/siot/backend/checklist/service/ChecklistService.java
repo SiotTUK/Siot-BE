@@ -53,7 +53,9 @@ public class ChecklistService {
      */
     public ChecklistSummaryResponse getMyChecklist(Long userId, String language) {
         AppUser user = appUserRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
+                // 세션은 남아 있지만 회원이 삭제된 경우. 다른 본인 API(MemberService 등)처럼 401 로 응답해
+                // 프론트엔드가 로그인 만료로 처리하게 한다 (MEMBER_NOT_FOUND 는 관리자 화면용)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
 
         String targetLang = (language != null && !language.isBlank()) ? language : user.getLanguage();
         if (targetLang == null) targetLang = "ko";
@@ -139,24 +141,24 @@ public class ChecklistService {
             }
 
             // CHK-08 경고 표시 (외국인등록 D-30, 체류지 변경 D-7, 기한 초과 등)
-            boolean warning = false;
-            String warningMessage = null;
+            // 문구는 요청 언어로 주고, 종류 코드도 함께 준다 (COM-02, BE #18)
+            ChecklistWarning warningKind = null;
             String code = guide.getCode();
 
             if ("OVERDUE".equals(status)) {
-                warning = true;
-                warningMessage = "마감 기한이 초과되었습니다. 즉시 확인 후 조치하세요.";
+                warningKind = ChecklistWarning.OVERDUE;
             } else if ("CL-01".equals(code) || "CL-02".equals(code)) {
                 if (dDay != null && dDay <= 30) {
-                    warning = true;
-                    warningMessage = "외국인등록 기한이 30일 이내로 임박했습니다. 기한 초과 시 과태료 및 불이익이 발생합니다.";
+                    warningKind = ChecklistWarning.REGISTRATION_DUE;
                 }
             } else if ("LC-01-1".equals(code)) {
                 if (dDay != null && dDay <= 7) {
-                    warning = true;
-                    warningMessage = "체류지 변경 신고 마감(전입 후 15일 이내) 기한이 7일 이내로 임박했습니다. 기한 초과 시 과태료가 부과됩니다.";
+                    warningKind = ChecklistWarning.RESIDENCE_REPORT_DUE;
                 }
             }
+            boolean warning = warningKind != null;
+            String warningMessage = warning ? warningKind.message(targetLang) : null;
+            String warningType = warning ? warningKind.name() : null;
 
             // CHK-06 쪽수
             GuideDocumentReference docRef = docRefMap.get(guide.getId());
@@ -210,6 +212,7 @@ public class ChecklistService {
                     isStayExtension && StayExtension.isHighlighted(deadline, today),
                     warning,
                     warningMessage,
+                    warningType,
                     pageStart,
                     pageEnd,
                     sourcePages,
@@ -224,9 +227,10 @@ public class ChecklistService {
                 .thenComparing((ChecklistItemResponse item) -> item.deadline() == null)
                 .thenComparing(ChecklistItemResponse::deadline, Comparator.nullsLast(Comparator.naturalOrder())));
 
-        // 필수(REQUIRED) 기준 진행률 계산
+        // 필수(REQUIRED) 기준 진행률 = 완료 ÷ (표시 중인 필수 − 해당 없음). 해당 없음은 내 할 일이 아니므로 빼고 센다 (BE #27)
         List<ChecklistItemResponse> requiredItems = items.stream()
                 .filter(i -> i.itemType() == ItemType.REQUIRED)
+                .filter(i -> !ProgressStatus.NOT_APPLICABLE.name().equals(i.status()))
                 .toList();
 
         int totalRequired = requiredItems.size();

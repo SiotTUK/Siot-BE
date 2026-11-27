@@ -25,5 +25,7 @@ public record EventSummaryResponse(
         @Schema(description = "다문화·외국인 대상 행사", example = "false") boolean multicultural,
         @Schema(description = "글(행사명·장소)의 언어", example = "en") String language,
         @Schema(description = "회원 언어로 된 글이면 true. false 면 한국어 원문 (\"번역 준비 중\" 표시, COM-02)", example = "true")
-        boolean translated) {
+        boolean translated,
+        @Schema(description = "행사 사진 URL (http/https, BE #19). 없으면 null (화면은 분류별 기본 이미지)", nullable = true,
+                example = "https://tong.visitkorea.or.kr/cms/resource/09/3528809_image2_1.jpg") String thumbnailUrl) {
 }

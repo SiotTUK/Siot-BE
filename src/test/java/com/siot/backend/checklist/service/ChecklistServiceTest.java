@@ -207,6 +207,31 @@ class ChecklistServiceTest {
         assertThat(item.dDay()).isLessThanOrEqualTo(30L);
         assertThat(item.warning()).isTrue();
         assertThat(item.warningMessage()).contains("외국인등록");
+        assertThat(item.warningType()).isEqualTo("REGISTRATION_DUE");
+    }
+
+    @Test
+    @DisplayName("CHK-08 경고 문구는 요청 언어로, 종류 코드는 언어와 상관없이 같다 (BE #18)")
+    void warningMessage_followsRequestedLanguage() {
+        Long userId = 1L;
+        AppUser user = AppUser.create("warn-lang@siot.kr", "hash");
+        user.updateOnboarding(UserType.NEW, LocalDate.now().minusDays(70), Purpose.WORK, Set.of(), null);
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+        Guide cl01 = Guide.create("CL-01", "CHECKLIST", ItemType.REQUIRED, "기초 행정", 1, null, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(cl01, "id", 1L);
+        given(guideRepository.findByKindOrderBySortOrderAsc("CHECKLIST")).willReturn(List.of(cl01));
+        given(guideRepository.findByKindOrderBySortOrderAsc("LIFE_CHANGE_TASK")).willReturn(Collections.emptyList());
+        given(guideTranslationRepository.findByGuideIdInAndLanguage(anyCollection(), anyString())).willReturn(List.of());
+        given(progressRepository.findByUserId(userId)).willReturn(Collections.emptyList());
+        given(lifeChangeRepository.findByUserId(userId)).willReturn(Collections.emptyList());
+        given(guideDocumentReferenceRepository.findByGuideIdIn(anyCollection())).willReturn(Collections.emptyList());
+
+        for (String language : List.of("ko", "en", "zh", "vi")) {
+            ChecklistItemResponse item = checklistService.getMyChecklist(userId, language).items().get(0);
+            assertThat(item.warningType()).isEqualTo("REGISTRATION_DUE");
+            assertThat(item.warningMessage()).isEqualTo(ChecklistWarning.REGISTRATION_DUE.message(language));
+        }
+        assertThat(ChecklistWarning.REGISTRATION_DUE.message("en")).startsWith("Your foreigner registration");
     }
 
     @Test
@@ -226,5 +251,57 @@ class ChecklistServiceTest {
                     .isEqualTo(com.siot.backend.global.exception.ErrorCode.GUIDE_NOT_FOUND);
         }
         org.mockito.Mockito.verify(progressRepository, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("진행률: 해당 없음 필수 항목은 분모에서 뺀다. 모두 해당 없음이면 0/0·0% (BE #27)")
+    void progress_excludesNotApplicableRequiredItems() {
+        Long userId = 1L;
+        AppUser user = AppUser.create("progress@siot.kr", "hash");
+        user.updateOnboarding(UserType.NEW, LocalDate.now().minusDays(10), Purpose.WORK, Set.of(), null);
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+
+        Guide cl01 = Guide.create("CL-01", "CHECKLIST", ItemType.REQUIRED, "기초 행정", 1, null, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(cl01, "id", 1L);
+        Guide cl04 = Guide.create("CL-04", "CHECKLIST", ItemType.REQUIRED, "건강보험", 2, null, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(cl04, "id", 2L);
+        Guide cl07 = Guide.create("CL-07", "CHECKLIST", ItemType.REQUIRED, "취업", 3, null, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(cl07, "id", 3L);
+        given(guideRepository.findByKindOrderBySortOrderAsc("CHECKLIST")).willReturn(List.of(cl01, cl04, cl07));
+        given(guideRepository.findByKindOrderBySortOrderAsc("LIFE_CHANGE_TASK")).willReturn(Collections.emptyList());
+        given(guideTranslationRepository.findByGuideIdInAndLanguage(anyCollection(), eq("ko"))).willReturn(List.of());
+        given(lifeChangeRepository.findByUserId(userId)).willReturn(Collections.emptyList());
+        given(guideDocumentReferenceRepository.findByGuideIdIn(anyCollection())).willReturn(Collections.emptyList());
+
+        // CL-01 완료, CL-07 해당 없음, CL-04 할 일
+        given(progressRepository.findByUserId(userId)).willReturn(List.of(
+                ChecklistProgress.of(userId, 1L, "", ProgressStatus.DONE),
+                ChecklistProgress.of(userId, 3L, "", ProgressStatus.NOT_APPLICABLE)));
+        ChecklistSummaryResponse summary = checklistService.getMyChecklist(userId, "ko");
+        assertThat(summary.items()).extracting(ChecklistItemResponse::code).contains("CL-01", "CL-04", "CL-07");
+        assertThat(summary.totalRequiredCount()).isEqualTo(2);
+        assertThat(summary.completedRequiredCount()).isEqualTo(1);
+        assertThat(summary.progressPercentage()).isEqualTo(50);
+
+        // 모두 해당 없음
+        given(progressRepository.findByUserId(userId)).willReturn(List.of(
+                ChecklistProgress.of(userId, 1L, "", ProgressStatus.NOT_APPLICABLE),
+                ChecklistProgress.of(userId, 2L, "", ProgressStatus.NOT_APPLICABLE),
+                ChecklistProgress.of(userId, 3L, "", ProgressStatus.NOT_APPLICABLE)));
+        ChecklistSummaryResponse allNa = checklistService.getMyChecklist(userId, "ko");
+        assertThat(allNa.totalRequiredCount()).isZero();
+        assertThat(allNa.completedRequiredCount()).isZero();
+        assertThat(allNa.progressPercentage()).isZero();
+    }
+
+    @Test
+    @DisplayName("세션은 있는데 회원이 없으면 다른 본인 API처럼 401 UNAUTHORIZED (BE #24)")
+    void getMyChecklist_missingMember_isUnauthorized() {
+        given(appUserRepository.findById(99L)).willReturn(Optional.empty());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> checklistService.getMyChecklist(99L, "ko"))
+                .isInstanceOf(com.siot.backend.global.exception.BusinessException.class)
+                .extracting(e -> ((com.siot.backend.global.exception.BusinessException) e).getErrorCode())
+                .isEqualTo(com.siot.backend.global.exception.ErrorCode.UNAUTHORIZED);
     }
 }

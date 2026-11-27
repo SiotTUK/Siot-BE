@@ -92,7 +92,8 @@ public enum ErrorCode {
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "알림을 찾을 수 없습니다."),
     SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "일정을 찾을 수 없습니다."),
     LIFE_CHANGE_NOT_FOUND(HttpStatus.NOT_FOUND, "생활 변화 기록을 찾을 수 없습니다."),
-    INVALID_LIFE_CHANGE_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 생활 변화 코드입니다.");
+    INVALID_LIFE_CHANGE_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 생활 변화 코드입니다."),
+    LIFE_CHANGE_DATE_INVALID(HttpStatus.BAD_REQUEST, "이사한 날은 오늘까지 입력할 수 있습니다.");
 
     private final HttpStatus status;
     private final String message;

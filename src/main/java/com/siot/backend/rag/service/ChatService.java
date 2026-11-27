@@ -68,8 +68,6 @@ import java.util.stream.Collectors;
 @Service
 public class ChatService {
 
-    private static final java.util.Set<String> SUPPORTED_LANGUAGES = java.util.Set.of("ko", "en", "zh", "vi");
-
     private final ChatConversationRepository conversationRepository;
     private final ChatMessageRepository messageRepository;
     private final ChatMessageSourceRepository sourceRepository;
@@ -197,10 +195,9 @@ public class ChatService {
     public SuggestionsResponse suggestions(Long userId, String language) {
         AppUser user = appUserRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
-        if (language != null && !SUPPORTED_LANGUAGES.contains(language)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
-        String lang = language != null ? language : user.getLanguage();
+        // 쿼리 language 공통 규칙: 생략·빈 값이면 회원 언어, 지원하지 않는 값은 400
+        String requested = com.siot.backend.global.common.SupportedLanguages.requireValid(language);
+        String lang = requested != null ? requested : user.getLanguage();
         return new SuggestionsResponse(
                 user.getUserType() == null ? null : user.getUserType().name(),
                 lang,

@@ -88,6 +88,19 @@ public final class EventTexts {
         return www.find() ? "http://" + www.group() : null;
     }
 
+    /**
+     * 사진 URL (BE #19): 앞뒤 공백을 빼고 http(s):// 로 시작하는 값만. 2000자를 넘거나 다른 값이면 null
+     * (DB 제약 ck_event_thumbnail_url 과 같은 규칙. 어긋난 값 때문에 행사 저장이 실패하지 않게 한다)
+     */
+    public static String imageUrl(String text) {
+        String url = text == null ? null : text.strip();
+        if (url == null || url.isEmpty() || url.length() > 2000) {
+            return null;
+        }
+        return url.regionMatches(true, 0, "http://", 0, 7) || url.regionMatches(true, 0, "https://", 0, 8)
+                ? url : null;
+    }
+
     private static String unescapeHtml(String text) {
         return text.replace("&nbsp;", " ")
                 .replace("&lt;", "<")

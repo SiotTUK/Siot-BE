@@ -108,7 +108,8 @@ public class AdminEventService {
             return PageResponse.from(events, event -> new AdminEventSummaryResponse(event.getId(),
                     title(originals.get(event.getId())), event.getStartsOn(), event.getEndsOn(),
                     event.getRegionCode(), event.getExternalSource(), event.getExternalId(), event.getStatus(),
-                    event.isMulticultural(), event.getCategory().name(), event.getRevision(), event.getUpdatedAt()));
+                    event.isMulticultural(), event.getCategory().name(), event.getRevision(), event.getUpdatedAt(),
+                    event.getThumbnailUrl()));
         });
     }
 
@@ -146,6 +147,7 @@ public class AdminEventService {
             event.editPriceInfo(EventTexts.clean(request.priceInfo()), false);
             event.editApplicationUrl(EventTexts.clean(request.applicationUrl()), false);
             event.editSourceUrl(EventTexts.clean(request.sourceUrl()), false);
+            event.editThumbnailUrl(EventTexts.imageUrl(request.thumbnailUrl()), false);
             event.editRegionCode(request.region(), false);
             // 관리자가 정한 다문화 여부는 잠근다 (다른 출처의 같은 행사가 빈 칸을 채울 때 키워드로 다시 계산하지 않게)
             if (request.multicultural() != null) {
@@ -263,6 +265,10 @@ public class AdminEventService {
             if (request.category() != null) {
                 event.editCategory(EventCategory.parse(request.category()), true);
             }
+            // 사진도 번역할 글이 아니라 revision 을 올리지 않는다. "" 이면 비우고 잠근다 (수집이 다시 넣지 않게, BE #19)
+            if (request.thumbnailUrl() != null) {
+                event.editThumbnailUrl(EventTexts.imageUrl(request.thumbnailUrl()), true);
+            }
 
             event.editedBy(adminId);
             if (changed) {
@@ -336,7 +342,7 @@ public class AdminEventService {
                 event.getRegionCode(), event.isMulticultural(), event.getCategory().name(), event.getExternalSource(),
                 event.getExternalId(), event.getStatus(), event.getRevision(), lockedFields(event, original), tags,
                 translated,
-                event.getCreatedAt(), event.getUpdatedAt());
+                event.getCreatedAt(), event.getUpdatedAt(), event.getThumbnailUrl());
     }
 
     /** 잠긴 칸 (요청 필드 이름) */
@@ -359,6 +365,7 @@ public class AdminEventService {
         addIf(locked, event.isDeadlineLocked(), "applicationDeadline");
         addIf(locked, event.isApplicationUrlLocked(), "applicationUrl");
         addIf(locked, event.isSourceUrlLocked(), "sourceUrl");
+        addIf(locked, event.isThumbnailUrlLocked(), "thumbnailUrl");
         addIf(locked, event.isRegionCodeLocked(), "region");
         addIf(locked, event.isMulticulturalLocked(), "multicultural");
         addIf(locked, event.isCategoryLocked(), "category");

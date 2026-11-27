@@ -28,6 +28,13 @@ public record GuideTranslationResponse(
         // CHK-06 출처 쪽수
         @Schema(description = "CHK-06 출처 안내책자 시작 쪽수", example = "12", nullable = true) Integer pageStart,
         @Schema(description = "CHK-06 출처 안내책자 종료 쪽수", example = "14", nullable = true) Integer pageEnd,
-        @Schema(description = "CHK-06 출처 쪽수 표기", example = "p.12~14", nullable = true) String sourcePages
+        @Schema(description = "CHK-06 출처 쪽수 표기", example = "p.12~14", nullable = true) String sourcePages,
+        // #14 생활수칙 칸 (저장 요청 GuideTranslationUpdateRequest 와 같은 이름). 체크리스트 항목은 빈 목록·null (BE #23)
+        @Schema(description = "#14 생활수칙 문장 목록 (순서대로). 체크리스트 항목은 빈 목록") List<String> points,
+        @Schema(description = "#14 생활수칙 시기", nullable = true) String when,
+        @Schema(description = "#14 이 언어의 문의처 문구. null 이면 화면은 항목 공통 문의 전화(PATCH /api/admin/guides/{code})를 쓴다",
+                nullable = true) String contact,
+        @Schema(description = "#14 사람이 확인한 번역이면 true (자동 번역이 덮어쓰지 않는다). ko 외 언어를 관리자가 저장하면 true, "
+                + "자동 생성 번역은 false", example = "false") boolean reviewed
 ) {
 }

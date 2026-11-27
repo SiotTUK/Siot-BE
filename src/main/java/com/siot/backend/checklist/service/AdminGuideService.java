@@ -131,6 +131,8 @@ public class AdminGuideService {
                 // 준비물이 없는 행은 DB 값이 NULL 이다
                 t.getDocs() == null ? List.of() : List.copyOf(t.getDocs()), t.getFee(), t.getLaw(),
                 t.getPenalty(), t.getSourceName(), guide.getNoticeChangedAt(), guide.getUpdatedAt(),
-                pageStart, pageEnd, sourcePages);
+                pageStart, pageEnd, sourcePages,
+                t.getPoints() == null ? List.of() : List.copyOf(t.getPoints()), t.getTiming(), t.getContact(),
+                t.isReviewed());
     }
 }

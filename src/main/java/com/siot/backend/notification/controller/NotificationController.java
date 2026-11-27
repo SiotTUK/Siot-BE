@@ -9,11 +9,13 @@ import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.notification.dto.NotificationPreferenceResponse;
 import com.siot.backend.notification.dto.NotificationPreferenceUpdateRequest;
 import com.siot.backend.notification.dto.NotificationResponse;
+import com.siot.backend.notification.dto.UnreadCountResponse;
 import com.siot.backend.notification.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -22,7 +24,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @Tag(name = "8-1. 알림", description = "알림 목록, 읽음 처리, 알림 환경설정 (NTF-01~05)")
 @RestController
@@ -36,18 +37,18 @@ public class NotificationController {
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponse<NotificationResponse>>> getNotifications(
             @AuthenticationPrincipal MemberPrincipal principal,
-            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+            @ParameterObject @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return ResponseEntity.ok(ApiResponse.of(notificationService.getNotifications(principal.getId(), pageable)));
     }
 
     @Operation(summary = "안 읽은 알림 개수 조회")
     @GetMapping("/unread-count")
-    public ResponseEntity<ApiResponse<Map<String, Long>>> getUnreadCount(
+    public ResponseEntity<ApiResponse<UnreadCountResponse>> getUnreadCount(
             @AuthenticationPrincipal MemberPrincipal principal
     ) {
         long count = notificationService.getUnreadCount(principal.getId());
-        return ResponseEntity.ok(ApiResponse.of(Map.of("unreadCount", count)));
+        return ResponseEntity.ok(ApiResponse.of(new UnreadCountResponse(count)));
     }
 
     @Operation(summary = "알림 단건 읽음 처리 (NTF-04)")

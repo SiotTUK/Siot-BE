@@ -44,7 +44,15 @@ public class CalendarScheduleService {
     private final GuideDocumentReferenceRepository guideDocumentReferenceRepository;
     private final AppUserRepository appUserRepository;
 
+    /** 조회할 수 있는 연도. 행사 달력(EventQueryService#calendar)과 같은 범위 */
+    static final int MIN_YEAR = 2000;
+    static final int MAX_YEAR = 2100;
+
     public List<ScheduleResponse> getMonthlySchedules(Long userId, int year, int month, String language) {
+        checkYear(year);
+        if (month < 1 || month > 12) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "month 는 1~12 입니다.");
+        }
         LocalDate start = LocalDate.of(year, month, 1);
         LocalDate end = start.with(TemporalAdjusters.lastDayOfMonth());
         String targetLang = SupportedLanguages.orDefault(language);
@@ -88,16 +96,36 @@ public class CalendarScheduleService {
                 .toList();
     }
 
+    /** 범위 밖 연도는 LocalDate 오류(500) 대신 400 */
+    private static void checkYear(int year) {
+        if (year < MIN_YEAR || year > MAX_YEAR) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "year 는 " + MIN_YEAR + "~" + MAX_YEAR + " 입니다.");
+        }
+    }
+
     /**
-     * CAL-01 연간 일정: 해당 연도 1~12월의 공통 세금·생활 일정 (시작일 기준).
-     * 회원 정보를 묻지 않으므로 개인 일정은 넣지 않고, 납부 대상은 각 일정의 대상 설명으로 보여 준다.
+     * CAL-01 연간 일정: 해당 연도 1~12월의 공통 세금·생활 일정 (시작일 기준)과, 로그인 회원이면
+     * 월간과 같은 규칙의 개인 일정(체류 만료·연장 신청 시작, 자차 → 자동차세, 자가 → 재산세)을 넣는다 (BE #20).
+     *
+     * @param userId 로그인 회원 ID. null 이면 공통 일정만
      */
-    public List<ScheduleResponse> getYearlySchedules(int year, String language) {
+    public List<ScheduleResponse> getYearlySchedules(Long userId, int year, String language) {
+        checkYear(year);
         String targetLang = SupportedLanguages.orDefault(language);
         List<ScheduleResponse> result = commonSchedules(
                 calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(
                         LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)),
                 targetLang);
+        if (userId != null) {
+            appUserRepository.findById(userId).ifPresent(user -> {
+                CalendarScheduleMessages messages = CalendarScheduleMessages.forLanguage(targetLang);
+                // 월 단위 규칙(6·12월 자동차세, 7·9월 재산세)을 그대로 쓰도록 달마다 넣는다. 체류 일정은 그 날짜가 든 달에 한 번만 들어간다
+                for (int month = 1; month <= 12; month++) {
+                    LocalDate start = LocalDate.of(year, month, 1);
+                    addPersonalSchedules(result, user, start, start.with(TemporalAdjusters.lastDayOfMonth()), messages);
+                }
+            });
+        }
         result.sort(Comparator.comparing(ScheduleResponse::startsOn));
         return result;
     }

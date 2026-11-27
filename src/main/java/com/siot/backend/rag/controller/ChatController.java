@@ -127,10 +127,11 @@ public class ChatController {
 
     /** CB-08: 사용자 유형별 추천 질문 3개 */
     @Operation(summary = "CB-08 추천 질문 3개", description = "사용자 유형(NEW/LIVING)에 맞는 질문. 온보딩 전이면 공통 질문.")
+    @ApiErrorCodes(ErrorCode.INVALID_INPUT)
     @GetMapping("/suggestions")
     public ResponseEntity<ApiResponse<SuggestionsResponse>> suggestions(
             @AuthenticationPrincipal MemberPrincipal principal,
-            @Parameter(description = "ko / en / zh / vi. 생략하면 회원의 화면 언어")
+            @Parameter(description = "ko / en / zh / vi. 생략하면 회원의 화면 언어, 그 밖의 값은 400")
             @RequestParam(required = false) String language) {
         return ResponseEntity.ok(ApiResponse.of(chatService.suggestions(principal.getId(), language)));
     }
