@@ -68,6 +68,10 @@ public record RuleResponse(
         @Schema(description = "공식 페이지와 대조해 확인한 날", nullable = true, example = "2026-11-25")
         LocalDate checkedOn,
         @Schema(description = "이 언어 문구가 있는지. false 면 한국어 원문 (COM-02 '번역 준비 중')")
-        boolean translated
+        boolean translated,
+        @Schema(description = "RUL-06 세금 항목이면 세금 종류 (BE #29). GET /api/schedules/taxes?kind={taxKind} 로 공통 세금 상세"
+                + "(회차별)를 찾는다. 세금 항목이 아니면 null", nullable = true,
+                allowableValues = {"TAX_CAR", "TAX_PROPERTY", "TAX_RESIDENT"}, example = "TAX_CAR")
+        String taxKind
 ) {
 }

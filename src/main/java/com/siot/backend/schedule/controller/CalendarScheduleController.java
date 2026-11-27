@@ -84,12 +84,18 @@ public class CalendarScheduleController {
         return ResponseEntity.ok(ApiResponse.of(response));
     }
 
-    @Operation(summary = "CAL-03 세금 상세 안내 목록 조회", description = "자동차세, 재산세, 주민세 등 지방세 상세 납부 안내 목록을 조회합니다.")
+    @Operation(summary = "CAL-03 세금 상세 안내 목록 조회",
+            description = "자동차세, 재산세, 주민세 등 지방세 상세 납부 안내 목록을 조회합니다. kind 를 주면 그 세금의 공통 일정만 "
+                    + "(생활수칙 세금 항목의 taxKind 로 상세를 찾을 때, RUL-06). 납부 시기가 여럿이면 회차마다 하나씩, 시작일 순. "
+                    + "대응하는 일정이 없으면 빈 목록")
     @ApiErrorCodes(ErrorCode.INVALID_INPUT)
     @GetMapping("/taxes")
     public ResponseEntity<ApiResponse<List<TaxDetailResponse>>> getTaxSchedules(
-            @Parameter(description = "언어 (ko/en/zh/vi). 생략 시 ko, 그 밖의 값은 400") @RequestParam(required = false) String language) {
-        return ResponseEntity.ok(ApiResponse.of(calendarScheduleService.getTaxSchedules(SupportedLanguages.requireValid(language))));
+            @Parameter(description = "언어 (ko/en/zh/vi). 생략 시 ko, 그 밖의 값은 400") @RequestParam(required = false) String language,
+            @Parameter(description = "세금 종류 (TAX_CAR / TAX_PROPERTY / TAX_RESIDENT). 생략하면 전체", example = "TAX_CAR")
+            @RequestParam(required = false) String kind) {
+        return ResponseEntity.ok(ApiResponse.of(
+                calendarScheduleService.getTaxSchedules(SupportedLanguages.requireValid(language), kind)));
     }
 
     @Operation(summary = "CAL-03 세금 단건 상세 안내 조회", description = "특정 세금 일정의 과세 기준, 납부 기간, 세율, 가산세, 납부 링크 등 상세 정보를 조회합니다.")

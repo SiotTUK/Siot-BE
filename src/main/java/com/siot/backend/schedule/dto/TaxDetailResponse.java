@@ -52,7 +52,9 @@ public record TaxDetailResponse(
         @Schema(description = "기한 경과 시 불이익 (가산세 등)")
         String penalty,
 
-        @Schema(description = "문의처 전화번호")
+        @Schema(description = "문의처 (요청 언어 문구, BE #29). 연결된 항목(guideId)의 언어별 문의처, 없으면 항목의 문의처. "
+                + "항목이 연결되지 않았거나 등록된 문의처가 없으면 null", nullable = true,
+                example = "Siheung City Tax Management Division 031-310-2093")
         String contact,
 
         @Schema(description = "출처 안내책자 쪽수", example = "p.45")

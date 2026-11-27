@@ -15,6 +15,7 @@ import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.rag.domain.GuideDocumentReference;
 import com.siot.backend.rag.repository.GuideDocumentReferenceRepository;
 import com.siot.backend.schedule.domain.CalendarSchedule;
+import com.siot.backend.schedule.domain.TaxKind;
 import com.siot.backend.schedule.dto.MonthlyTodoResponse;
 import com.siot.backend.schedule.dto.ScheduleResponse;
 import com.siot.backend.schedule.dto.TaxDetailResponse;
@@ -29,6 +30,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 생활 달력 월간/연간 일정 및 개인 세금·체류 일정 병합 서비스 (CAL-01 ~ CAL-04)
@@ -58,12 +63,14 @@ public class CalendarScheduleService {
         String targetLang = SupportedLanguages.orDefault(language);
 
         // 1. 공통 생활/세금 일정 조회
-        List<ScheduleResponse> result = commonSchedules(calendarScheduleRepository.findActiveOverlapping(start, end), targetLang);
+        List<CalendarSchedule> common = calendarScheduleRepository.findActiveOverlapping(start, end);
+        List<ScheduleResponse> result = commonSchedules(common, targetLang);
 
         // 2. 로그인 회원의 개인 일정 (체류기간 만료 등) 병합 (CAL-04)
         if (userId != null) {
+            TaxSchedules taxes = taxSchedules(common);
             appUserRepository.findById(userId).ifPresent(user ->
-                    addPersonalSchedules(result, user, start, end, CalendarScheduleMessages.forLanguage(targetLang)));
+                    addPersonalSchedules(result, user, start, end, CalendarScheduleMessages.forLanguage(targetLang), taxes));
         }
 
         result.sort(Comparator.comparing(ScheduleResponse::startsOn));
@@ -112,17 +119,17 @@ public class CalendarScheduleService {
     public List<ScheduleResponse> getYearlySchedules(Long userId, int year, String language) {
         checkYear(year);
         String targetLang = SupportedLanguages.orDefault(language);
-        List<ScheduleResponse> result = commonSchedules(
-                calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(
-                        LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)),
-                targetLang);
+        List<CalendarSchedule> common = calendarScheduleRepository.findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(
+                LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31));
+        List<ScheduleResponse> result = commonSchedules(common, targetLang);
         if (userId != null) {
+            TaxSchedules taxes = taxSchedules(common);
             appUserRepository.findById(userId).ifPresent(user -> {
                 CalendarScheduleMessages messages = CalendarScheduleMessages.forLanguage(targetLang);
                 // 월 단위 규칙(6·12월 자동차세, 7·9월 재산세)을 그대로 쓰도록 달마다 넣는다. 체류 일정은 그 날짜가 든 달에 한 번만 들어간다
                 for (int month = 1; month <= 12; month++) {
                     LocalDate start = LocalDate.of(year, month, 1);
-                    addPersonalSchedules(result, user, start, start.with(TemporalAdjusters.lastDayOfMonth()), messages);
+                    addPersonalSchedules(result, user, start, start.with(TemporalAdjusters.lastDayOfMonth()), messages, taxes);
                 }
             });
         }
@@ -154,14 +161,68 @@ public class CalendarScheduleService {
                     cs.getTargetDescription(),
                     cs.getSourceUrl(),
                     false
-            ));
+            ).withTaxScheduleId(TaxKind.isTax(cs.getKind()) ? cs.getId() : null));
         }
         return result;
     }
 
+    /**
+     * 개인 세금 일정에서 열 공통 세금 상세를 찾는 표 (BE #29).
+     *
+     * @param guideCodes 공통 일정에 연결된 항목 ID → 코드 (tax-car 처럼 kind 가 아닌 항목으로 이어진 일정도 찾도록)
+     */
+    private record TaxSchedules(List<CalendarSchedule> schedules, Map<Long, String> guideCodes) {
+
+        /**
+         * 같은 종류이면서 [start, end] 에 걸친 공통 일정. 여럿이면 개인 일정 시작일이 든 것, 그다음 먼저 시작하는 것.
+         *
+         * @return 없으면 null
+         */
+        Long find(String kind, LocalDate start, LocalDate end, LocalDate personalStart) {
+            return schedules.stream()
+                    .filter(cs -> TaxKind.matches(cs, codeOf(guideCodes, cs), kind))
+                    .filter(cs -> !cs.getStartsOn().isAfter(end) && !due(cs).isBefore(start))
+                    // 개인 일정 시작일이 든 일정 먼저 (false < true)
+                    .min(Comparator.comparing((CalendarSchedule cs) -> !covers(cs, personalStart))
+                            .thenComparing(CalendarSchedule::getStartsOn)
+                            .thenComparing(CalendarSchedule::getId))
+                    .map(CalendarSchedule::getId)
+                    .orElse(null);
+        }
+
+        private static boolean covers(CalendarSchedule cs, LocalDate date) {
+            return !cs.getStartsOn().isAfter(date) && !due(cs).isBefore(date);
+        }
+
+        private static LocalDate due(CalendarSchedule cs) {
+            return cs.getEndsOn() != null ? cs.getEndsOn() : cs.getStartsOn();
+        }
+    }
+
+    private static String codeOf(Map<Long, String> guideCodes, CalendarSchedule cs) {
+        return cs.getGuideId() == null ? null : guideCodes.get(cs.getGuideId());
+    }
+
+    private TaxSchedules taxSchedules(List<CalendarSchedule> common) {
+        List<CalendarSchedule> taxes = common.stream()
+                .filter(cs -> cs.getId() != null && TaxKind.isTax(cs.getKind()))
+                .toList();
+        return new TaxSchedules(taxes, guideCodes(taxes));
+    }
+
+    private Map<Long, String> guideCodes(List<CalendarSchedule> schedules) {
+        Set<Long> guideIds = schedules.stream().map(CalendarSchedule::getGuideId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (guideIds.isEmpty()) {
+            return Map.of();
+        }
+        return guideRepository.findAllById(guideIds).stream()
+                .collect(Collectors.toMap(Guide::getId, Guide::getCode));
+    }
+
     /** 로그인 회원의 개인 일정: 체류기간 연장·만료 (CAL-04), 자동차세·재산세 */
     private void addPersonalSchedules(List<ScheduleResponse> result, AppUser user, LocalDate start, LocalDate end,
-                                      CalendarScheduleMessages messages) {
+                                      CalendarScheduleMessages messages, TaxSchedules taxes) {
         LocalDate expiry = user.getStayExpiry();
         if (expiry != null) {
             boolean highlighted = StayExtension.isHighlighted(expiry, LocalDate.now(ClockConfig.KST));
@@ -197,18 +258,21 @@ public class CalendarScheduleService {
         }
 
         int month = start.getMonthValue();
+        // 개인 세금 일정은 scheduleId 가 없으므로, 세금 상세는 그 달의 같은 종류 공통 일정(taxScheduleId)으로 연다 (BE #29)
         if ((month == 6 || month == 12) && user.getResidences().contains(Residence.CAR)) {
+            LocalDate taxStart = start.withDayOfMonth(16);
             result.add(new ScheduleResponse(
-                    null, null, "TAX_CAR", messages.carTaxTitle().formatted(month == 6 ? 1 : 2),
-                    start.withDayOfMonth(16), end, messages.carTaxDescription(), "https://www.wetax.go.kr", true
-            ));
+                    null, null, TaxKind.CAR, messages.carTaxTitle().formatted(month == 6 ? 1 : 2),
+                    taxStart, end, messages.carTaxDescription(), "https://www.wetax.go.kr", true
+            ).withTaxScheduleId(taxes.find(TaxKind.CAR, start, end, taxStart)));
         }
 
         if ((month == 7 || month == 9) && user.getResidences().contains(Residence.HOUSE)) {
+            LocalDate taxStart = start.withDayOfMonth(16);
             result.add(new ScheduleResponse(
-                    null, null, "TAX_PROPERTY", messages.propertyTaxTitle().formatted(month == 7 ? 1 : 2),
-                    start.withDayOfMonth(16), end, messages.propertyTaxDescription(), "https://www.wetax.go.kr", true
-            ));
+                    null, null, TaxKind.PROPERTY, messages.propertyTaxTitle().formatted(month == 7 ? 1 : 2),
+                    taxStart, end, messages.propertyTaxDescription(), "https://www.wetax.go.kr", true
+            ).withTaxScheduleId(taxes.find(TaxKind.PROPERTY, start, end, taxStart)));
         }
     }
 
@@ -247,9 +311,12 @@ public class CalendarScheduleService {
                 penalty = tr.getPenalty();
             }
 
-            guideRepository.findById(cs.getGuideId()).ifPresent(g -> {
-                // 문의처
-            });
+            // 문의처: 생활수칙(RuleResponseAssembler)과 같은 저장 위치 — 언어별 문구, 없으면 항목의 문의처 (BE #29)
+            String translatedContact = tr != null && tr.getContact() != null && !tr.getContact().isBlank()
+                    ? tr.getContact() : null;
+            contact = translatedContact != null ? translatedContact
+                    : guideRepository.findById(cs.getGuideId()).map(Guide::getContact)
+                    .filter(c -> !c.isBlank()).orElse(null);
 
             GuideDocumentReference docRef = guideDocumentReferenceRepository
                     .findFirstByGuideIdOrderByCreatedAtDesc(cs.getGuideId())
@@ -287,9 +354,24 @@ public class CalendarScheduleService {
      * CAL-03 전체 세금 상세 목록 조회
      */
     public List<TaxDetailResponse> getTaxSchedules(String language) {
-        List<CalendarSchedule> schedules = calendarScheduleRepository.findByActiveTrueOrderByStartsOnAsc();
+        return getTaxSchedules(language, null);
+    }
+
+    /**
+     * CAL-03 세금 상세 목록. kind 를 주면 그 세금만 (생활수칙 세금 항목의 taxKind, BE #29).
+     * 공통 일정의 kind 가 같거나, 연결된 항목 코드가 그 종류(tax-car → TAX_CAR …)인 일정. 없으면 빈 목록
+     */
+    public List<TaxDetailResponse> getTaxSchedules(String language, String kind) {
+        List<CalendarSchedule> schedules = calendarScheduleRepository.findByActiveTrueOrderByStartsOnAsc().stream()
+                .filter(s -> TaxKind.isTax(s.getKind()))
+                .toList();
+        if (kind != null && !kind.isBlank()) {
+            Map<Long, String> guideCodes = guideCodes(schedules);
+            schedules = schedules.stream()
+                    .filter(s -> TaxKind.matches(s, codeOf(guideCodes, s), kind.strip()))
+                    .toList();
+        }
         return schedules.stream()
-                .filter(s -> s.getKind() != null && s.getKind().toUpperCase().contains("TAX"))
                 .map(s -> getTaxDetail(s.getId(), language))
                 .toList();
     }

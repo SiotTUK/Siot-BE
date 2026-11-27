@@ -90,7 +90,8 @@ public class RuleResponseAssembler {
                 tr != null ? tr.getTiming() : null,
                 sources,
                 guide.getCheckedOn(),
-                translated
+                translated,
+                com.siot.backend.schedule.domain.TaxKind.forGuideCode(guide.getCode())
         );
     }
 }

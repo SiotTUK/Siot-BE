@@ -30,14 +30,25 @@ public record ScheduleResponse(
         boolean highlighted,
         @Schema(description = "마감(종료일, 없으면 시작일)까지 남은 일수 (한국 시간 오늘 기준). 음수: 지남, 0: 오늘, 양수: 남음. "
                 + "날짜가 없으면 null", nullable = true, example = "5")
-        Long dDay
+        Long dDay,
+        @Schema(description = "CAL-03 세금 상세(GET /api/schedules/taxes/{id})를 열 때 쓰는 공통 세금 일정 ID (BE #29). "
+                + "공통 세금 일정은 자기 scheduleId, 개인 자동차세·재산세(TAX_CAR·TAX_PROPERTY)는 같은 종류이면서 그 달에 걸친 "
+                + "공통 일정 (6월·12월처럼 납부 시기가 여럿이면 그 회차). 대응하는 공통 일정이 없거나 세금 일정이 아니면 null",
+                nullable = true, example = "10")
+        Long taxScheduleId
 ) {
 
     /** D-day 를 오늘(한국 시간) 기준으로 계산한다 */
     public ScheduleResponse(Long scheduleId, Long guideId, String kind, String title, LocalDate startsOn, LocalDate endsOn,
                             String targetDescription, String sourceUrl, boolean personal, boolean highlighted) {
         this(scheduleId, guideId, kind, title, startsOn, endsOn, targetDescription, sourceUrl, personal, highlighted,
-                dDay(startsOn, endsOn, LocalDate.now(ClockConfig.KST)));
+                dDay(startsOn, endsOn, LocalDate.now(ClockConfig.KST)), null);
+    }
+
+    /** 세금 상세로 열 공통 일정 ID 를 붙인 사본 */
+    public ScheduleResponse withTaxScheduleId(Long taxScheduleId) {
+        return new ScheduleResponse(scheduleId, guideId, kind, title, startsOn, endsOn, targetDescription, sourceUrl,
+                personal, highlighted, dDay, taxScheduleId);
     }
 
     /** 강조하지 않는 일정 */
