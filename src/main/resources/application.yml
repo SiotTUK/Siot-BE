@@ -146,7 +146,7 @@ siot:
     # 고지서 사진(RUL-07) 전용 모델. 비어 있으면 siot.gemini.chat-model 을 쓴다
     bill-model: ${GEMINI_BILL_MODEL:}
     # 사진 읽기 1회 호출 제한 시간. 사진은 글보다 오래 걸린다 (라이브 확인 9~31초). 넘으면 503 AI_UNAVAILABLE
-    bill-timeout: ${GEMINI_BILL_TIMEOUT:45s}
+    bill-timeout: ${GEMINI_BILL_TIMEOUT:75s}
     bill-max-file-size: 10MB
     bill-retry-wait: 2s
     # 회원당 시간당 10회 (Gemini 무료 한도를 챗봇과 같이 쓴다). 넘으면 429

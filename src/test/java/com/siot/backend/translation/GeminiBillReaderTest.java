@@ -167,7 +167,22 @@ class GeminiBillReaderTest {
                     assertThat(e.getMessage()).doesNotContain("홍길동", "123,450");
                     assertThat(e.getCause()).isNull();
                 });
-        assertThat(output.getAll()).doesNotContain("홍길동", "123,450");
+        assertThat(output.getAll())
+                .contains("cause=RuntimeException")
+                .doesNotContain("홍길동", "123,450");
+    }
+
+    /** 원인은 클래스 이름 체인과 ApiException 상태 코드만 남기고 메시지는 남기지 않는다 */
+    @Test
+    void logsCauseClassChainWithoutMessages(CapturedOutput output) {
+        when(model.chat(any(ChatRequest.class)))
+                .thenThrow(new InternalServerException(new ApiException(500, "INTERNAL", "홍길동 123,450원")));
+
+        assertThatThrownBy(() -> reader.read(IMAGE, "image/jpeg", "en")).isInstanceOf(AiUnavailableException.class);
+
+        assertThat(output.getAll())
+                .contains("cause=InternalServerException <- ApiException(500)")
+                .doesNotContain("홍길동", "123,450");
     }
 
     /** 칸에 값 대신 긴 설명을 늘어놓은 응답 (라이브에서 flash-lite 로 확인됨) 은 쓰지 않는다 */

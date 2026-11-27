@@ -61,6 +61,8 @@ class BillRulesTest {
             }
         }
         assertThat(BillMessages.warning("LATE_PENALTY", "ko", null)).contains("3%", "45만 원", "0.66%", "60개월");
+        // 공과금·보험료에도 붙는 문구라 연체금도 함께 적는다
+        assertThat(BillMessages.warning("OVERDUE", "ko", TODAY)).contains("가산세", "연체금");
     }
 
     // ---- 개인정보 가림 ----

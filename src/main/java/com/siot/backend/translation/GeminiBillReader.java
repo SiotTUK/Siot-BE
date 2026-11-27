@@ -48,7 +48,9 @@ public class GeminiBillReader implements BillReader {
             - TAX_NOTICE: 납세고지서 (지방세 별지 제8호 서식, e.g. 자동차세, 재산세, 주민세 고지서)
             - DEMAND_NOTICE: 독촉장 (별지 제29호 서식)
             - ARREARS_NOTICE: 체납액 고지서 (별지 제31호 서식)
-            - UTILITY: utility or social insurance bills (전기·수도·가스 요금, 국민건강보험료, 국민연금 등)
+            - UTILITY: utility or social insurance bills (전기·수도·가스 요금, 국민건강보험료, 국민연금 등). \
+            Their reminder, demand or overdue notices are also UTILITY even when the title says 독촉 or 체납 \
+            (e.g. 국민건강보험료 독촉 고지서). Never classify them as DEMAND_NOTICE or ARREARS_NOTICE.
             - OTHER: any other bill or payment notice
 
             Rules:
@@ -67,9 +69,11 @@ public class GeminiBillReader implements BillReader {
             - issuer, taxType, taxObject, contact and originalLines stay in Korean as printed, masked as above.
             - contact: the inquiry phone number printed on the bill.
             - originalLines: up to 10 printed lines that support the values above, in Korean, masked as above.
-            - paymentMethods: the payment methods printed on the bill (bank counter, 위택스 Wetax, virtual account, \
-            ATM, card, easy payment apps …), each written in the summary language with the Korean service name \
-            in parentheses. Never include account or payment numbers.
+            - paymentMethods: list every payment method printed on the bill, one item per method, without omitting any \
+            (e.g. bank counter, 위택스 Wetax, 인터넷지로, virtual account (가상계좌), automatic transfer, ATM, card, \
+            ARS, convenience store, easy payment apps). List only printed methods. Write each in the summary language \
+            with the Korean service name in parentheses. If a virtual account is printed, list it as a method, \
+            but never include its number or any other account or payment number.
             - summary: four short sentences in the summary language.
               what: what this bill is (type, tax, issuer).
               due: by when to pay. Write the date exactly as dueDate, in yyyy-MM-dd.
@@ -121,6 +125,7 @@ public class GeminiBillReader implements BillReader {
                 String status = statusOf(e);
                 if (!isTransient(e) || attempt >= MAX_ATTEMPTS) {
                     // 원인 예외는 붙이지 않는다 (요청·응답 내용이 메시지에 섞일 수 있음)
+                    log.warn("Gemini bill reading failed ({}), cause={}", status, causeChain(e));
                     throw new AiUnavailableException("Gemini bill reading failed (" + status + ")");
                 }
                 log.warn("Gemini bill reading busy ({}), retrying in {}", status, retryWait);
@@ -141,6 +146,7 @@ public class GeminiBillReader implements BillReader {
         try {
             json = jsonMapper.readTree(body);
         } catch (JacksonException e) {
+            log.warn("Bill reading response is not valid JSON, cause={}", causeChain(e));
             throw new AiUnavailableException("Bill reading response is not valid JSON");
         }
         if (!json.isObject() || !json.path("readable").isBoolean()) {
@@ -295,6 +301,19 @@ public class GeminiBillReader implements BillReader {
             }
         }
         return error.getClass().getSimpleName();
+    }
+
+    /**
+     * 로그용 원인 예외 체인. 클래스 이름만 남기고 ApiException 은 상태 코드를 덧붙인다.
+     * 메시지는 요청·응답 내용이 섞일 수 있어 남기지 않는다.
+     */
+    private static String causeChain(Throwable error) {
+        List<String> names = new ArrayList<>();
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            String name = cause.getClass().getSimpleName();
+            names.add(cause instanceof ApiException api ? name + "(" + api.code() + ")" : name);
+        }
+        return String.join(" <- ", names);
     }
 
     private void sleep() {
