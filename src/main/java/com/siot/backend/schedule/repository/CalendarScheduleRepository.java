@@ -14,6 +14,9 @@ public interface CalendarScheduleRepository extends JpaRepository<CalendarSchedu
 
     List<CalendarSchedule> findByStartsOnBetweenAndActiveTrueOrderByStartsOnAsc(LocalDate start, LocalDate end);
 
+    /** 관리자 목록·세금 일정 자동 생성: 꺼 둔 일정까지 (꺼 둔 일정을 다시 만들지 않도록) */
+    List<CalendarSchedule> findByStartsOnBetweenOrderByStartsOnAscIdAsc(LocalDate start, LocalDate end);
+
     @Query("""
             SELECT cs FROM CalendarSchedule cs
             WHERE cs.active = true AND cs.startsOn <= :end

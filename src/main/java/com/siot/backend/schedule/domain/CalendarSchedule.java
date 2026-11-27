@@ -70,6 +70,14 @@ public class CalendarSchedule {
         return schedule;
     }
 
+    /** 관리자 수정: 연결 항목·종류까지 모두 덮어쓴다 */
+    public void edit(Long guideId, String kind, LocalDate startsOn, LocalDate endsOn, String targetDescription,
+                     String sourceUrl, boolean active, Long updatedBy) {
+        this.guideId = guideId;
+        this.kind = kind;
+        update(startsOn, endsOn, targetDescription, sourceUrl, active, updatedBy);
+    }
+
     public void update(LocalDate startsOn, LocalDate endsOn, String targetDescription,
                        String sourceUrl, boolean active, Long updatedBy) {
         this.startsOn = startsOn;

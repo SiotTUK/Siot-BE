@@ -165,6 +165,15 @@ siot:
     zone: Asia/Seoul
     event-collect-cron: ${EVENT_COLLECT_CRON:0 0 3 * * *}                         # EVE-01: 매일 새벽 3시
     notification-dispatch-interval: ${NOTIFICATION_DISPATCH_INTERVAL:1m}          # NTF-05
+    tax-schedule-cron: ${TAX_SCHEDULE_CRON:0 30 4 * * *}                          # 공통 세금 일정 자동 생성 (서버 시작 때도)
+
+  # 공휴일 (한국천문연구원 특일 정보, 공공데이터포털). 세금 마감일이 쉬는 날이면 다음 영업일로 미룬다 (지방세기본법 제24조).
+  # 키가 없거나 그해 자료가 없으면 주말·양력 고정 공휴일만 반영한다 (설날·추석·대체·임시공휴일은 관리자가 확인)
+  holiday:
+    base-url: https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo
+    # 특일 정보 활용신청이 된 공공데이터포털 키. 비우면 행사 수집 키(EVENT_API_KEY)를 같이 쓴다
+    api-key: ${HOLIDAY_API_KEY:${EVENT_API_KEY:}}
+    http-timeout: 10s
 
 server:
   port: ${SERVER_PORT:8080}
