@@ -24,7 +24,7 @@ public class DocumentVersionStateService {
     private final Clock clock;
 
     /** 처리할 버전 정보 */
-    public record Job(Long versionId, String documentName, String fileStorageKey) {
+    public record Job(Long versionId, String documentName, String fileStorageKey, String excludedPages) {
     }
 
     /** PENDING 이면 PROCESSING 으로 바꾸고 작업 정보를 돌려준다. 이미 다른 상태면 null (중복 실행 방지) */
@@ -35,7 +35,8 @@ public class DocumentVersionStateService {
             return null;
         }
         version.startProcessing();
-        return new Job(version.getId(), version.getDocument().getName(), version.getFileStorageKey());
+        return new Job(version.getId(), version.getDocument().getName(), version.getFileStorageKey(),
+                version.getExcludedPages());
     }
 
     @Transactional

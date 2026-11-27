@@ -10,5 +10,8 @@ import org.springframework.web.multipart.MultipartFile;
 public record DocumentVersionCreateRequest(
         @Schema(description = "PDF 파일 (30MB 이하)") @NotNull MultipartFile file,
         @Schema(description = "바뀐 내용 요약 (1000자 이하)", nullable = true, example = "2026년 건강보험료 기준 반영")
-        @Size(max = 1000) String changeSummary) {
+        @Size(max = 1000) String changeSummary,
+        @Schema(description = "적재에서 뺄 쪽 (새 파일의 PDF 뷰어 기준 1부터). 현재 버전에 뺀 쪽이 있으면 필수이고, 빼지 않으려면 빈 값",
+                nullable = true, example = "51-52, 100")
+        String excludedPages) {
 }

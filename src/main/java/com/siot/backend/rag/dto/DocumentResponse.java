@@ -26,11 +26,14 @@ public record DocumentResponse(
             @Schema(description = "버전 ID", example = "12") Long versionId,
             @Schema(description = "버전 번호", example = "2") int versionNo,
             @Schema(description = "PENDING / PROCESSING / COMPLETED / FAILED", example = "COMPLETED") ProcessingStatus status,
-            @Schema(description = "반영이 끝난 시각", nullable = true) OffsetDateTime processedAt) {
+            @Schema(description = "반영이 끝난 시각", nullable = true) OffsetDateTime processedAt,
+            @Schema(description = "이 버전에서 적재에서 뺀 쪽. 없으면 null", nullable = true, example = "51-52,100")
+            String excludedPages) {
 
         static VersionSummary from(DocumentVersion version) {
             return version == null ? null : new VersionSummary(
-                    version.getId(), version.getVersionNo(), version.getProcessingStatus(), version.getProcessedAt());
+                    version.getId(), version.getVersionNo(), version.getProcessingStatus(), version.getProcessedAt(),
+                    version.getExcludedPages());
         }
     }
 

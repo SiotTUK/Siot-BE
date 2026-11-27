@@ -25,6 +25,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -500,6 +501,134 @@ class DocumentIngestionIntegrationTest {
                 .andExpect(status().isCreated()).andReturn(), "$.data.documentId");
         awaitStatus(documentId, 1, "COMPLETED");
         return documentId;
+    }
+
+    @Test
+    void excludedPagesAreSkippedAndKeptPerVersion() throws Exception {
+        String name = "Excluded Guide " + UUID.randomUUID();
+        long documentId = id(mockMvc.perform(multipart("/api/admin/documents")
+                        .file(pdf(versionOnePdf()))
+                        .param("name", name).param("sourceUrl", SOURCE_URL).param("excludedPages", " 1 ")
+                        .cookie(admin).with(csrf()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.latestVersion.excludedPages").value("1"))
+                .andReturn(), "$.data.documentId");
+        awaitStatus(documentId, 1, "COMPLETED");
+
+        // 1쪽은 적재하지 않고, 남은 쪽 번호는 원본 PDF 그대로다
+        assertThat(searchContents(name)).isNotEmpty()
+                .allSatisfy(content -> assertThat(content).doesNotContain("Alien Registration"));
+        assertThat(chunkPages(documentId, 1)).containsOnly("2-2");
+
+        // 재처리: 본문을 생략하면 현재 값을 그대로 쓴다
+        mockMvc.perform(post("/api/admin/documents/{id}/reprocess", documentId).cookie(admin).with(csrf()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.excludedPages").value("1"))
+                .andExpect(jsonPath("$.data.changeSummary").value("조각 규칙 변경으로 재처리"));
+        awaitStatus(documentId, 2, "COMPLETED");
+        assertThat(chunkPages(documentId, 2)).containsOnly("2-2");
+
+        // 재처리: 값을 바꾸면 변경 요약에 남는다
+        reprocess(documentId, "{\"excludedPages\": \"2\"}")
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.excludedPages").value("2"))
+                .andExpect(jsonPath("$.data.changeSummary").value("적재에서 뺄 쪽 변경: 2"));
+        awaitStatus(documentId, 3, "COMPLETED");
+        assertThat(chunkPages(documentId, 3)).containsOnly("1-1");
+
+        // 재처리: 빈 값이면 모두 적재한다
+        reprocess(documentId, "{\"excludedPages\": \"\"}")
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.excludedPages").doesNotExist())
+                .andExpect(jsonPath("$.data.changeSummary").value("적재에서 뺄 쪽 변경: 없음"));
+        awaitStatus(documentId, 4, "COMPLETED");
+        assertThat(chunkPages(documentId, 4)).containsExactlyInAnyOrder("1-1", "2-2");
+    }
+
+    @Test
+    void newVersionMustConfirmExcludedPagesWhenCurrentHasThem() throws Exception {
+        String name = "Confirm Guide " + UUID.randomUUID();
+        long documentId = id(mockMvc.perform(multipart("/api/admin/documents")
+                        .file(pdf(versionOnePdf()))
+                        .param("name", name).param("sourceUrl", SOURCE_URL).param("excludedPages", "1")
+                        .cookie(admin).with(csrf()))
+                .andExpect(status().isCreated()).andReturn(), "$.data.documentId");
+        awaitStatus(documentId, 1, "COMPLETED");
+
+        mockMvc.perform(multipart("/api/admin/documents/{id}/versions", documentId)
+                        .file(pdf(versionTwoPdf())).cookie(admin).with(csrf()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_EXCLUDED_PAGES_REQUIRED"));
+
+        // 실패한 새 버전을 다시 반영하면 그 버전에 저장한 값을 쓴다
+        when(documentEmbedder.embedAll(anyList(), anyString()))
+                .thenThrow(new AiUnavailableException("Gemini document embedding failed", new RuntimeException("quota exceeded")));
+        long versionTwo = id(mockMvc.perform(multipart("/api/admin/documents/{id}/versions", documentId)
+                        .file(pdf(versionTwoPdf())).param("excludedPages", "2").cookie(admin).with(csrf()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.excludedPages").value("2"))
+                .andReturn(), "$.data.versionId");
+        awaitStatus(documentId, 2, "FAILED");
+        reset(documentEmbedder);
+        when(documentEmbedder.embedAll(anyList(), anyString())).thenAnswer(call -> fakeVectors(call.getArgument(0)));
+        mockMvc.perform(post("/api/admin/document-versions/{id}/retry", versionTwo).cookie(admin).with(csrf()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.excludedPages").value("2"));
+        awaitStatus(documentId, 2, "COMPLETED");
+        assertThat(chunkPages(documentId, 2)).containsOnly("1-1");
+
+        // 빈 값은 "빼지 않음" 확인
+        mockMvc.perform(multipart("/api/admin/documents/{id}/versions", documentId)
+                        .file(pdf(versionThreePdf())).param("excludedPages", "").cookie(admin).with(csrf()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.excludedPages").doesNotExist());
+        awaitStatus(documentId, 3, "COMPLETED");
+
+        // 현재 버전에 뺀 쪽이 없으면 생략할 수 있다
+        mockMvc.perform(multipart("/api/admin/documents/{id}/versions", documentId)
+                        .file(pdf(versionOnePdf())).cookie(admin).with(csrf()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.excludedPages").doesNotExist());
+        awaitStatus(documentId, 4, "COMPLETED");
+    }
+
+    @Test
+    void invalidExcludedPagesAreRejected() throws Exception {
+        String name = "Invalid Pages Guide " + UUID.randomUUID();
+        for (String spec : List.of("abc", "3", "1-2")) {
+            mockMvc.perform(multipart("/api/admin/documents")
+                            .file(pdf(VERSION_ONE_PDF))
+                            .param("name", name).param("sourceUrl", SOURCE_URL).param("excludedPages", spec)
+                            .cookie(admin).with(csrf()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("DOCUMENT_EXCLUDED_PAGES_INVALID"));
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM document WHERE name = ?", Integer.class, name))
+                .isZero();
+
+        long documentId = createAndAwait(name);
+        reprocess(documentId, "{\"excludedPages\": \"3\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_EXCLUDED_PAGES_INVALID"));
+        mockMvc.perform(multipart("/api/admin/documents/{id}/versions", documentId)
+                        .file(pdf(versionThreePdf())).param("excludedPages", "2").cookie(admin).with(csrf()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_EXCLUDED_PAGES_INVALID"));
+        assertThat(currentVersionNos(documentId)).containsExactly(1);
+    }
+
+    private ResultActions reprocess(long documentId, String body) throws Exception {
+        return mockMvc.perform(post("/api/admin/documents/{id}/reprocess", documentId)
+                .contentType(MediaType.APPLICATION_JSON).content(body)
+                .cookie(admin).with(csrf()));
+    }
+
+    private List<String> chunkPages(long documentId, int versionNo) {
+        return jdbcTemplate.queryForList("""
+                SELECT c.page_start || '-' || c.page_end FROM document_chunk c
+                JOIN document_version v ON v.document_version_id = c.document_version_id
+                WHERE v.document_id = ? AND v.version_no = ? ORDER BY c.chunk_no""",
+                String.class, documentId, versionNo);
     }
 
     /** 반영은 뒤에서 진행되므로 상태가 바뀔 때까지 기다린다 */

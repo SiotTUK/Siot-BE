@@ -6,6 +6,7 @@ import com.siot.backend.rag.document.BatchEmbedder;
 import com.siot.backend.rag.document.DocumentChunker;
 import com.siot.backend.rag.document.DocumentChunker.Chunk;
 import com.siot.backend.rag.document.FileStorage;
+import com.siot.backend.rag.document.PageRanges;
 import com.siot.backend.rag.document.ExtractedContent;
 import com.siot.backend.rag.document.PdfContentExtractor;
 import com.siot.backend.rag.domain.ProcessingStage;
@@ -68,7 +69,8 @@ public class DocumentProcessor {
     private ExtractedContent extract(DocumentVersionStateService.Job job) {
         ExtractedContent content;
         try {
-            content = extractor.extract(fileStorage.load(job.fileStorageKey()));
+            content = extractor.extract(fileStorage.load(job.fileStorageKey()),
+                    PageRanges.parse(job.excludedPages()));
         } catch (Exception e) {
             throw new StageFailure(ProcessingStage.EXTRACT, "PDF를 읽을 수 없습니다: " + e.getMessage(), e);
         }

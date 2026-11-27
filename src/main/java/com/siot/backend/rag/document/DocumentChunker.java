@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -228,6 +229,20 @@ public class DocumentChunker {
                         boolean emphasized, boolean fullWidth, boolean synthetic) {
     }
 
+    /** 적재에서 뺀 쪽. 한 조각이 뺀 쪽의 앞뒤를 함께 담지 않게 한다 (출처 쪽 범위에 뺀 쪽이 들지 않게) */
+    private record PageGaps(Set<Integer> excluded) {
+        static final PageGaps NONE = new PageGaps(Set.of());
+
+        /** from 쪽부터 to 쪽 사이에 뺀 쪽이 있다 */
+        boolean crosses(int from, int to) {
+            return excluded.stream().anyMatch(page -> page >= from && page <= to);
+        }
+
+        boolean crosses(Draft draft) {
+            return !excluded.isEmpty() && crosses(draft.pageStart(), draft.pageEnd());
+        }
+    }
+
     /** 제목을 고르는 방식 */
     private record Rules(boolean strict) {
         /** 출처 모름 (쪽 텍스트만 받은 경우): 번호·강조 없는 제목도 허용 */
@@ -359,7 +374,7 @@ public class DocumentChunker {
     }
 
     public List<Chunk> split(ExtractedContent content, String fallbackTitle) {
-        return splitBlocks(content.blocks(), fallbackTitle, content.source());
+        return splitBlocks(content.blocks(), fallbackTitle, content.source(), new PageGaps(content.excludedPages()));
     }
 
     /**
@@ -374,6 +389,10 @@ public class DocumentChunker {
      * @param source PLAIN 이면 번호·강조 있는 줄만 제목, TAGGED 면 따로 떨어진 기호·괄호 줄을 붙인다. null 이면 출처 모름
      */
     public List<Chunk> splitBlocks(List<ContentBlock> blocks, String fallbackTitle, Source source) {
+        return splitBlocks(blocks, fallbackTitle, source, PageGaps.NONE);
+    }
+
+    private List<Chunk> splitBlocks(List<ContentBlock> blocks, String fallbackTitle, Source source, PageGaps gaps) {
         List<ContentBlock> prepared = source == Source.TAGGED ? joinFragments(blocks) : blocks;
         Rules rules = source == Source.PLAIN ? new Rules(true) : Rules.LENIENT;
         // 글자 크기를 아는 출처(PLAIN, TAGGED)는 강조·단계 판단에 쓴다
@@ -389,21 +408,21 @@ public class DocumentChunker {
         if (first != null) {
             covers.add(first);
         }
-        List<Section> sections = toSections(lines, headings, fallbackTitle, covers);
+        List<Section> sections = toSections(lines, headings, fallbackTitle, covers, gaps);
         for (int round = 0; round < COVER_ROUNDS; round++) {
             String majority = majorityTopTitle(sections);
             if (majority == null || !covers.add(majority)) {
                 break;
             }
-            sections = toSections(lines, headings, fallbackTitle, covers);
+            sections = toSections(lines, headings, fallbackTitle, covers, gaps);
         }
 
         List<Draft> drafts = new ArrayList<>();
         for (Section section : sections) {
-            pack(section, drafts);
+            pack(section, gaps, drafts);
         }
         List<Chunk> chunks = new ArrayList<>();
-        for (Draft draft : mergeSiblings(mergeShort(drafts), fallbackTitle)) {
+        for (Draft draft : mergeSiblings(mergeShort(drafts, gaps), fallbackTitle, gaps)) {
             emit(draft, chunks);
         }
         return chunks;
@@ -1374,7 +1393,7 @@ public class DocumentChunker {
      */
     /** @param covers 표지 제목 글자 (같은 글자의 제목은 경로에 넣지 않는다) */
     private static List<Section> toSections(List<Line> lines, boolean[] headings, String fallbackTitle,
-                                            java.util.Set<String> covers) {
+                                            java.util.Set<String> covers, PageGaps gaps) {
         List<Section> sections = new ArrayList<>();
         Deque<Line> path = new ArrayDeque<>();
         Map<String, Integer> levels = new HashMap<>();
@@ -1513,7 +1532,8 @@ public class DocumentChunker {
             boolean tableRow = (line.table() && inTableRun(lines, headings, i))
                     || (line.header() && i + 1 < lines.size() && lines.get(i + 1).table()
                     && inTableRun(lines, headings, i + 1));
-            if (paragraph == null || startsParagraph(prev, line, paragraph, tableRow)) {
+            if (paragraph == null || startsParagraph(prev, line, paragraph, tableRow)
+                    || gaps.crosses(paragraph.linePages.getLast(), line.page())) {
                 paragraph = new Paragraph(tableRow);
                 section.items().add(paragraph);
             }
@@ -1687,15 +1707,15 @@ public class DocumentChunker {
     // ---------------------------------------------------------------- 조각
 
     /** 문단은 목표 길이로 묶고(겹침 있음), 표는 앞뒤 문단과 떼어 따로 조각으로 만든다 */
-    private static void pack(Section section, List<Draft> drafts) {
+    private static void pack(Section section, PageGaps gaps, List<Draft> drafts) {
         int first = drafts.size();
-        packItems(section, drafts);
+        packItems(section, gaps, drafts);
         for (int i = first + 1; i < drafts.size(); i++) {
             drafts.set(i, drafts.get(i).asContinuation());
         }
     }
 
-    private static void packItems(Section section, List<Draft> drafts) {
+    private static void packItems(Section section, PageGaps gaps, List<Draft> drafts) {
         HeadingPath path = section.path();
         String title = section.title();
         int titleLength = title == null ? 0 : title.length() + 1;
@@ -1716,25 +1736,27 @@ public class DocumentChunker {
             if (item instanceof Paragraph paragraph) {
                 units.addAll(toUnits(paragraph, budget));
             } else if (item instanceof TableBlock table) {
-                packText(units, path, title, budget, target, drafts);
+                packText(units, path, title, budget, target, gaps, drafts);
                 units.clear();
-                packTable(table, path, title, budget, drafts);
+                packTable(table, path, title, budget, gaps, drafts);
             }
         }
-        packText(units, path, title, budget, target, drafts);
+        packText(units, path, title, budget, target, gaps, drafts);
     }
 
     /**
      * 표 하나를 한 조각으로 (한 줄에 한 행, 행마다 열 이름). 길면 행 경계에서 나눈다.
      * 행마다 열 이름이 붙어 있어 앞 조각 없이도 읽히므로 겹치지 않는다.
      */
-    private static void packTable(TableBlock table, HeadingPath path, String title, int budget, List<Draft> drafts) {
+    private static void packTable(TableBlock table, HeadingPath path, String title, int budget, PageGaps gaps,
+                                  List<Draft> drafts) {
         List<Unit> current = new ArrayList<>();
         for (TableRow row : table.rows()) {
             Paragraph rowText = new Paragraph(true);
             rowText.add(row.render(), row.page());
             for (Unit unit : toUnits(rowText, budget)) {
-                if (!current.isEmpty() && length(current) + 1 + unit.text().length() > budget) {
+                if (!current.isEmpty() && (length(current) + 1 + unit.text().length() > budget
+                        || gaps.crosses(current.getLast().pageEnd(), unit.pageStart()))) {
                     drafts.add(new Draft(path, title, current, true, false));
                     current = new ArrayList<>();
                 }
@@ -1751,7 +1773,7 @@ public class DocumentChunker {
      * "… 다음과 같다:")으로 끝나면 그 문장은 다음 조각으로 넘긴다.
      */
     private static void packText(List<Unit> units, HeadingPath path, String title, int budget, int target,
-                                 List<Draft> drafts) {
+                                 PageGaps gaps, List<Draft> drafts) {
         List<Unit> current = new ArrayList<>();
         boolean overlap = false;
         Unit carry = null;
@@ -1762,6 +1784,15 @@ public class DocumentChunker {
                     current.add(carry);
                 }
                 current.add(unit);
+                continue;
+            }
+            if (gaps.crosses(current.getLast().pageEnd(), unit.pageStart())) {
+                // 뺀 쪽 앞에서 끊는다: 겹침도, 머리 문장 넘기기도 하지 않는다
+                drafts.add(new Draft(path, title, current, false, overlap));
+                current = new ArrayList<>();
+                current.add(unit);
+                overlap = false;
+                carry = null;
                 continue;
             }
             int length = length(current) + 1 + unit.text().length();
@@ -1813,7 +1844,7 @@ public class DocumentChunker {
      *         합칠 때 뒤 조각 앞의 겹침은 뺀다</li>
      * </ul>
      */
-    private static List<Draft> mergeShort(List<Draft> drafts) {
+    private static List<Draft> mergeShort(List<Draft> drafts, PageGaps gaps) {
         List<Draft> queue = new ArrayList<>(drafts);
         List<Draft> merged = new ArrayList<>(drafts.size());
         for (int i = 0; i < queue.size(); i++) {
@@ -1825,7 +1856,7 @@ public class DocumentChunker {
                         && !sameSection(next, draft) && !endsSentence(draft)
                         && sameScope(draft.path(), next.path())) {
                     Draft combined = next.withUnits(concat(draft.units(), next.units()), false);
-                    if (combined.contentLength() <= MAX) {
+                    if (combined.contentLength() <= MAX && !gaps.crosses(combined)) {
                         queue.set(i + 1, combined);
                         continue;
                     }
@@ -1833,7 +1864,7 @@ public class DocumentChunker {
                 if (body < MIN_BODY) {
                     if (next != null && !next.structuredTable() && sameSection(next, draft)) {
                         Draft combined = draft.withUnits(concat(draft.units(), next.withoutOverlap()), draft.overlap());
-                        if (combined.contentLength() <= MAX) {
+                        if (combined.contentLength() <= MAX && !gaps.crosses(combined)) {
                             queue.set(i + 1, combined);
                             continue;
                         }
@@ -1843,7 +1874,7 @@ public class DocumentChunker {
                             && sameSection(previous, draft)) {
                         Draft combined = previous.withUnits(concat(previous.units(), draft.withoutOverlap()),
                                 previous.overlap());
-                        if (combined.contentLength() <= MAX) {
+                        if (combined.contentLength() <= MAX && !gaps.crosses(combined)) {
                             merged.set(merged.size() - 1, combined);
                             continue;
                         }
@@ -1865,12 +1896,12 @@ public class DocumentChunker {
      *     <li>첫 줄은 부모 경로, 하위 제목은 본문 안에 줄로 남긴다. 같은 절이 길어 나뉜 다음 조각은 겹침을 빼고 잇는다</li>
      * </ul>
      */
-    private static List<Draft> mergeSiblings(List<Draft> drafts, String fallbackTitle) {
+    private static List<Draft> mergeSiblings(List<Draft> drafts, String fallbackTitle, PageGaps gaps) {
         List<Draft> merged = new ArrayList<>(drafts.size());
         for (Draft draft : drafts) {
             Draft previous = merged.isEmpty() ? null : merged.getLast();
             Draft combined = previous == null ? null : combineSiblings(previous, draft, fallbackTitle);
-            if (combined != null) {
+            if (combined != null && !gaps.crosses(combined)) {
                 merged.set(merged.size() - 1, combined);
             } else {
                 merged.add(draft);

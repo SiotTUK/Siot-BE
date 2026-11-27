@@ -214,3 +214,9 @@ en / zh / vi 문구와 장소·준비물·과태료 등 상세는 관리자 화�
 | NTF-02 일정 변경 즉시 알림 (BE #15) | 스키마 변경 없음. 수집·관리자 수정 커밋 뒤 `NotificationEventChangeNotifier` 가 만들고, 매시 작업은 보완 |
 | 생활수칙 FE 구조 (BE #14) | `guide_translation.points`(문장 목록)·`timing`(시기)·`contact`(언어별 문의처)·`reviewed`(사람이 확인한 번역, 자동 번역이 덮어쓰지 않음), `guide.checked_on`, `guide_source`(출처 목록), `rule_category`(FE 키·순서), `rule_faq`·`rule_faq_translation`(FAQ 질문·답변) |
 | 생활수칙 시드 | `V2026_11_26_1610__seed_fe_rules.sql` — `scripts/generate_rule_seed.mjs` 로 Siot-FE `src/features/rules/content.ts`·`messages.ts` 에서 만든다 (손으로 고치지 않음). 18개 항목·FAQ 5개·카테고리 6개·4개 언어 |
+
+## 문서 버전별 적재에서 뺄 쪽 (2026_11_27_2030)
+
+| 요구사항 | DB 변경 |
+|---|---|
+| ADM-04 문서 재반영 | `document_version.excluded_pages` TEXT — 관리자가 지정한 뺄 쪽 `51-52,100` (그 버전 파일의 PDF 뷰어 기준, NULL = 없음). 쪽 번호가 파일마다 달라 `document` 가 아니라 버전에 둔다 |
