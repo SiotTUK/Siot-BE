@@ -1,5 +1,6 @@
 package com.siot.backend.event.service;
 
+import com.siot.backend.event.collect.EventVisibilityProperties;
 import com.siot.backend.event.domain.Event;
 import com.siot.backend.event.domain.EventSubscription;
 import com.siot.backend.event.dto.EventSubscriptionResponse;
@@ -24,11 +25,12 @@ public class EventSubscriptionService {
 
     private final EventRepository eventRepository;
     private final EventSubscriptionRepository subscriptionRepository;
+    private final EventVisibilityProperties visibility;
     /** 한국 시간 (ClockConfig) */
     private final Clock clock;
 
     /**
-     * 행사 시작 사전 알림 신청 (NTF-02, EVE-06). 지운 행사는 404 (회원에게 보이지 않는 행사),
+     * 행사 시작 사전 알림 신청 (NTF-02, EVE-06). 지운 행사와 공개하지 않는 지역의 행사는 404 (회원에게 보이지 않는 행사),
      * 이미 끝난 행사는 보낼 알림이 없어 400.
      */
     @Transactional
@@ -45,7 +47,7 @@ public class EventSubscriptionService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "leadDays 는 1, 3, 7 중 하나입니다.");
         }
         Event event = eventRepository.findById(eventId)
-                .filter(found -> !found.isDeleted())
+                .filter(visibility::isVisible)
                 .orElseThrow(() -> new BusinessException(ErrorCode.EVENT_NOT_FOUND));
         LocalDate lastDay = event.getEndsOn() != null ? event.getEndsOn() : event.getStartsOn();
         if (lastDay != null && lastDay.isBefore(LocalDate.now(clock))) {
@@ -91,8 +93,11 @@ public class EventSubscriptionService {
         return subscriptionRepository.existsByUserIdAndEventIdAndEnabledTrue(userId, eventId);
     }
 
-    /** 신청한 알림 시점 (신청하지 않았거나 해제했으면 null) */
+    /** 신청한 알림 시점 (신청하지 않았거나 해제했으면 null). 공개하지 않는 지역의 행사도 null */
     public Integer leadDays(Long userId, Long eventId) {
+        if (eventRepository.findById(eventId).filter(event -> !visibility.inPublicRegion(event)).isPresent()) {
+            return null;
+        }
         return subscriptionRepository.findByUserIdAndEventId(userId, eventId)
                 .filter(EventSubscription::isEnabled)
                 .map(EventSubscription::getLeadDays)
@@ -103,7 +108,8 @@ public class EventSubscriptionService {
      * 로그인 회원의 알림 신청 행사 목록 조회
      */
     public PageResponse<EventSubscriptionResponse> getMySubscriptions(Long userId, Pageable pageable) {
-        Page<EventSubscription> page = subscriptionRepository.findMyActive(userId, pageable);
+        Page<EventSubscription> page = subscriptionRepository.findMyActive(userId, visibility.publicRegions(),
+                pageable);
         return PageResponse.from(page, EventSubscriptionResponse::from);
     }
 }

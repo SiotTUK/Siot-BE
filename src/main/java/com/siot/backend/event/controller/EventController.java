@@ -30,7 +30,8 @@ import java.util.List;
 
 /** EVE-03·04·05·10: 행사 목록·상세·추천·달력·수집 상태 (로그인 필요). 글은 회원 언어, 번역이 없으면 한국어 원문 */
 @Tag(name = "7-2. 행사", description = "행사 목록·상세·추천·달력과 최종 갱신 시각 (EVE-03~05, EVE-10). 글은 회원 언어이고 "
-        + "번역이 없으면 한국어 원문과 translated=false (COM-02 '번역 준비 중'). 지운 행사는 보이지 않는다")
+        + "번역이 없으면 한국어 원문과 translated=false (COM-02 '번역 준비 중'). 지운 행사는 보이지 않는다. "
+        + "공개 지역(siot.event.public-regions, 기본 SIHEUNG)의 행사만 보인다")
 @RestController
 @RequestMapping("/api/events")
 @RequiredArgsConstructor
@@ -47,7 +48,7 @@ public class EventController {
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponse<EventSummaryResponse>>> list(
             @AuthenticationPrincipal MemberPrincipal principal,
-            @Parameter(description = "지역. 비우면 전체", schema = @Schema(allowableValues = {"SIHEUNG", "GYEONGGI"}))
+            @Parameter(description = "지역. 비우면 공개 지역 전체, 공개하지 않는 지역이면 빈 결과", schema = @Schema(allowableValues = {"SIHEUNG", "GYEONGGI"}))
             @RequestParam(required = false) String region,
             @Parameter(description = "카테고리. 비우면 전체", schema = @Schema(allowableValues =
                     {"FESTIVAL", "PERFORMANCE", "EXHIBITION", "EDUCATION", "EVENT"}))
@@ -103,7 +104,7 @@ public class EventController {
 
     @Operation(summary = "EVE-04 행사 상세",
             description = "일시·장소·가격·신청 방법(마감·링크)·설명·원문 링크·지역·다문화 여부·내 알림 신청 여부. 값이 없는 칸은 null "
-                    + "(수집 행사는 장소·설명이 없는 경우가 많아 원문 링크로 안내). 지운 행사는 404.")
+                    + "(수집 행사는 장소·설명이 없는 경우가 많아 원문 링크로 안내). 지운 행사와 공개하지 않는 지역의 행사는 404.")
     @ApiErrorCodes(ErrorCode.EVENT_NOT_FOUND)
     @GetMapping("/{eventId:\\d+}")
     public ResponseEntity<ApiResponse<EventDetailResponse>> detail(

@@ -296,7 +296,7 @@ class ChatIntegrationTest {
     private long insertEvent(String status, java.time.LocalDate startsOn, java.time.LocalDate endsOn,
                              String koTitle, String enTitle) {
         Long id = jdbcTemplate.queryForObject(
-                "INSERT INTO event (status, starts_on, ends_on) VALUES (?, ?, ?) RETURNING event_id",
+                "INSERT INTO event (status, starts_on, ends_on, region_code) VALUES (?, ?, ?, 'SIHEUNG') RETURNING event_id",
                 Long.class, status, startsOn, endsOn);
         jdbcTemplate.update("INSERT INTO event_translation (language, event_id, title) VALUES ('ko', ?, ?)", id, koTitle);
         if (enTitle != null) {

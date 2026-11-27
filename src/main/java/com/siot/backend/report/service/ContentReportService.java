@@ -4,6 +4,7 @@ import com.siot.backend.checklist.domain.Guide;
 import com.siot.backend.checklist.domain.GuideTranslation;
 import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
+import com.siot.backend.event.collect.EventVisibilityProperties;
 import com.siot.backend.event.domain.Event;
 import com.siot.backend.event.domain.EventTranslation;
 import com.siot.backend.event.repository.EventRepository;
@@ -38,6 +39,7 @@ public class ContentReportService {
 
     private final ContentReportRepository contentReportRepository;
     private final EventRepository eventRepository;
+    private final EventVisibilityProperties eventVisibility;
     private final EventTranslationRepository eventTranslationRepository;
     private final GuideRepository guideRepository;
     private final GuideTranslationRepository guideTranslationRepository;
@@ -71,10 +73,10 @@ public class ContentReportService {
         return withTarget(contentReportRepository.save(report));
     }
 
-    /** 보이는 행사의 한국어 제목. 없거나 지운 행사면 404 */
+    /** 보이는 행사의 한국어 제목. 없거나 지웠거나 공개하지 않는 지역의 행사면 404 */
     private String eventTitle(Long eventId) {
         Event event = eventRepository.findById(eventId)
-                .filter(found -> !found.isDeleted())
+                .filter(eventVisibility::isVisible)
                 .orElseThrow(() -> new BusinessException(ErrorCode.EVENT_NOT_FOUND));
         return eventTranslationRepository.findOriginal(event.getId()).map(EventTranslation::getTitle).orElse(null);
     }

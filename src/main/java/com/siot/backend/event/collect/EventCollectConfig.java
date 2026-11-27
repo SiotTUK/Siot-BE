@@ -18,7 +18,7 @@ import java.util.List;
 
 /** 행사 수집 (EVE-01·EVE-02) 연결: 출처 3개, 번역, 수집 서비스 */
 @Configuration
-@EnableConfigurationProperties(EventProperties.class)
+@EnableConfigurationProperties({EventProperties.class, EventVisibilityProperties.class})
 public class EventCollectConfig {
 
     /** 외부 행사 API 전용 클라이언트 (연결·응답 대기 시간 = siot.event.http-timeout) */

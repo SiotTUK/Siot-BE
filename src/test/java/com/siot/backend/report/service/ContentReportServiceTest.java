@@ -5,6 +5,8 @@ import com.siot.backend.checklist.domain.GuideTranslation;
 import com.siot.backend.checklist.domain.ItemType;
 import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
+import com.siot.backend.event.collect.EventRegion;
+import com.siot.backend.event.collect.EventVisibilityProperties;
 import com.siot.backend.event.domain.Event;
 import com.siot.backend.event.domain.EventTranslation;
 import com.siot.backend.event.repository.EventRepository;
@@ -28,6 +30,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -56,6 +59,7 @@ class ContentReportServiceTest {
     @BeforeEach
     void setUp() {
         contentReportService = new ContentReportService(contentReportRepository, eventRepository,
+                new EventVisibilityProperties(Set.of(EventRegion.SIHEUNG)),
                 eventTranslationRepository, guideRepository, guideTranslationRepository,
                 Clock.fixed(Instant.parse("2026-11-26T03:00:00Z"), ZoneId.of("Asia/Seoul")));
     }
@@ -94,6 +98,7 @@ class ContentReportServiceTest {
     @DisplayName("행사 신고: 지운 행사는 404, 보이는 행사는 한국어 행사명을 남긴다")
     void createEventReport() {
         Event active = Event.manual(1L);
+        active.editRegionCode(EventRegion.SIHEUNG, false);
         ReflectionTestUtils.setField(active, "id", 5L);
         given(eventRepository.findById(5L)).willReturn(Optional.of(active));
         given(eventTranslationRepository.findOriginal(5L))
@@ -106,6 +111,7 @@ class ContentReportServiceTest {
         assertThat(res.language()).isEqualTo("en");
 
         Event deleted = Event.manual(1L);
+        deleted.editRegionCode(EventRegion.SIHEUNG, false);
         deleted.delete(1L);
         given(eventRepository.findById(6L)).willReturn(Optional.of(deleted));
         assertThatThrownBy(() -> contentReportService.createReport(1L, request(null, 6L, null, null)))

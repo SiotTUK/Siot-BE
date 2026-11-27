@@ -28,6 +28,9 @@ class EventSubscriptionServiceTest {
     @org.mockito.Spy
     private java.time.Clock clock = java.time.Clock.fixed(java.time.Instant.parse("2026-11-26T03:00:00Z"),
             java.time.ZoneId.of("Asia/Seoul"));
+    @org.mockito.Spy
+    private com.siot.backend.event.collect.EventVisibilityProperties visibility =
+            new com.siot.backend.event.collect.EventVisibilityProperties(java.util.Set.of("SIHEUNG"));
 
     @InjectMocks
     private EventSubscriptionService subscriptionService;
@@ -37,11 +40,13 @@ class EventSubscriptionServiceTest {
     void subscribe_rejectsDeletedAndEndedEvents() {
         com.siot.backend.event.domain.Event deleted = com.siot.backend.event.domain.Event.manual(1L);
         deleted.editStartsOn(java.time.LocalDate.of(2099, 1, 1), false);
+        deleted.editRegionCode("SIHEUNG", false);
         deleted.delete(1L);
         given(eventRepository.findById(1L)).willReturn(Optional.of(deleted));
         com.siot.backend.event.domain.Event ended = com.siot.backend.event.domain.Event.manual(1L);
         ended.editStartsOn(java.time.LocalDate.of(2026, 11, 20), false);
         ended.editEndsOn(java.time.LocalDate.of(2026, 11, 25), false);
+        ended.editRegionCode("SIHEUNG", false);
         given(eventRepository.findById(2L)).willReturn(Optional.of(ended));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> subscriptionService.subscribe(9L, 1L))
@@ -62,6 +67,7 @@ class EventSubscriptionServiceTest {
 
         com.siot.backend.event.domain.Event event = com.siot.backend.event.domain.Event.manual(1L);
         event.editStartsOn(java.time.LocalDate.of(2099, 5, 1), false);
+        event.editRegionCode("SIHEUNG", false);
         given(eventRepository.findById(eventId)).willReturn(Optional.of(event));
         given(subscriptionRepository.findByUserIdAndEventId(userId, eventId))
                 .willReturn(Optional.empty());
