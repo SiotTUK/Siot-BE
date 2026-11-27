@@ -1,5 +1,6 @@
 package com.siot.backend.notification.service;
 
+import com.siot.backend.event.collect.EventVisibilityProperties;
 import com.siot.backend.event.domain.Event;
 import com.siot.backend.event.domain.EventSubscription;
 import com.siot.backend.event.domain.EventTranslation;
@@ -35,6 +36,7 @@ import java.util.Objects;
  * </ul>
  * 규칙: 기록한 일정(event_subscription.schedule_snapshot)과 지금 일정이 다를 때만, 행사 알림 설정을 끈 회원은 빼고,
  * 회원 언어로, 중복 방지 키 {@code event_changed:{eventId}:{userId}:{지금 일정}}. 알림을 만들었든 아니든 기록을 지금 일정으로 바꾼다.
+ * 공개하지 않는 지역의 행사는 알림도 만들지 않고 기록도 바꾸지 않는다: 다시 공개하면 마지막으로 안내한 일정과 비교해 알린다.
  * 신청자마다 새 트랜잭션에서 처리한다: 두 경로가 같은 키를 동시에 넣어 유니크 제약에 걸려도 그 신청자만 건너뛰고 나머지는 계속한다.
  */
 @Slf4j
@@ -50,6 +52,7 @@ public class EventChangeNotificationWriter {
     private final NotificationRepository notificationRepository;
     private final NotificationPreferenceRepository preferenceRepository;
     private final Clock clock;
+    private final EventVisibilityProperties visibility;
     private final TransactionOperations perSubscriber;
 
     @Autowired
@@ -59,9 +62,10 @@ public class EventChangeNotificationWriter {
                                          NotificationRepository notificationRepository,
                                          NotificationPreferenceRepository preferenceRepository,
                                          Clock clock,
+                                         EventVisibilityProperties visibility,
                                          PlatformTransactionManager transactionManager) {
         this(subscriptionRepository, translationRepository, userRepository, notificationRepository,
-                preferenceRepository, clock, requiresNew(transactionManager));
+                preferenceRepository, clock, visibility, requiresNew(transactionManager));
     }
 
     /** 테스트용: 트랜잭션 처리를 바꿔 끼운다 */
@@ -71,6 +75,7 @@ public class EventChangeNotificationWriter {
                                          NotificationRepository notificationRepository,
                                          NotificationPreferenceRepository preferenceRepository,
                                          Clock clock,
+                                         EventVisibilityProperties visibility,
                                          TransactionOperations perSubscriber) {
         this.subscriptionRepository = subscriptionRepository;
         this.translationRepository = translationRepository;
@@ -78,6 +83,7 @@ public class EventChangeNotificationWriter {
         this.notificationRepository = notificationRepository;
         this.preferenceRepository = preferenceRepository;
         this.clock = clock;
+        this.visibility = visibility;
         this.perSubscriber = perSubscriber;
     }
 
@@ -93,6 +99,9 @@ public class EventChangeNotificationWriter {
      * @return 알림을 새로 만들었으면 true
      */
     public boolean apply(Event event, EventSubscription subscription, String baselineIfUnrecorded) {
+        if (!visibility.inPublicRegion(event)) {
+            return false;
+        }
         String current = event.scheduleSnapshot();
         String recorded = subscription.getScheduleSnapshot() != null
                 ? subscription.getScheduleSnapshot() : baselineIfUnrecorded;

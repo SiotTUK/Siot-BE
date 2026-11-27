@@ -11,6 +11,7 @@ import com.siot.backend.checklist.repository.ChecklistProgressRepository;
 import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.MemberLifeChangeRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
+import com.siot.backend.event.collect.EventVisibilityProperties;
 import com.siot.backend.event.domain.Event;
 import com.siot.backend.event.domain.EventSubscription;
 
@@ -66,6 +67,7 @@ public class NotificationScheduler {
     private final GuideRepository guideRepository;
     private final ChecklistProgressRepository checklistProgressRepository;
     private final MemberLifeChangeRepository memberLifeChangeRepository;
+    private final EventVisibilityProperties eventVisibility;
     /** 한국 시간 (ClockConfig) */
     private final Clock clock;
 
@@ -386,6 +388,8 @@ public class NotificationScheduler {
     }
 
     /**
+     * 공개하지 않는 지역의 행사는 만들지 않는다 (회원에게 보이지 않고 상세가 404).
+     *
      * @param due             이 신청자에게 지금 보낼지 (알림 시점 leadDays 로 거른다)
      * @param sourceKeyFormat 신청별 sourceKey 형식
      */
@@ -393,6 +397,9 @@ public class NotificationScheduler {
                                         Function<EventSubscription, String> sourceKeyFormat,
                                         BiFunction<NotificationMessages, String, String> titleOf,
                                         BiFunction<NotificationMessages, String, String> bodyOf) {
+        if (!eventVisibility.inPublicRegion(event)) {
+            return;
+        }
         for (EventSubscription sub : eventSubscriptionRepository.findByEventIdAndEnabledTrue(event.getId())) {
             Long userId = sub.getUserId();
             if (!due.test(sub)) {
