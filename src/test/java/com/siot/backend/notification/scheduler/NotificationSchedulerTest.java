@@ -9,6 +9,7 @@ import com.siot.backend.checklist.repository.GuideRepository;
 import com.siot.backend.checklist.repository.GuideTranslationRepository;
 import com.siot.backend.checklist.repository.MemberLifeChangeRepository;
 import com.siot.backend.checklist.domain.MemberLifeChange;
+import com.siot.backend.event.collect.EventVisibilityProperties;
 import com.siot.backend.event.domain.Event;
 import com.siot.backend.event.domain.EventSubscription;
 import com.siot.backend.event.repository.EventRepository;
@@ -60,6 +61,7 @@ class NotificationSchedulerTest {
     private static final LocalDate TODAY = LocalDate.of(2027, 2, 28);
     private static final Long USER_ID = 1L;
     private static final Long CL01_GUIDE_ID = 100L;
+    private static final EventVisibilityProperties SIHEUNG_ONLY = new EventVisibilityProperties(Set.of("SIHEUNG"));
 
     @Mock
     private AppUserRepository appUserRepository;
@@ -93,8 +95,8 @@ class NotificationSchedulerTest {
         Clock clock = Clock.fixed(ZonedDateTime.of(TODAY.atTime(9, 0), ClockConfig.KST).toInstant(), ClockConfig.KST);
         notificationScheduler = new NotificationScheduler(appUserRepository, notificationRepository, preferenceRepository,
                 calendarScheduleRepository, guideTranslationRepository,
-                eventRepository, eventSubscriptionRepository, writer(clock), notificationDispatcher,
-                guideRepository, checklistProgressRepository, memberLifeChangeRepository, clock);
+                eventRepository, eventSubscriptionRepository, writer(clock, SIHEUNG_ONLY), notificationDispatcher,
+                guideRepository, checklistProgressRepository, memberLifeChangeRepository, SIHEUNG_ONLY, clock);
         lenient().when(notificationRepository.existsByUserIdAndSourceKey(anyLong(), anyString())).thenReturn(false);
         lenient().when(preferenceRepository.findByKindAndUserId(anyString(), anyLong())).thenReturn(Optional.empty());
     }
@@ -119,10 +121,11 @@ class NotificationSchedulerTest {
         return captor.getValue();
     }
 
-    private com.siot.backend.notification.service.EventChangeNotificationWriter writer(Clock clock) {
+    private com.siot.backend.notification.service.EventChangeNotificationWriter writer(Clock clock,
+                                                                                      EventVisibilityProperties visibility) {
         return new com.siot.backend.notification.service.EventChangeNotificationWriter(eventSubscriptionRepository,
                 eventTranslationRepository, appUserRepository, notificationRepository, preferenceRepository, clock,
-                org.springframework.transaction.support.TransactionOperations.withoutTransaction());
+                visibility, org.springframework.transaction.support.TransactionOperations.withoutTransaction());
     }
 
     @Test
@@ -432,16 +435,21 @@ class NotificationSchedulerTest {
     private static final Long EVENT_ID = 500L;
 
     private NotificationScheduler schedulerAt(java.time.LocalDateTime now) {
+        return schedulerAt(now, SIHEUNG_ONLY);
+    }
+
+    private NotificationScheduler schedulerAt(java.time.LocalDateTime now, EventVisibilityProperties visibility) {
         Clock clock = Clock.fixed(ZonedDateTime.of(now, ClockConfig.KST).toInstant(), ClockConfig.KST);
         return new NotificationScheduler(appUserRepository, notificationRepository, preferenceRepository,
                 calendarScheduleRepository, guideTranslationRepository,
-                eventRepository, eventSubscriptionRepository, writer(clock), notificationDispatcher,
-                guideRepository, checklistProgressRepository, memberLifeChangeRepository, clock);
+                eventRepository, eventSubscriptionRepository, writer(clock, visibility), notificationDispatcher,
+                guideRepository, checklistProgressRepository, memberLifeChangeRepository, visibility, clock);
     }
 
     private Event event(LocalDate startsOn, java.time.LocalTime startsAt) {
         Event event = Event.manual(1L);
         ReflectionTestUtils.setField(event, "id", EVENT_ID);
+        ReflectionTestUtils.setField(event, "regionCode", "SIHEUNG");
         event.editStartsOn(startsOn, false);
         event.editStartsAt(startsAt, false);
         return event;
@@ -542,6 +550,29 @@ class NotificationSchedulerTest {
         Notification saved = savedNotification();
         assertThat(saved.getTitle()).contains("신청 마감");
         assertThat(saved.getBody()).contains(TODAY.plusDays(1) + " 18:00");
+    }
+
+    @Test
+    @DisplayName("공개하지 않는 지역의 행사는 시작·신청 마감 알림을 만들지 않고, 공개 지역에 넣으면 만든다")
+    void eventAlerts_followPublicRegions() {
+        subscribed();
+        Event event = event(TODAY.plusDays(1), java.time.LocalTime.of(14, 0));
+        ReflectionTestUtils.setField(event, "regionCode", "GYEONGGI");
+        event.editApplicationDeadline(
+                ZonedDateTime.of(TODAY.plusDays(1).atTime(10, 0), ClockConfig.KST).toOffsetDateTime(), false);
+        given(eventRepository.findByStartsOnBetweenAndStatus(TODAY, TODAY.plusDays(NotificationScheduler.EVENT_MAX_LEAD_DAYS), "ACTIVE")).willReturn(List.of(event));
+        given(eventRepository.findByStatusAndApplicationDeadlineBetween(eq("ACTIVE"), any(), any())).willReturn(List.of(event));
+
+        schedulerAt(TODAY.atTime(14, 0)).generateEventNotifications();
+        verify(notificationRepository, never()).save(any());
+
+        schedulerAt(TODAY.atTime(14, 0), new EventVisibilityProperties(Set.of("SIHEUNG", "GYEONGGI")))
+                .generateEventNotifications();
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(Notification::getSourceKey)
+                .anyMatch(key -> key.startsWith("event_start:"))
+                .anyMatch(key -> key.startsWith("event_deadline:"));
     }
 
     @Test
