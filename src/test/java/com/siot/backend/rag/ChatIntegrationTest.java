@@ -3,6 +3,7 @@ package com.siot.backend.rag;
 import com.siot.backend.TestcontainersConfiguration;
 import com.siot.backend.auth.service.SignupVerificationService;
 import com.siot.backend.rag.ai.AiUnavailableException;
+import com.siot.backend.rag.ai.AnswerExplainer;
 import com.siot.backend.rag.ai.AnswerGenerator;
 import com.siot.backend.rag.ai.ChatTurn;
 import com.siot.backend.rag.ai.QueryRewriter;
@@ -71,6 +72,9 @@ class ChatIntegrationTest {
     @MockitoBean
     QueryRewriter queryRewriter;
 
+    @MockitoBean
+    AnswerExplainer answerExplainer;
+
     /** 축 번호 (외국인등록 조각 = 0, 자동차세 조각 = 1, 이전 버전 조각 = 2) */
     private static final int AXIS_REGISTRATION = 0;
     private static final int AXIS_CAR_TAX = 1;
@@ -79,7 +83,7 @@ class ChatIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        clearInvocations(queryEmbedder, answerGenerator, queryRewriter);
+        clearInvocations(queryEmbedder, answerGenerator, queryRewriter, answerExplainer);
         seedDocumentsOnce();
     }
 
@@ -438,6 +442,82 @@ class ChatIntegrationTest {
         // 기본 3턴: 질문 2·3·4
         verify(queryRewriter).rewrite("질문 5", List.of(
                 new ChatTurn("질문 2", null), new ChatTurn("질문 3", null), new ChatTurn("질문 4", null)));
+    }
+
+    // ---------------------------------------------------------------- 메타 질문 (대화 기록·답변 근거)
+
+    @Test
+    void metaQuestionsAreAnsweredFromHistoryAndStoredSourcesWithoutSearching() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery("외국인등록은 언제까지 해야 하나요?")).thenReturn(axis(AXIS_REGISTRATION));
+        when(queryEmbedder.embedQuery("자동차세는 언제 내요?")).thenReturn(axis(AXIS_CAR_TAX));
+        when(queryRewriter.rewrite(anyString(), anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(answerGenerator.generate(anyString(), anyString(), anyList(), anyList()))
+                .thenReturn("입국 후 90일 이내에 해야 해요.", "6월과 12월에 내요.");
+        ask(session, conversationId, "외국인등록은 언제까지 해야 하나요?").andExpect(status().isOk());
+        ask(session, conversationId, "자동차세는 언제 내요?").andExpect(status().isOk());
+        clearInvocations(queryEmbedder, answerGenerator, queryRewriter);
+
+        // 대화 기록: 최근 N턴 제한과 상관없이 전체 기록에서 찾는다
+        ask(session, conversationId, "맨 처음 질문이 뭐야?")
+                .andExpect(jsonPath("$.data.answer.answerStatus").value("ANSWERED"))
+                .andExpect(jsonPath("$.data.answer.content").value("첫 번째 질문은 \"외국인등록은 언제까지 해야 하나요?\"였어요."))
+                .andExpect(jsonPath("$.data.answer.sources.length()").value(0));
+        ask(session, conversationId, "첫 번째 질문에 뭐라고 답했어?")
+                .andExpect(jsonPath("$.data.answer.content").value(org.hamcrest.Matchers.endsWith("입국 후 90일 이내에 해야 해요.")));
+
+        // 근거: 첫 질문을 다시 검색하지 않고, 첫 답변 당시 저장한 근거를 문서 이름·쪽으로 보여 준다
+        ask(session, conversationId, "첫 번째 질문의 답변 근거는 뭐야?")
+                .andExpect(jsonPath("$.data.answer.content").value(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("「시흥시 외국인주민 생활안내」 12~13쪽"),
+                        org.hamcrest.Matchers.containsString("외국인등록은 입국일부터 90일 이내에"),
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("[1]")))))
+                .andExpect(jsonPath("$.data.answer.sources.length()").value(1))
+                .andExpect(jsonPath("$.data.answer.sources[0].pageStart").value(12));
+        // 이어서 "그 자료" 는 방금 보여 준 근거 (첫 답변의 근거)
+        ask(session, conversationId, "그 자료의 몇 페이지야?")
+                .andExpect(jsonPath("$.data.answer.content").value(org.hamcrest.Matchers.containsString("12~13쪽")));
+
+        // 설명: 저장된 근거 조각을 넘긴다. 설명을 만들지 못하면 저장된 근거 목록으로 답한다
+        when(answerExplainer.explain(anyString(), anyString(), anyString(), anyString(), anyList()))
+                .thenReturn("「시흥시 외국인주민 생활안내」 30쪽에 6월과 12월에 낸다고 나와 있어서예요.");
+        ask(session, conversationId, "두 번째 질문에 왜 그렇게 답했어?")
+                .andExpect(jsonPath("$.data.answer.content").value(org.hamcrest.Matchers.startsWith("「시흥시 외국인주민 생활안내」 30쪽")))
+                .andExpect(jsonPath("$.data.answer.sources[0].pageStart").value(30));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<RetrievedChunk>> explained = ArgumentCaptor.forClass(List.class);
+        verify(answerExplainer).explain(eq("두 번째 질문에 왜 그렇게 답했어?"), eq("ko"), eq("자동차세는 언제 내요?"),
+                eq("6월과 12월에 내요."), explained.capture());
+        assertThat(explained.getValue()).extracting(RetrievedChunk::content)
+                .containsExactly("자동차세는 매년 6월과 12월에 납부합니다.");
+
+        when(answerExplainer.explain(anyString(), anyString(), anyString(), anyString(), anyList()))
+                .thenThrow(new AiUnavailableException("timeout"));
+        ask(session, conversationId, "첫 번째 답변에서 90일이라고 말한 이유는?")
+                .andExpect(jsonPath("$.data.answer.answerStatus").value("ANSWERED"))
+                .andExpect(jsonPath("$.data.answer.content").value(org.hamcrest.Matchers.containsString("12~13쪽")));
+
+        ask(session, conversationId, "열 번째 질문은 뭐였어?")
+                .andExpect(jsonPath("$.data.answer.content").value(org.hamcrest.Matchers.startsWith("10번째 질문은 없어요.")));
+
+        // 메타 질문은 문서 검색·답변 생성을 하지 않는다
+        verify(queryEmbedder, never()).embedQuery(anyString());
+        verify(queryRewriter, never()).rewrite(anyString(), anyList());
+        verify(answerGenerator, never()).generate(anyString(), anyString(), anyList(), anyList());
+    }
+
+    @Test
+    void sourceOfUnansweredTurnSaysThereIsNone() throws Exception {
+        Cookie session = signup();
+        long conversationId = startConversation(session, "ko");
+        when(queryEmbedder.embedQuery(anyString())).thenReturn(axis(AXIS_UNRELATED));
+        ask(session, conversationId, "자동차세는 언제 내요?").andExpect(status().isOk());
+
+        ask(session, conversationId, "첫 번째 답변의 출처는?")
+                .andExpect(jsonPath("$.data.answer.content").value(
+                        "첫 번째 질문(\"자동차세는 언제 내요?\")에는 자료에서 답을 찾지 못해 답변하지 않았어요. 그래서 근거 자료도 없어요."))
+                .andExpect(jsonPath("$.data.answer.sources.length()").value(0));
     }
 
     // ---------------------------------------------------------------- CB-09

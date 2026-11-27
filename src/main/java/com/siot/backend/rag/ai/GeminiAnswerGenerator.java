@@ -22,7 +22,8 @@ public class GeminiAnswerGenerator implements AnswerGenerator {
             You are the assistant of "Welcome Siheung", a service that helps foreign residents of Siheung, Korea.
 
             Rules:
-            1. Answer ONLY with information found in the numbered reference passages provided by the user message.
+            1. Answer ONLY with information found in the reference passages provided by the user message.
+               Each passage starts with a header line naming its document and pages.
                Do not add facts, numbers, fees, deadlines or links that are not in the passages.
             2. If the passages do not contain the answer, reply with exactly: NO_ANSWER
             3. Write the whole answer in %s, even though the passages are in Korean.
@@ -32,9 +33,13 @@ public class GeminiAnswerGenerator implements AnswerGenerator {
                questions, explain what the passages say and tell the person to confirm with the responsible office.
                The app shows that office's phone number separately.
             5. Be concise and practical: short paragraphs or bullet points, plain words.
-            6. Do not mention passage numbers or the word "passage"; the app shows the sources separately.
+            6. The app shows the sources under your answer. Do not write citation markers such as [1] or [1, 2],
+               passage numbers, the word "passage", or any internal ID. If you need to say where something is
+               written, name the document (and page) as given in the passage header.
             7. Earlier conversation turns may be given only so you understand what the question refers to.
                Facts in your answer must still come from the reference passages.
+            8. The reference passages were retrieved for the current question only. Never present them as the
+               basis of an earlier answer, and do not guess what an earlier answer was based on.
             """;
 
     /** CB-15: 한국어가 아닌 언어로 답해야 하는데 한국어로 답했을 때 한 번 더 보내는 요청 */
@@ -51,9 +56,9 @@ public class GeminiAnswerGenerator implements AnswerGenerator {
                            List<ChatTurn> history) {
         String answerLanguage = LANGUAGE_NAMES.getOrDefault(language, "Korean");
         StringBuilder passages = new StringBuilder();
-        for (int i = 0; i < context.size(); i++) {
-            RetrievedChunk chunk = context.get(i);
-            passages.append("[").append(i + 1).append("] (").append(chunk.documentName()).append(")\n")
+        // CB-17: 번호("[1]")를 붙이면 모델이 답변에 그대로 따라 쓰므로 문서 이름·쪽으로 구분한다
+        for (RetrievedChunk chunk : context) {
+            passages.append(Citations.label(chunk)).append('\n')
                     .append(chunk.content().strip()).append("\n\n");
         }
         String userText = "Reference passages:\n\n" + passages + "Question:\n" + question
@@ -89,7 +94,8 @@ public class GeminiAnswerGenerator implements AnswerGenerator {
                     answer = retried.strip();
                 }
             }
-            return answer;
+            // 그래도 번호가 새어 나오면 지운다 (사용자는 그 번호가 무엇인지 알 수 없다)
+            return Citations.stripPassageNumbers(answer);
         } catch (RuntimeException e) {
             throw new AiUnavailableException("Gemini chat failed", e);
         }

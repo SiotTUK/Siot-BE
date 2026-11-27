@@ -1,6 +1,8 @@
 package com.siot.backend.rag.config;
 
+import com.siot.backend.rag.ai.AnswerExplainer;
 import com.siot.backend.rag.ai.AnswerGenerator;
+import com.siot.backend.rag.ai.GeminiAnswerExplainer;
 import com.siot.backend.rag.ai.GeminiAnswerGenerator;
 import com.siot.backend.rag.ai.GeminiQueryEmbedder;
 import com.siot.backend.rag.ai.GeminiQueryRewriter;
@@ -49,6 +51,17 @@ public class RagConfig {
             };
         }
         return new GeminiAnswerGenerator(chatModel(props, props.temperature()));
+    }
+
+    /** 앞 답변의 근거 설명 ("왜 그렇게 생각했어?"). 실패하면 저장된 출처 목록으로 답한다 */
+    @Bean
+    public AnswerExplainer answerExplainer(GeminiProperties props) {
+        if (!props.configured()) {
+            return (question, language, pastQuestion, pastAnswer, sources) -> {
+                throw new AiUnavailableException("Gemini API key is not configured");
+            };
+        }
+        return new GeminiAnswerExplainer(chatModel(props, 0.0));
     }
 
     /** CB-07: 이어지는 질문을 검색용 독립 질문으로 */

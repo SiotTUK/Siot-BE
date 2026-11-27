@@ -5,6 +5,7 @@ import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.member.domain.AppUser;
 import com.siot.backend.member.repository.AppUserRepository;
 import com.siot.backend.rag.ai.AiUnavailableException;
+import com.siot.backend.rag.ai.AnswerExplainer;
 import com.siot.backend.rag.ai.AnswerGenerator;
 import com.siot.backend.rag.ai.ChatTurn;
 import com.siot.backend.rag.ai.QueryRewriter;
@@ -62,6 +63,8 @@ import java.util.stream.Collectors;
  *       모델이 근거에 답이 없다고 하면 근거 없음과 같이 처리</li>
  *   <li>답변과 근거(출처) 저장 (CB-17)</li>
  * </ol>
+ * 대화 자체에 대한 질문("맨 처음 질문이 뭐야?", "첫 번째 답변의 근거는?", "왜 그렇게 생각했어?")은
+ * {@link MetaQuestionDetector} 로 가려내 2~5 대신 대화 기록과 답변 당시 저장한 근거로 답한다.
  * Gemini 호출 중에는 DB 트랜잭션을 잡지 않는다 (질문 저장 / 답변 저장을 각각 짧은 트랜잭션으로).
  */
 @Slf4j
@@ -77,6 +80,7 @@ public class ChatService {
     private final QueryEmbedder queryEmbedder;
     private final AnswerGenerator answerGenerator;
     private final QueryRewriter queryRewriter;
+    private final AnswerExplainer answerExplainer;
     private final ChunkRetriever chunkRetriever;
     private final RelatedPageFinder relatedPageFinder;
     private final EventRelatedPageFinder eventRelatedPageFinder;
@@ -94,6 +98,7 @@ public class ChatService {
                        QueryEmbedder queryEmbedder,
                        AnswerGenerator answerGenerator,
                        QueryRewriter queryRewriter,
+                       AnswerExplainer answerExplainer,
                        ChunkRetriever chunkRetriever,
                        RelatedPageFinder relatedPageFinder,
                        EventRelatedPageFinder eventRelatedPageFinder,
@@ -110,6 +115,7 @@ public class ChatService {
         this.queryEmbedder = queryEmbedder;
         this.answerGenerator = answerGenerator;
         this.queryRewriter = queryRewriter;
+        this.answerExplainer = answerExplainer;
         this.chunkRetriever = chunkRetriever;
         this.relatedPageFinder = relatedPageFinder;
         this.eventRelatedPageFinder = eventRelatedPageFinder;
@@ -231,14 +237,18 @@ public class ChatService {
         // 1. 개인정보를 가린 질문만 저장하고 AI 로 보낸다 (CB-05)
         PiiMasker.Result masked = PiiMasker.mask(trimmed);
         String question = masked.text();
-        record Saved(ChatConversation conversation, ChatMessage question, List<ChatTurn> history) {
+        record Saved(ChatConversation conversation, ChatMessage question, List<ChatTurn> history, MetaContext meta) {
         }
         Saved saved = tx.execute(status -> {
             ChatConversation conversation = findOwned(userId, conversationId);
-            List<ChatTurn> history = recentTurns(conversation.getId());
+            List<ChatMessage> messages = messageRepository.findByConversationIdOrderByIdAsc(conversation.getId());
+            List<ChatTurn> history = recentTurns(messages);
+            // 대화 자체에 대한 질문이면 검색하지 않고, 전체 대화 기록과 답변 당시 저장한 근거로 답한다
+            MetaContext meta = MetaQuestionDetector.detect(question)
+                    .map(m -> metaContext(m, messages)).orElse(null);
             ChatMessage message = messageRepository.save(ChatMessage.question(conversation, question));
             conversation.touch(OffsetDateTime.now(clock));
-            return new Saved(conversation, message, history);
+            return new Saved(conversation, message, history, meta);
         });
         // CB-15: 질문 언어로 답한다. 판별하지 못하면 화면(대화) 언어
         //   (원문으로 판별: 가린 자리의 "[전화번호]" 같은 한국어 표시에 끌려가지 않도록)
@@ -246,19 +256,24 @@ public class ChatService {
 
         // 2~4. 검색 → 근거 판단 → 답변 생성 (트랜잭션 밖). CB-02: 걸린 시간을 상태별로 기록
         Timer.Sample sample = Timer.start(meterRegistry);
-        Outcome outcome = answer(question, language, saved.history());
+        Outcome outcome = saved.meta() != null
+                ? answerMeta(question, language, saved.meta())
+                : answer(question, language, saved.history());
         long nanos = sample.stop(Timer.builder(ANSWER_TIMER)
                 .description("챗봇 답변 생성 시간 (검색·답변 생성, CB-02 목표 평균 5초 이하)")
                 .tag("status", outcome.status().name())
                 .register(meterRegistry));
-        log.info("Chatbot answered: status={} took={}ms", outcome.status(), nanos / 1_000_000);
+        log.info("Chatbot answered: status={} meta={} took={}ms", outcome.status(),
+                saved.meta() == null ? "-" : saved.meta().question().type(), nanos / 1_000_000);
+        // 메타 질문("왜 그렇게 생각했어?")은 대화에 대한 질문이라 응급·담당 기관·관련 페이지 안내를 붙이지 않는다
+        boolean meta = saved.meta() != null;
         // CB-09: 응급 관련 질문이면 답변과 함께 119/112 를 보여 준다
-        boolean emergency = EmergencyDetector.isEmergency(question);
+        boolean emergency = !meta && EmergencyDetector.isEmergency(question);
         // CB-11: 비자 발급 가능 여부·법률·의료·세금·노동 판단 질문이면 고정 안내와 담당 기관을 함께 보여 준다
-        List<ReferralTopic> referralTopics = ReferralDetector.detect(question);
+        List<ReferralTopic> referralTopics = meta ? List.of() : ReferralDetector.detect(question);
 
         // CB-10: 관련 페이지는 답변과 함께 저장해 대화 기록에서 같은 링크를 보여 준다
-        List<RelatedPage> relatedPages = relatedPages(question, outcome.relatedChunkIds(), language);
+        List<RelatedPage> relatedPages = meta ? List.of() : relatedPages(question, outcome.relatedChunkIds(), language);
 
         // 5. 답변·근거·관련 페이지 저장
         ChatMessage answer = tx.execute(status -> {
@@ -307,6 +322,11 @@ public class ChatService {
 
         static Outcome of(String text, AnswerStatus status, List<RetrievedChunk> sources) {
             return new Outcome(text, status, sources, sources.stream().map(RetrievedChunk::chunkId).toList());
+        }
+
+        /** 메타 질문 답변. 대화 기록으로 답했으므로 ANSWERED (관리자 미응답 목록에 넣지 않는다) */
+        static Outcome meta(String text, List<RetrievedChunk> sources) {
+            return new Outcome(text, AnswerStatus.ANSWERED, sources, List.of());
         }
     }
 
@@ -417,23 +437,169 @@ public class ChatService {
         return merged;
     }
 
-    /** 최근 N턴 (오래된 것부터). 답변은 근거로 답한 경우만 넣는다 */
-    private List<ChatTurn> recentTurns(Long conversationId) {
-        if (properties.historyTurns() == 0) {
-            return List.of();
+    // ------------------------------------------------------------------ 메타 질문 (대화 기록·답변 근거)
+
+    /**
+     * 지난 질문 한 턴.
+     *
+     * @param no     몇 번째 질문 (1부터)
+     * @param answer 이 질문에 대한 답변. 저장되지 않았으면 null (답변 생성 중 오류 등)
+     */
+    private record PastTurn(int no, ChatMessage question, ChatMessage answer) {
+
+        boolean answered() {
+            return answer != null && AnswerStatus.ANSWERED.name().equals(answer.getAnswerStatus());
         }
-        List<ChatMessage> messages = messageRepository.findByConversationIdOrderByIdAsc(conversationId);
-        List<ChatTurn> turns = new ArrayList<>();
+    }
+
+    /**
+     * 메타 질문에 답하는 데 필요한 것 (질문 저장 트랜잭션 안에서 모은다).
+     *
+     * @param target  가리키는 턴. 지난 질문이 없거나 그 번호의 질문이 없으면 null
+     * @param sources 그 답변을 만들 때 저장한 근거 중 아직 남아 있는 조각 (근거·설명 질문만)
+     * @param deletedSources 문서 삭제·새 버전 반영으로 지금은 확인할 수 없는 근거 수
+     */
+    private record MetaContext(MetaQuestionDetector.MetaQuestion question, int totalTurns, PastTurn target,
+                               List<RetrievedChunk> sources, int deletedSources) {
+    }
+
+    private MetaContext metaContext(MetaQuestionDetector.MetaQuestion meta, List<ChatMessage> messages) {
+        List<PastTurn> turns = pastTurns(messages);
+        boolean aboutSources = meta.type() == MetaQuestionDetector.Type.SOURCE
+                || meta.type() == MetaQuestionDetector.Type.EXPLAIN;
+        PastTurn target = target(meta, turns, turns.size());
+        if (aboutSources) {
+            // "첫 번째 답변의 근거는?" → "그 자료 몇 페이지야?" → "왜 그렇게 생각했어?" 처럼 이어 물으면
+            // 메타 질문 답변이 아니라 그 답변이 가리킨 원래 답변의 근거를 본다
+            target = underlyingTurn(target, turns);
+        }
+
+        List<RetrievedChunk> kept = new ArrayList<>();
+        int deleted = 0;
+        if (aboutSources && target != null && target.answer() != null) {
+            for (ChatMessageSource source : loadSources(List.of(target.answer().getId()))
+                    .getOrDefault(target.answer().getId(), List.of())) {
+                DocumentChunk chunk = source.getChunk();
+                if (chunk == null) {
+                    deleted++;
+                    continue;
+                }
+                var document = chunk.getDocumentVersion().getDocument();
+                kept.add(new RetrievedChunk(chunk.getId(), chunk.getContent(), chunk.getPageStart(),
+                        chunk.getPageEnd(), document.getName(), document.getSourceUrl(),
+                        source.getRelevanceScore() == null ? 0.0 : source.getRelevanceScore()));
+            }
+        }
+        return new MetaContext(meta, turns.size(), target, List.copyOf(kept), deleted);
+    }
+
+    /**
+     * 메타 질문 답변. 대화 기록과 답변 당시 저장한 근거만 쓴다: 앞 질문을 다시 검색하면 그때와 다른 조각이 나올 수 있어,
+     * 새 검색 결과를 앞 답변의 근거인 것처럼 보여 주게 된다.
+     * 근거·설명 답변에는 그 근거를 출처로 다시 붙인다 (이어서 "그 자료 몇 페이지야?" 라고 물을 수 있도록).
+     */
+    private Outcome answerMeta(String question, String language, MetaContext ctx) {
+        if (ctx.totalTurns() == 0) {
+            return Outcome.meta(MetaAnswers.noHistory(language), List.of());
+        }
+        PastTurn target = ctx.target();
+        if (target == null) {
+            return Outcome.meta(MetaAnswers.turnNotFound(language, ctx.question().turn(), ctx.totalTurns()), List.of());
+        }
+        int no = target.no();
+        String pastQuestion = target.question().getContent();
+        String status = target.answer() == null ? AnswerStatus.ERROR.name() : target.answer().getAnswerStatus();
+        switch (ctx.question().type()) {
+            case PAST_QUESTION -> {
+                return Outcome.meta(MetaAnswers.pastQuestion(language, no, pastQuestion), List.of());
+            }
+            case PAST_ANSWER -> {
+                return Outcome.meta(target.answered()
+                        ? MetaAnswers.pastAnswer(language, no, pastQuestion, target.answer().getContent())
+                        : MetaAnswers.unanswered(language, no, pastQuestion, status), List.of());
+            }
+            default -> {
+                // SOURCE, EXPLAIN
+            }
+        }
+        if (!target.answered()) {
+            return Outcome.meta(MetaAnswers.unanswered(language, no, pastQuestion, status), List.of());
+        }
+        if (ctx.sources().isEmpty()) {
+            return Outcome.meta(ctx.deletedSources() > 0
+                    ? MetaAnswers.sources(language, no, pastQuestion, List.of(), ctx.deletedSources())
+                    : MetaAnswers.noStoredSources(language, no, pastQuestion), List.of());
+        }
+        String sourceList = MetaAnswers.sources(language, no, pastQuestion, ctx.sources(), ctx.deletedSources());
+        if (ctx.question().type() == MetaQuestionDetector.Type.SOURCE) {
+            return Outcome.meta(sourceList, ctx.sources());
+        }
+        try {
+            String explanation = answerExplainer.explain(question, language, pastQuestion,
+                    target.answer().getContent(), ctx.sources());
+            if (explanation != null && !explanation.isBlank()) {
+                return Outcome.meta(explanation.strip(), ctx.sources());
+            }
+        } catch (AiUnavailableException e) {
+            log.warn("Chatbot explain failed, answering with the stored sources: {}", e.getMessage());
+        }
+        // 설명을 만들지 못해도 저장된 근거 목록으로는 답할 수 있다
+        return Outcome.meta(sourceList, ctx.sources());
+    }
+
+    /**
+     * 메타 질문이 가리키는 턴. "n번째" 면 그 턴, 아니면 직전 턴.
+     *
+     * @param before 이 질문 앞에 있던 턴 수 (turns 의 앞 before 개만 본다)
+     * @return 없으면 null
+     */
+    private static PastTurn target(MetaQuestionDetector.MetaQuestion meta, List<PastTurn> turns, int before) {
+        if (meta.previous()) {
+            return before > 0 ? turns.get(before - 1) : null;
+        }
+        return meta.turn() <= before ? turns.get(meta.turn() - 1) : null;
+    }
+
+    /** 메타 질문 턴이면 그 질문이 가리킨 턴을 따라간다 (번호가 계속 줄어들므로 끝난다) */
+    private static PastTurn underlyingTurn(PastTurn turn, List<PastTurn> turns) {
+        PastTurn current = turn;
+        while (current != null) {
+            var earlier = MetaQuestionDetector.detect(current.question().getContent());
+            if (earlier.isEmpty()) {
+                return current;
+            }
+            PastTurn next = target(earlier.get(), turns, current.no() - 1);
+            if (next == null) {
+                return current;
+            }
+            current = next;
+        }
+        return null;
+    }
+
+    /** 질문마다 바로 뒤의 답변을 짝지은 턴 (오래된 것부터) */
+    private static List<PastTurn> pastTurns(List<ChatMessage> messages) {
+        List<PastTurn> turns = new ArrayList<>();
         for (int i = 0; i < messages.size(); i++) {
             ChatMessage message = messages.get(i);
             if (!ChatMessage.ROLE_USER.equals(message.getRole())) {
                 continue;
             }
             ChatMessage next = i + 1 < messages.size() ? messages.get(i + 1) : null;
-            String answer = next != null && ChatMessage.ROLE_ASSISTANT.equals(next.getRole())
-                    && AnswerStatus.ANSWERED.name().equals(next.getAnswerStatus()) ? next.getContent() : null;
-            turns.add(new ChatTurn(message.getContent(), answer));
+            turns.add(new PastTurn(turns.size() + 1, message,
+                    next != null && next.isAnswer() ? next : null));
         }
+        return turns;
+    }
+
+    /** 최근 N턴 (오래된 것부터). 답변은 근거로 답한 경우만 넣는다 */
+    private List<ChatTurn> recentTurns(List<ChatMessage> messages) {
+        if (properties.historyTurns() == 0) {
+            return List.of();
+        }
+        List<ChatTurn> turns = pastTurns(messages).stream()
+                .map(t -> new ChatTurn(t.question().getContent(), t.answered() ? t.answer().getContent() : null))
+                .toList();
         int from = Math.max(0, turns.size() - properties.historyTurns());
         return List.copyOf(turns.subList(from, turns.size()));
     }
