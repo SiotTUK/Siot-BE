@@ -172,10 +172,15 @@ public class ChecklistService {
             }
 
             // 번역본 매핑
-            GuideTranslation tr = translationMap.getOrDefault(guide.getId(), koTranslationMap.get(guide.getId()));
+            GuideTranslation requested = translationMap.get(guide.getId());
+            GuideTranslation tr = requested != null ? requested : koTranslationMap.get(guide.getId());
+            // COM-02: 본문의 실제 언어 (요청 언어 / 한국어 대체 / 없음). 화면이 글자로 언어를 추측하지 않도록 알려 준다
+            String contentLanguage = requested != null ? targetLang : tr != null ? "ko" : null;
 
             // 조건별 문구 (CL-04 등)
-            List<String> variantBodies = getVariantBodies(guide, targetLang, user.effectivePurpose());
+            VariantBodies variants = getVariantBodies(guide, targetLang, user.effectivePurpose());
+            List<String> variantBodies = variants.bodies();
+            boolean translated = requested != null && !variants.koreanFallback();
 
             // CL-05 체류기간 연장: 마감일 = 체류 만료일 (CAL-04)
             boolean isStayExtension = STAY_EXTENSION_CODE.equals(guide.getCode());
@@ -218,7 +223,9 @@ public class ChecklistService {
                     sourcePages,
                     guide.getId(),
                     guide.getCategory(),
-                    ChecklistCategories.label(guide.getCategory(), targetLang)
+                    ChecklistCategories.label(guide.getCategory(), targetLang),
+                    contentLanguage,
+                    translated
             ));
         }
 
@@ -367,14 +374,20 @@ public class ChecklistService {
         return new PeriodAndDeadline(ChecklistProgress.ONCE, null);
     }
 
-    private List<String> getVariantBodies(Guide guide, String language, Purpose purpose) {
+    /** @param koreanFallback 요청 언어 문구가 없어 한국어 문구를 담았는지 (COM-02) */
+    private record VariantBodies(List<String> bodies, boolean koreanFallback) {
+    }
+
+    private VariantBodies getVariantBodies(Guide guide, String language, Purpose purpose) {
         if (!"CL-04".equals(guide.getCode())) {
-            return Collections.emptyList();
+            return new VariantBodies(Collections.emptyList(), false);
         }
 
         List<GuideVariantTranslation> variants = guideVariantTranslationRepository.findByGuideIdAndLanguage(guide.getId(), language);
-        if (variants.isEmpty()) {
+        boolean koreanFallback = false;
+        if (variants.isEmpty() && !"ko".equals(language)) {
             variants = guideVariantTranslationRepository.findByGuideIdAndLanguage(guide.getId(), "ko");
+            koreanFallback = !variants.isEmpty();
         }
 
         String targetKey = purpose != null ? purpose.name() : Purpose.OTHER.name();
@@ -385,6 +398,6 @@ public class ChecklistService {
                 bodies.add(v.getBody());
             }
         }
-        return bodies;
+        return new VariantBodies(bodies, koreanFallback);
     }
 }

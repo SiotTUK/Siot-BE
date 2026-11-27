@@ -88,6 +88,15 @@ public record ChecklistItemResponse(
                 nullable = true, example = "IMMIGRATION")
         String category,
         @Schema(description = "분류 표시 이름 (요청 언어)", nullable = true, example = "출입국·체류")
-        String categoryLabel
+        String categoryLabel,
+
+        // COM-02 본문 언어 (BE #30). 경고 문구(warningMessage)·분류 이름은 항상 요청 언어라 여기에 포함하지 않는다
+        @Schema(description = "COM-02 본문(title·summary·content·badge·place·docs·fee·law·penalty·sourceName)의 실제 언어. "
+                + "요청 언어 번역이 있으면 요청 언어, 없으면 한국어 원문 'ko'. 한국어 원문도 없으면 null (title 은 항목 코드)",
+                nullable = true, allowableValues = {"ko", "en", "zh", "vi"}, example = "ko")
+        String contentLanguage,
+        @Schema(description = "COM-02 요청 언어 문구인지. false 면 한국어 원문으로 대체했거나 문구가 없음 → '번역 준비 중' 표시. "
+                + "한국어 요청은 원문이 있으면 true. 조건부 문구(variantBodies)만 한국어로 대체된 경우도 false", example = "true")
+        boolean translated
 ) {
 }

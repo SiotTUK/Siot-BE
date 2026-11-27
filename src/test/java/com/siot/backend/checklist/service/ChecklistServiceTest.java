@@ -295,6 +295,81 @@ class ChecklistServiceTest {
     }
 
     @Test
+    @DisplayName("COM-02 본문 언어: 요청 언어 번역 / 한국어 대체 / 문구 없음 / 조건부 문구만 대체를 구분한다 (BE #30)")
+    void getMyChecklist_contentLanguageAndTranslated() {
+        Long userId = 1L;
+        AppUser user = AppUser.create("user@siot.kr", "hash");
+        user.updateOnboarding(UserType.NEW, LocalDate.now().minusDays(10), Purpose.WORK, Set.of(),
+                LocalDate.now().plusMonths(6));
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+
+        Guide cl01 = guide("CL-01", 1L);   // 영어 번역 있음
+        Guide cl07 = guide("CL-07", 7L);   // 한국어 원문만
+        Guide cl05 = guide("CL-05", 5L);   // 문구 없음
+        Guide cl04 = guide("CL-04", 4L);   // 본문은 영어, 조건부 문구는 한국어만
+        given(guideRepository.findByKindOrderBySortOrderAsc("CHECKLIST")).willReturn(List.of(cl01, cl07, cl05, cl04));
+        given(guideRepository.findByKindOrderBySortOrderAsc("LIFE_CHANGE_TASK")).willReturn(Collections.emptyList());
+        given(guideTranslationRepository.findByGuideIdInAndLanguage(anyCollection(), eq("en"))).willReturn(List.of(
+                translation(1L, "en", "Foreigner registration"), translation(4L, "en", "Health insurance")));
+        given(guideTranslationRepository.findByGuideIdInAndLanguage(anyCollection(), eq("ko"))).willReturn(List.of(
+                translation(1L, "ko", "외국인등록"), translation(7L, "ko", "근로계약"), translation(4L, "ko", "건강보험")));
+        given(variantTranslationRepository.findByGuideIdAndLanguage(4L, "en")).willReturn(List.of());
+        given(variantTranslationRepository.findByGuideIdAndLanguage(4L, "ko")).willReturn(List.of(
+                variant(4L, "ko", "WORK", "직장 가입자는 회사에서 가입합니다.")));
+        given(progressRepository.findByUserId(userId)).willReturn(List.of());
+        given(lifeChangeRepository.findByUserId(userId)).willReturn(Collections.emptyList());
+
+        java.util.Map<String, ChecklistItemResponse> en = checklistService.getMyChecklist(userId, "en").items().stream()
+                .collect(java.util.stream.Collectors.toMap(ChecklistItemResponse::code, i -> i));
+
+        assertThat(en.get("CL-01").contentLanguage()).isEqualTo("en");
+        assertThat(en.get("CL-01").translated()).isTrue();
+        assertThat(en.get("CL-01").title()).isEqualTo("Foreigner registration");
+
+        assertThat(en.get("CL-07").contentLanguage()).isEqualTo("ko");
+        assertThat(en.get("CL-07").translated()).isFalse();
+        assertThat(en.get("CL-07").title()).isEqualTo("근로계약");
+
+        assertThat(en.get("CL-05").contentLanguage()).isNull();
+        assertThat(en.get("CL-05").translated()).isFalse();
+        assertThat(en.get("CL-05").title()).isEqualTo("CL-05");
+        // 경고·기한 표시는 본문 언어와 상관없이 그대로
+        assertThat(en.get("CL-05").deadline()).isEqualTo(user.getStayExpiry());
+
+        assertThat(en.get("CL-04").contentLanguage()).isEqualTo("en");
+        assertThat(en.get("CL-04").variantBodies()).containsExactly("직장 가입자는 회사에서 가입합니다.");
+        assertThat(en.get("CL-04").translated()).isFalse();
+
+        // 한국어 요청: 원문이 있으면 translated, 없으면 false
+        java.util.Map<String, ChecklistItemResponse> ko = checklistService.getMyChecklist(userId, "ko").items().stream()
+                .collect(java.util.stream.Collectors.toMap(ChecklistItemResponse::code, i -> i));
+        assertThat(ko.get("CL-07").contentLanguage()).isEqualTo("ko");
+        assertThat(ko.get("CL-07").translated()).isTrue();
+        assertThat(ko.get("CL-04").translated()).isTrue();
+        assertThat(ko.get("CL-05").contentLanguage()).isNull();
+        assertThat(ko.get("CL-05").translated()).isFalse();
+    }
+
+    private static Guide guide(String code, Long id) {
+        Guide guide = Guide.create(code, "CHECKLIST", ItemType.REQUIRED, "IMMIGRATION", id.intValue(), null, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(guide, "id", id);
+        return guide;
+    }
+
+    private static GuideTranslation translation(Long guideId, String language, String title) {
+        return GuideTranslation.create(guideId, language, title, null, null, null, null, null, null, null, null, null);
+    }
+
+    private static GuideVariantTranslation variant(Long guideId, String language, String key, String body) {
+        GuideVariantTranslation variant = org.springframework.beans.BeanUtils.instantiateClass(GuideVariantTranslation.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(variant, "guideId", guideId);
+        org.springframework.test.util.ReflectionTestUtils.setField(variant, "language", language);
+        org.springframework.test.util.ReflectionTestUtils.setField(variant, "variantKey", key);
+        org.springframework.test.util.ReflectionTestUtils.setField(variant, "body", body);
+        return variant;
+    }
+
+    @Test
     @DisplayName("세션은 있는데 회원이 없으면 다른 본인 API처럼 401 UNAUTHORIZED (BE #24)")
     void getMyChecklist_missingMember_isUnauthorized() {
         given(appUserRepository.findById(99L)).willReturn(Optional.empty());
