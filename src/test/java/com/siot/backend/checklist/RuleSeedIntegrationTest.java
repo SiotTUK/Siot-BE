@@ -69,9 +69,9 @@ class RuleSeedIntegrationTest {
             api.forEach(rule -> apiCodes.add(rule.get("code").asString()));
             List<String> feCodes = new ArrayList<>();
             fe.get("rules").forEach(rule -> feCodes.add(rule.get("code").asString()));
-            // FE 순서 그대로 (카테고리 순서 → 카테고리 안 순서)
+            // FE 순서 그대로 (카테고리 순서 → 카테고리 안 순서). 이전 뒤 BE 에서 더한 항목(FE #73 등)은 사이에 들어갈 수 있다
             assertThat(apiCodes).as("codes (%s)", lang).containsAll(feCodes);
-            assertThat(apiCodes.subList(0, feCodes.size())).as("order (%s)", lang).isEqualTo(feCodes);
+            assertThat(apiCodes.stream().filter(feCodes::contains).toList()).as("order (%s)", lang).isEqualTo(feCodes);
 
             for (JsonNode expected : fe.get("rules")) {
                 String code = expected.get("code").asString();
@@ -157,6 +157,36 @@ class RuleSeedIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"guideCode\":\"no-such-rule\",\"quotedText\":\"문장\",\"reason\":\"CONTENT\"}"))
                 .andExpect(status().isNotFound());
+    }
+
+    /** FE #73: 공식 근거를 확인해 BE 에서 더한 항목. 4개 언어, 출처 목록, 확인일, 분류 안 순서 */
+    @Test
+    void rulesAddedAfterFeMigrationHaveSourcesAndCheckedDate() throws Exception {
+        for (String lang : LANGUAGES) {
+            JsonNode order = data(get("/api/rules").param("category", "order").param("language", lang));
+            List<String> orderCodes = new ArrayList<>();
+            order.forEach(rule -> orderCodes.add(rule.get("code").asString()));
+            assertThat(orderCodes).as(lang).containsSubsequence("order-noise", "order-smoking", "order-etiquette");
+
+            JsonNode living = data(get("/api/rules").param("category", "living").param("language", lang));
+            List<String> livingCodes = new ArrayList<>();
+            living.forEach(rule -> livingCodes.add(rule.get("code").asString()));
+            assertThat(livingCodes).as(lang).containsSubsequence("living-siru", "living-bike", "living-youth-transport");
+
+            for (String code : List.of("order-etiquette", "living-youth-transport")) {
+                JsonNode rule = data(get("/api/rules/" + code).param("language", lang));
+                assertThat(rule.get("translated").asBoolean()).as(code + " " + lang).isTrue();
+                assertThat(rule.get("points").size()).as(code + " " + lang).isEqualTo(6);
+                assertThat(rule.get("checkedOn").asString()).isEqualTo("2026-11-27");
+                assertThat(rule.get("sources").size()).isGreaterThanOrEqualTo(2);
+                rule.get("sources").forEach(source ->
+                        assertThat(source.get("url").asString()).startsWith("https://"));
+            }
+        }
+        // 범칙금액은 시행령 별표 그대로
+        JsonNode etiquette = data(get("/api/rules/order-etiquette").param("language", "ko"));
+        assertThat(etiquette.get("points").get(0).asString()).contains("5만원").contains("3만원");
+        assertThat(etiquette.get("law").asString()).contains("경범죄 처벌법");
     }
 
     @Test
