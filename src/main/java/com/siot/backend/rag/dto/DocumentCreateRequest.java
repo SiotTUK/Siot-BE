@@ -19,5 +19,7 @@ public record DocumentCreateRequest(
         @Schema(description = "공개 원문 링크 (http/https)", example = "https://www.siheung.go.kr/guide.pdf")
         @NotBlank @Size(max = 2000) @Pattern(regexp = DocumentUpdateRequest.URL_PATTERN) String sourceUrl,
         @Schema(description = "발행일", nullable = true, example = "2026-03-01")
-        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate publishedOn) {
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate publishedOn,
+        @Schema(description = "적재에서 뺄 쪽 (PDF 뷰어 기준 1부터, 빈칸 서식 등)", nullable = true, example = "51-52, 100")
+        String excludedPages) {
 }

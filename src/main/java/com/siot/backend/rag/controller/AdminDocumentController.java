@@ -7,6 +7,7 @@ import com.siot.backend.global.config.openapi.ApiErrorCodes;
 import com.siot.backend.global.config.openapi.SuccessStatus;
 import com.siot.backend.global.exception.ErrorCode;
 import com.siot.backend.rag.dto.DocumentCreateRequest;
+import com.siot.backend.rag.dto.DocumentReprocessRequest;
 import com.siot.backend.rag.dto.DocumentResponse;
 import com.siot.backend.rag.dto.DocumentUpdateRequest;
 import com.siot.backend.rag.dto.DocumentVersionCreateRequest;
@@ -56,10 +57,12 @@ public class AdminDocumentController {
     }
 
     @Operation(summary = "ADM-02 새 문서 등록",
-            description = "PDF 와 문서 정보를 올린다. 파일이 저장되면 바로 응답하고(첫 버전 PENDING), 텍스트 추출·분할·임베딩·검색 반영은 "
+            description = "PDF 와 문서 정보를 올린다. excludedPages 로 적재에서 뺄 쪽(빈칸 서식 등)을 지정할 수 있다. "
+                    + "파일이 저장되면 바로 응답하고(첫 버전 PENDING), 텍스트 추출·분할·임베딩·검색 반영은 "
                     + "뒤에서 진행된다 (ADM-04). 진행 상태는 버전 목록에서 확인한다.")
     @SuccessStatus(value = 201, description = "등록됨. 반영은 뒤에서 진행")
-    @ApiErrorCodes({ErrorCode.DOCUMENT_FILE_INVALID, ErrorCode.DOCUMENT_FILE_TOO_LARGE})
+    @ApiErrorCodes({ErrorCode.DOCUMENT_FILE_INVALID, ErrorCode.DOCUMENT_FILE_TOO_LARGE,
+            ErrorCode.DOCUMENT_EXCLUDED_PAGES_INVALID})
     @PostMapping(value = "/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<DocumentResponse>> create(
             @AuthenticationPrincipal MemberPrincipal principal,
@@ -80,10 +83,12 @@ public class AdminDocumentController {
 
     @Operation(summary = "ADM-02 새 버전 업로드 (문서 교체)",
             description = "반영이 모두 성공하면 새 버전이 검색에 쓰이고 이전 버전은 빠진다. 실패하면 이전 버전을 계속 쓴다 (ADM-04). "
-                    + "다른 버전을 반영하는 중이거나 현재 버전과 같은 파일이면 409.")
+                    + "다른 버전을 반영하는 중이거나 현재 버전과 같은 파일이면 409. "
+                    + "현재 버전에 적재에서 뺀 쪽이 있으면 excludedPages 를 꼭 보낸다 (빼지 않으려면 빈 값).")
     @SuccessStatus(value = 201, description = "업로드됨. 반영은 뒤에서 진행")
     @ApiErrorCodes({ErrorCode.DOCUMENT_NOT_FOUND, ErrorCode.DOCUMENT_FILE_INVALID, ErrorCode.DOCUMENT_FILE_TOO_LARGE,
-            ErrorCode.DOCUMENT_VERSION_IN_PROGRESS, ErrorCode.DOCUMENT_FILE_UNCHANGED})
+            ErrorCode.DOCUMENT_VERSION_IN_PROGRESS, ErrorCode.DOCUMENT_FILE_UNCHANGED,
+            ErrorCode.DOCUMENT_EXCLUDED_PAGES_INVALID, ErrorCode.DOCUMENT_EXCLUDED_PAGES_REQUIRED})
     @PostMapping(value = "/documents/{documentId}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<DocumentVersionResponse>> addVersion(
             @AuthenticationPrincipal MemberPrincipal principal,
@@ -93,18 +98,21 @@ public class AdminDocumentController {
                 .body(ApiResponse.of(documentAdminService.addVersion(principal.getId(), documentId, request)));
     }
 
-    @Operation(summary = "ADM-04 현재 버전 재처리 (조각 규칙 변경)",
+    @Operation(summary = "ADM-04 현재 버전 재처리 (조각 규칙·뺄 쪽 변경)",
             description = "현재 버전의 저장된 파일로 새 버전(REPROCESS)을 만들어 다시 반영한다. 파일은 다시 올리지 않는다. "
-                    + "성공하면 새 버전이 현재 버전이 되고, 실패하면 이전 버전을 계속 쓴다. 문서 내용 변경이 아니므로 사용자 알림 대상이 아니다.")
+                    + "성공하면 새 버전이 현재 버전이 되고, 실패하면 이전 버전을 계속 쓴다. 문서 내용 변경이 아니므로 사용자 알림 대상이 아니다. "
+                    + "본문 excludedPages 를 생략하면 현재 값을 그대로 쓰고, 빈 문자열이면 빼지 않는다.")
     @SuccessStatus(value = 202, description = "재처리 요청됨. 반영은 뒤에서 진행")
     @ApiErrorCodes({ErrorCode.DOCUMENT_NOT_FOUND, ErrorCode.DOCUMENT_VERSION_IN_PROGRESS,
-            ErrorCode.DOCUMENT_CURRENT_VERSION_MISSING})
+            ErrorCode.DOCUMENT_CURRENT_VERSION_MISSING, ErrorCode.DOCUMENT_EXCLUDED_PAGES_INVALID})
     @PostMapping("/documents/{documentId}/reprocess")
     public ResponseEntity<ApiResponse<DocumentVersionResponse>> reprocess(
             @AuthenticationPrincipal MemberPrincipal principal,
-            @PathVariable Long documentId) {
+            @PathVariable Long documentId,
+            @RequestBody(required = false) DocumentReprocessRequest request) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ApiResponse.of(documentAdminService.reprocess(principal.getId(), documentId)));
+                .body(ApiResponse.of(documentAdminService.reprocess(principal.getId(), documentId,
+                        request == null ? null : request.excludedPages())));
     }
 
     @Operation(summary = "ADM-04·NTF-06 버전 목록 (반영 상태)",

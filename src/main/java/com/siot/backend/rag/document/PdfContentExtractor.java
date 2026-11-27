@@ -39,7 +39,7 @@ public class PdfContentExtractor {
     }
 
     /**
-     * @param excludedPages 적재에서 뺄 쪽 (표지·목차 등). 추출 방식 판단(비율)은 전체 쪽으로 하고, 결과에서만 뺀다
+     * @param excludedPages 적재에서 뺄 쪽 (표지·목차·빈칸 서식 등, ADM-04). 추출 방식 판단(비율)은 전체 쪽으로 하고, 결과에서만 뺀다
      */
     public ExtractedContent extract(byte[] pdf, Set<Integer> excludedPages) throws IOException {
         try (PDDocument document = Loader.loadPDF(pdf)) {
@@ -57,13 +57,14 @@ public class PdfContentExtractor {
                     // 구조 트리에 Artifact 로 표시되지 않은 머리말·꼬리말 ("28 비자 내비게이터")
                     List<ContentBlock> blocks = withoutRepeatedLines(tagged.blocks(), PageNoiseFilter.repeatedLines(raw));
                     return new ExtractedContent(withoutPages(blocks, excludedPages), pageCount, Source.TAGGED,
-                            coverage);
+                            coverage, excludedPages);
                 }
                 log.info("Tagged PDF structure covers only {}% of the text, using plain extraction",
                         Math.round(coverage * 100));
-                return new ExtractedContent(withoutPages(plain, excludedPages), pageCount, Source.PLAIN, coverage);
+                return new ExtractedContent(withoutPages(plain, excludedPages), pageCount, Source.PLAIN, coverage,
+                        excludedPages);
             }
-            return new ExtractedContent(withoutPages(plain, excludedPages), pageCount, Source.PLAIN, 1);
+            return new ExtractedContent(withoutPages(plain, excludedPages), pageCount, Source.PLAIN, 1, excludedPages);
         }
     }
 

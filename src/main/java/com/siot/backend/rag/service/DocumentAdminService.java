@@ -34,6 +34,8 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -51,6 +53,7 @@ public class DocumentAdminService {
     private static final int PDF_HEADER_WINDOW = 1024;
     private static final byte[] PDF_HEADER = "%PDF-".getBytes(StandardCharsets.US_ASCII);
     static final String REPROCESS_SUMMARY = "조각 규칙 변경으로 재처리";
+    static final String EXCLUDED_PAGES_SUMMARY = "적재에서 뺄 쪽 변경: ";
     private static final List<ProcessingStatus> IN_PROGRESS = List.of(ProcessingStatus.PENDING, ProcessingStatus.PROCESSING);
 
     private final DocumentRepository documentRepository;
@@ -73,10 +76,11 @@ public class DocumentAdminService {
     @Transactional
     public DocumentResponse create(Long adminId, DocumentCreateRequest request) {
         byte[] content = readPdf(request.file());
+        String excludedPages = ExcludedPages.normalize(request.excludedPages(), content);
         Document document = documentRepository.save(
                 Document.create(request.name().strip(), request.sourceUrl().strip(), request.publishedOn()));
         DocumentVersion version = storeVersion(document, 1, request.file(), content, checksum(content),
-                adminId, ChangeType.NEW, null);
+                adminId, ChangeType.NEW, null, excludedPages);
         return DocumentResponse.from(document, null, version);
     }
 
@@ -100,25 +104,28 @@ public class DocumentAdminService {
             throw new BusinessException(ErrorCode.DOCUMENT_VERSION_IN_PROGRESS);
         }
         String checksum = checksum(content);
-        boolean unchanged = versionRepository.findByDocumentIdAndCurrentTrue(documentId)
-                .map(current -> checksum.equals(current.getChecksum()))
-                .orElse(false);
-        if (unchanged) {
+        Optional<DocumentVersion> current = versionRepository.findByDocumentIdAndCurrentTrue(documentId);
+        if (current.map(version -> checksum.equals(version.getChecksum())).orElse(false)) {
             throw new BusinessException(ErrorCode.DOCUMENT_FILE_UNCHANGED);
         }
+        // 쪽 번호는 파일마다 다르므로 물려받지 않는다. 대신 뺀 쪽이 있던 문서는 값을 꼭 확인해 보내게 한다
+        if (request.excludedPages() == null && current.map(DocumentVersion::getExcludedPages).isPresent()) {
+            throw new BusinessException(ErrorCode.DOCUMENT_EXCLUDED_PAGES_REQUIRED);
+        }
+        String excludedPages = ExcludedPages.normalize(request.excludedPages(), content);
         int versionNo = versionRepository.findMaxVersionNo(documentId) + 1;
         DocumentVersion version = storeVersion(document, versionNo, request.file(), content, checksum,
-                adminId, ChangeType.REPLACE, strip(request.changeSummary()));
+                adminId, ChangeType.REPLACE, strip(request.changeSummary()), excludedPages);
         return DocumentVersionResponse.from(version, 0);
     }
 
     /**
-     * ADM-04: 현재 버전의 저장된 파일로 새 버전을 만들어 다시 반영한다 (조각 규칙이 바뀌었을 때).
+     * ADM-04: 현재 버전의 저장된 파일로 새 버전을 만들어 다시 반영한다 (조각 규칙이나 뺄 쪽이 바뀌었을 때).
      * 파일은 다시 저장하지 않고 같은 저장 키를 쓴다. 그래서 {@link #storeVersion} 의 롤백 시 파일 삭제를 타면 안 된다
      * (현재 버전의 원본이 지워진다). 성공하면 새 버전이 현재 버전이 되고, 실패하면 이전 버전을 계속 쓴다.
      */
     @Transactional
-    public DocumentVersionResponse reprocess(Long adminId, Long documentId) {
+    public DocumentVersionResponse reprocess(Long adminId, Long documentId, String requestedExcludedPages) {
         Document document = documentRepository.findByIdForUpdate(documentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
         if (versionRepository.existsByDocumentIdAndProcessingStatusIn(documentId, IN_PROGRESS)) {
@@ -126,10 +133,15 @@ public class DocumentAdminService {
         }
         DocumentVersion current = versionRepository.findByDocumentIdAndCurrentTrue(documentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_CURRENT_VERSION_MISSING));
+        // 같은 파일이므로 보내지 않으면 현재 값을 그대로 쓴다
+        String excludedPages = requestedExcludedPages == null ? current.getExcludedPages()
+                : ExcludedPages.normalize(requestedExcludedPages, fileStorage.load(current.getFileStorageKey()));
+        String summary = Objects.equals(excludedPages, current.getExcludedPages()) ? REPROCESS_SUMMARY
+                : EXCLUDED_PAGES_SUMMARY + (excludedPages == null ? "없음" : excludedPages);
         int versionNo = versionRepository.findMaxVersionNo(documentId) + 1;
         DocumentVersion version = versionRepository.save(DocumentVersion.create(document, versionNo,
                 current.getOriginalFilename(), current.getFileStorageKey(), current.getChecksum(), adminId,
-                ChangeType.REPROCESS, REPROCESS_SUMMARY));
+                ChangeType.REPROCESS, summary, excludedPages));
         eventPublisher.publishEvent(new DocumentProcessingQueue.VersionQueued(version.getId()));
         return DocumentVersionResponse.from(version, 0);
     }
@@ -172,7 +184,8 @@ public class DocumentAdminService {
     }
 
     private DocumentVersion storeVersion(Document document, int versionNo, MultipartFile file, byte[] content,
-                                         String checksum, Long adminId, ChangeType changeType, String changeSummary) {
+                                         String checksum, Long adminId, ChangeType changeType, String changeSummary,
+                                         String excludedPages) {
         String key = "documents/" + document.getId() + "/v" + versionNo + "-" + UUID.randomUUID() + ".pdf";
         fileStorage.save(key, content);
         // DB 기록이 실패하면 저장한 파일을 지운다 (성공하면 계속 보관)
@@ -189,7 +202,7 @@ public class DocumentAdminService {
             }
         });
         DocumentVersion version = versionRepository.save(DocumentVersion.create(document, versionNo,
-                originalFilename(file), key, checksum, adminId, changeType, changeSummary));
+                originalFilename(file), key, checksum, adminId, changeType, changeSummary, excludedPages));
         eventPublisher.publishEvent(new DocumentProcessingQueue.VersionQueued(version.getId()));
         return version;
     }

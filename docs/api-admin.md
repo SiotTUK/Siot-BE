@@ -11,12 +11,12 @@
 | GET | `/api/admin/guides/{code}/translations/{language}` | CHK-06 | 항목 상세 문구 조회 (한 언어) |
 | PUT | `/api/admin/guides/{code}/translations/{language}` | CHK-06, NTF-07 | 항목 상세 문구 저장. `noticeChanged` 로 실제 안내 내용 변경 여부 표시 |
 | GET | `/api/admin/documents?page=&size=` | ADM-03 | 문서 목록 (최근 등록 순, 현재 버전·최근 업로드 버전 상태) |
-| POST | `/api/admin/documents` | ADM-02 | 새 문서 등록 (multipart: `file`, `name`, `sourceUrl`, `publishedOn`) |
+| POST | `/api/admin/documents` | ADM-02 | 새 문서 등록 (multipart: `file`, `name`, `sourceUrl`, `publishedOn`, `excludedPages`) |
 | PATCH | `/api/admin/documents/{documentId}` | ADM-03 | 문서 정보 수정 `{ "name", "sourceUrl", "publishedOn", "active" }` (보낸 값만) |
-| POST | `/api/admin/documents/{documentId}/versions` | ADM-02 | 새 버전 업로드 (multipart: `file`, `changeSummary`) |
+| POST | `/api/admin/documents/{documentId}/versions` | ADM-02 | 새 버전 업로드 (multipart: `file`, `changeSummary`, `excludedPages`) |
 | GET | `/api/admin/documents/{documentId}/versions` | ADM-04, NTF-06 | 버전 목록과 반영 상태 |
 | POST | `/api/admin/document-versions/{versionId}/retry` | ADM-04 | 실패한 버전 다시 반영 |
-| POST | `/api/admin/documents/{documentId}/reprocess` | ADM-04 | 현재 버전 파일로 재처리 (바뀐 조각 규칙 적용) |
+| POST | `/api/admin/documents/{documentId}/reprocess` | ADM-04 | 현재 버전 파일로 재처리 (바뀐 조각 규칙·뺄 쪽 적용) `{ "excludedPages" }` (선택) |
 
 ## 관리자 지정 (ADM-01)
 
@@ -91,11 +91,12 @@ PENDING(대기) → PROCESSING(처리 중) → COMPLETED(완료) / FAILED(실패
 | `name` | O | 문서명 (255자 이하). 챗봇 출처에 그대로 보입니다 |
 | `sourceUrl` | O | 공개 원문 링크 (`http(s)://`) |
 | `publishedOn` | | 발행일 `2026-03-01` |
+| `excludedPages` | | [적재에서 뺄 쪽](#적재에서-뺄-쪽-excludedpages) `51-52, 100` |
 
 ```json
 { "data": { "documentId": 3, "name": "시흥시 외국인주민 생활안내", "sourceUrl": "https://...", "publishedOn": "2026-03-01",
   "active": true, "currentVersion": null,
-  "latestVersion": { "versionId": 12, "versionNo": 1, "status": "PENDING", "processedAt": null },
+  "latestVersion": { "versionId": 12, "versionNo": 1, "status": "PENDING", "processedAt": null, "excludedPages": null },
   "createdAt": "2026-11-20T10:00:00+09:00", "updatedAt": "2026-11-20T10:00:00+09:00" } }
 ```
 
@@ -104,7 +105,7 @@ PENDING(대기) → PROCESSING(처리 중) → COMPLETED(완료) / FAILED(실패
 ```json
 { "data": [ {
   "versionId": 13, "documentId": 3, "versionNo": 2, "originalFilename": "guide-2026.pdf",
-  "changeType": "REPLACE", "changeSummary": "2026년 기준 반영",
+  "changeType": "REPLACE", "changeSummary": "2026년 기준 반영", "excludedPages": "51-52,100",
   "status": "FAILED", "current": false,
   "failedStage": "EMBEDDING", "failureReason": "Gemini 임베딩 실패: ...",
   "chunkCount": 0, "uploadedBy": 1,
@@ -114,12 +115,31 @@ PENDING(대기) → PROCESSING(처리 중) → COMPLETED(완료) / FAILED(실패
 - `changeType`: `NEW`(새 문서 등록) / `REPLACE`(기존 문서 교체) / `REPROCESS`(같은 파일 재처리).
 - 텍스트가 없는 PDF(스캔 이미지)는 `EXTRACT` 단계에서 실패합니다. 글자를 선택할 수 있는 PDF 로 다시 올립니다.
 
+### 적재에서 뺄 쪽 `excludedPages`
+
+빈칸 서식·신청서처럼 답변 근거로 쓸 수 없는 쪽(옛 기준 문구가 남은 서식 포함)을 관리자가 지정합니다. **자동 감지는 하지 않습니다** (본문 쪽을 잘못 뺄 수 있어서).
+
+- 형식: `51-52, 100` — **PDF 뷰어 기준 1부터**(책에 인쇄된 쪽 번호가 아닙니다). 쉼표로 나열하고 범위는 `-`. 1,000자 이하. 저장·응답은 `51-52,100` 처럼 정리한 값입니다.
+- 그 쪽은 텍스트 추출에서 건너뜁니다. 남은 조각의 `page_start`/`page_end` 는 원본 PDF 번호 그대로입니다. 한 조각이 뺀 쪽의 앞뒤를 함께 담지 않습니다 (출처 쪽 범위에 뺀 쪽이 들지 않게). 원본 파일은 그대로 보관합니다.
+- 머리말·꼬리말 판단과 태그 PDF 판단은 전체 쪽으로 합니다. **장 제목이 있는 쪽을 빼면** 뒤 쪽 조각 제목에서 그 장 이름이 빠지고, 제목 단계가 줄어 짧은 절이 덜 묶일 수 있습니다.
+- 값은 **버전마다** 저장합니다 (`document_version.excluded_pages`). 파일이 바뀌면 쪽 번호가 달라지기 때문입니다.
+
+| 상황 | `excludedPages` |
+|---|---|
+| 새 문서 등록 | 선택. 생략·빈 값 = 빼지 않음 |
+| 새 버전 업로드 | 현재 버전에 뺀 쪽이 있으면 **필수** (400 `DOCUMENT_EXCLUDED_PAGES_REQUIRED`). **새 파일에서 번호를 다시 확인해** 보냅니다. 빼지 않으려면 빈 값. 현재 버전에 뺀 쪽이 없으면 선택 |
+| 재처리 | JSON 본문 선택. 본문이나 값을 생략하면 현재 버전 값 유지, `""` 면 빼지 않음. 값이 바뀌면 `changeSummary` 가 `적재에서 뺄 쪽 변경: 51-52` (해제는 `…: 없음`) |
+| 실패한 버전 다시 반영 | 그 버전에 저장한 값 그대로 |
+
+- 뺄 쪽만 바꾸려면 재처리를 씁니다. 같은 파일을 새 버전으로 올리면 `DOCUMENT_FILE_UNCHANGED` 입니다.
+- `PATCH`(문서 정보 수정)로는 바꾸지 않습니다. 다시 적재해야 검색에 반영되기 때문입니다.
+
 ### 재처리 `POST /api/admin/documents/{documentId}/reprocess` → 202
 
-조각 나누기 규칙이 바뀌었을 때 기존 문서에 새 규칙을 적용합니다. 같은 파일을 새 버전으로 올리면 `DOCUMENT_FILE_UNCHANGED` 로 막히므로 이 API 를 씁니다.
+조각 나누기 규칙이나 [뺄 쪽](#적재에서-뺄-쪽-excludedpages)이 바뀌었을 때 기존 문서를 다시 적재합니다. 같은 파일을 새 버전으로 올리면 `DOCUMENT_FILE_UNCHANGED` 로 막히므로 이 API 를 씁니다.
 
 - 현재 버전(`current: true`)의 저장된 파일로 새 버전을 만듭니다. 파일은 다시 저장하지 않고 같은 저장 키·checksum 을 씁니다.
-- `versionNo` 는 +1, `changeType: "REPROCESS"`, `changeSummary: "조각 규칙 변경으로 재처리"`, `uploadedBy` 는 요청한 관리자입니다.
+- `versionNo` 는 +1, `changeType: "REPROCESS"`, `changeSummary: "조각 규칙 변경으로 재처리"`(뺄 쪽을 바꾸면 위 표의 값), `uploadedBy` 는 요청한 관리자입니다.
 - 처리 흐름은 새 버전 업로드와 같습니다. 성공하면 새 버전이 현재 버전이 되고, 실패하면 이전 버전을 계속 씁니다. 실패한 재처리 버전은 `retry` 로 다시 반영할 수 있습니다.
 - 문서 내용이 바뀐 것이 아니므로 **사용자 알림 대상이 아닙니다.** 사용자에게 문서 변경 알림을 보내게 되면 `REPROCESS` 는 빼야 합니다.
 - 사용 중지(`active: false`) 문서도 재처리할 수 있으며, 검색에서는 계속 빠집니다.
@@ -134,6 +154,8 @@ PENDING(대기) → PROCESSING(처리 중) → COMPLETED(완료) / FAILED(실패
 | 30MB 초과 | 413 `DOCUMENT_FILE_TOO_LARGE` |
 | 같은 문서의 다른 버전이 대기·처리 중 (업로드·재처리) | 409 `DOCUMENT_VERSION_IN_PROGRESS` |
 | 현재 버전과 같은 파일 | 409 `DOCUMENT_FILE_UNCHANGED` |
+| `excludedPages` 형식 오류, PDF 쪽 수 초과, 모든 쪽을 뺌, 1,000자 초과 (등록·업로드·재처리) | 400 `DOCUMENT_EXCLUDED_PAGES_INVALID` |
+| 새 버전: 현재 버전에 뺀 쪽이 있는데 `excludedPages` 를 안 보냄 | 400 `DOCUMENT_EXCLUDED_PAGES_REQUIRED` |
 | 재처리: 현재 버전이 없음 (첫 버전이 아직 성공하지 못함) | 409 `DOCUMENT_CURRENT_VERSION_MISSING` |
 | 재실행: 실패가 아닌 버전, 또는 현재 버전보다 오래된 버전 | 409 `DOCUMENT_VERSION_NOT_RETRYABLE` |
 | 없는 문서 / 버전 | 404 `DOCUMENT_NOT_FOUND` / `DOCUMENT_VERSION_NOT_FOUND` |

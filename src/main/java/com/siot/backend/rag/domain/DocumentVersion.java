@@ -44,6 +44,10 @@ public class DocumentVersion {
     @Column(name = "change_summary", columnDefinition = "text")
     private String changeSummary;
 
+    /** ADM-04: 적재에서 뺄 쪽 "51-52,100" (이 버전 파일 기준). 없으면 null */
+    @Column(name = "excluded_pages", columnDefinition = "text")
+    private String excludedPages;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "processing_status", nullable = false, length = 30)
     private ProcessingStatus processingStatus = ProcessingStatus.PENDING;
@@ -64,7 +68,7 @@ public class DocumentVersion {
     /** ADM-02: 업로드한 새 버전 (PENDING, 현재 버전 아님) */
     public static DocumentVersion create(Document document, int versionNo, String originalFilename,
                                          String fileStorageKey, String checksum, Long uploadedBy,
-                                         ChangeType changeType, String changeSummary) {
+                                         ChangeType changeType, String changeSummary, String excludedPages) {
         DocumentVersion version = new DocumentVersion();
         version.document = document;
         version.versionNo = versionNo;
@@ -74,6 +78,7 @@ public class DocumentVersion {
         version.uploadedBy = uploadedBy;
         version.changeType = changeType;
         version.changeSummary = changeSummary;
+        version.excludedPages = excludedPages;
         return version;
     }
 

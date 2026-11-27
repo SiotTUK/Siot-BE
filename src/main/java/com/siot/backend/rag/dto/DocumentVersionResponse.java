@@ -17,6 +17,7 @@ public record DocumentVersionResponse(
         @Schema(description = "올린 파일 이름", nullable = true, example = "guide-2026.pdf") String originalFilename,
         @Schema(description = "NEW: 새 문서 등록, REPLACE: 기존 문서 교체, REPROCESS: 같은 파일을 지금 조각 규칙으로 재처리", nullable = true, example = "REPLACE") ChangeType changeType,
         @Schema(description = "바뀐 내용 요약", nullable = true) String changeSummary,
+        @Schema(description = "이 버전에서 적재에서 뺀 쪽. 없으면 null", nullable = true, example = "51-52,100") String excludedPages,
         @Schema(description = "PENDING(대기) / PROCESSING(처리 중) / COMPLETED(완료) / FAILED(실패)", example = "COMPLETED")
         ProcessingStatus status,
         @Schema(description = "챗봇 검색에 쓰는 현재 버전이면 true", example = "true") boolean current,
@@ -37,6 +38,7 @@ public record DocumentVersionResponse(
                 version.getOriginalFilename(),
                 version.getChangeType(),
                 version.getChangeSummary(),
+                version.getExcludedPages(),
                 version.getProcessingStatus(),
                 version.isCurrent(),
                 failed ? ProcessingStage.fromError(version.getProcessingError()) : null,
