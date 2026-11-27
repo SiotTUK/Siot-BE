@@ -1,5 +1,6 @@
 package com.siot.backend.schedule.domain;
 
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
@@ -25,6 +26,32 @@ public final class TaxKind {
     /** @return 세금 종류, 세금 항목이 아니면 null */
     public static String forGuideCode(String guideCode) {
         return guideCode == null ? null : BY_GUIDE_CODE.get(guideCode);
+    }
+
+    /** 고지서 세목(원문, 예: "자동차세", "재산세(도시지역분)") → 세금 종류. 먼저 나오는 키워드 순서 */
+    private static final Map<String, String> BY_TAX_TYPE_KEYWORD = new LinkedHashMap<>();
+
+    static {
+        BY_TAX_TYPE_KEYWORD.put("자동차세", CAR);
+        BY_TAX_TYPE_KEYWORD.put("재산세", PROPERTY);
+        BY_TAX_TYPE_KEYWORD.put("주민세", RESIDENT);
+    }
+
+    /**
+     * 고지서 세목(원문)으로 세금 종류를 정한다 (RUL-07 → CAL-03).
+     *
+     * @return 세금 종류, 모르는 세목이면 null
+     */
+    public static String forTaxType(String taxType) {
+        if (taxType == null) {
+            return null;
+        }
+        String compact = taxType.replaceAll("\\s", "");
+        return BY_TAX_TYPE_KEYWORD.entrySet().stream()
+                .filter(entry -> compact.contains(entry.getKey()))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
     }
 
     /** 세금 일정인지 (세금 상세 목록과 같은 기준: kind 에 TAX 가 들어 있음) */

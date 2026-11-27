@@ -297,7 +297,7 @@ class BillTranslationHistoryIntegrationTest {
         return new BillTranslationResponse("en", true, null, "TAX_NOTICE", "시흥시", "자동차세", "12가****", 1000L,
                 dueDate, null, null, null, List.of(), null, List.of(),
                 new BillTranslationResponse.Summary("what", "due", "amount", "how"), "AI", List.of(), List.of(),
-                false, 1, null, false, null);
+                null, null, false, 1, null, false, null);
     }
 
     private long idOf(MvcResult result) throws Exception {

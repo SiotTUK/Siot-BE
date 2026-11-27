@@ -114,7 +114,7 @@ public class BillTranslationService {
             return new BillTranslationResponse(language, false,
                     new BillTranslationResponse.Retake(reason, BillMessages.retake(reason, language)),
                     null, null, null, null, null, null, null, null, null, List.of(), null, List.of(),
-                    null, null, List.of(), List.of(), firstPageOnly, pageCount, null, false, null);
+                    null, null, List.of(), List.of(), null, null, firstPageOnly, pageCount, null, false, null);
         }
         boolean aiSummary = BillSummaryCheck.consistent(reading);
         BillReading.Summary summary = aiSummary ? reading.summary() : BillMessages.summary(reading, language);
@@ -143,6 +143,9 @@ public class BillTranslationService {
                 aiSummary ? "AI" : "SERVER",
                 warnings,
                 guides(BillGuideLinks.codes(reading.taxType()), language),
+                // 세금 상세 연결은 저장·조회할 때 채운다 (BillTranslationHistoryService)
+                null,
+                null,
                 firstPageOnly,
                 pageCount,
                 null,

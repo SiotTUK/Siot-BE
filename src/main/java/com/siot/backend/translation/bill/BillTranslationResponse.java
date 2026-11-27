@@ -30,6 +30,12 @@ public record BillTranslationResponse(
                 nullable = true, example = "AI") String summarySource,
         @Schema(description = "주의 사항 (사용자 언어)") List<Warning> warnings,
         @Schema(description = "관련 안내 항목. 어느 화면으로 연결할지는 프론트가 정한다") List<RelatedGuide> relatedGuides,
+        @Schema(description = "세금 종류 (TAX_CAR / TAX_PROPERTY / TAX_RESIDENT). 세목(원문)으로 정한다. 세금이 아니거나 "
+                + "모르면 null. 세금 일정 ID가 없을 때 GET /api/schedules/taxes?kind= 로 회차를 찾는다",
+                nullable = true, example = "TAX_CAR") String taxKind,
+        @Schema(description = "납기 내 기한이 든 같은 종류의 공통 세금 일정 ID (GET /api/schedules/taxes/{id}). "
+                + "기한이 없거나 그런 일정이 없으면 null. 조회할 때마다 다시 찾는다", nullable = true, example = "12")
+        Long taxScheduleId,
         @Schema(description = "PDF 가 여러 쪽이라 첫 쪽만 읽었는지") boolean firstPageOnly,
         @Schema(description = "PDF 쪽 수 (사진은 1)", example = "1") int pageCount,
         @Schema(description = "최근 번역 ID. readable=false 면 저장하지 않아 null", nullable = true, example = "12") Long id,
@@ -41,7 +47,16 @@ public record BillTranslationResponse(
     public BillTranslationResponse withSaved(Long id, boolean reminder, OffsetDateTime savedAt) {
         return new BillTranslationResponse(language, readable, retake, documentType, issuer, taxType, taxObject, amount,
                 dueDate, lateAmount, lateDueDate, penalty, paymentMethods, contact, originalLines, summary,
-                summarySource, warnings, relatedGuides, firstPageOnly, pageCount, id, reminder, savedAt);
+                summarySource, warnings, relatedGuides, taxKind, taxScheduleId, firstPageOnly, pageCount, id, reminder,
+                savedAt);
+    }
+
+    /** 세금 상세 연결(taxKind·taxScheduleId)을 채운 사본 */
+    public BillTranslationResponse withTax(String taxKind, Long taxScheduleId) {
+        return new BillTranslationResponse(language, readable, retake, documentType, issuer, taxType, taxObject, amount,
+                dueDate, lateAmount, lateDueDate, penalty, paymentMethods, contact, originalLines, summary,
+                summarySource, warnings, relatedGuides, taxKind, taxScheduleId, firstPageOnly, pageCount, id, reminder,
+                savedAt);
     }
 
     @Schema(description = "다시 찍기 안내")
