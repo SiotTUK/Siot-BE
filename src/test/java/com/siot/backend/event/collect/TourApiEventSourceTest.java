@@ -97,7 +97,7 @@ class TourApiEventSourceTest {
     void imageFallsBackToSecondImageAndIgnoresNonHttp() throws Exception {
         tools.jackson.databind.json.JsonMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
         assertThat(TourApiEventSource.image(mapper.readTree("{\"firstimage\":\"\",\"firstimage2\":\"http://a.test/2.jpg\"}")))
-                .isEqualTo("http://a.test/2.jpg");
+                .isEqualTo("https://a.test/2.jpg");
         assertThat(TourApiEventSource.image(mapper.readTree("{\"firstimage\":\" https://a.test/1.jpg \"}")))
                 .isEqualTo("https://a.test/1.jpg");
         assertThat(TourApiEventSource.image(mapper.readTree("{\"firstimage\":\"javascript:alert(1)\"}"))).isNull();

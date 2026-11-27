@@ -22,6 +22,23 @@ class EventRulesTest {
     }
 
     @Test
+    void upgradesCollectedImageUrlToHttpsButKeepsEnteredUrl() {
+        assertThat(EventTexts.imageUrl(" http://a.test/1.jpg?u=http://b.test ")).isEqualTo(
+                "https://a.test/1.jpg?u=http://b.test");
+        assertThat(EventTexts.imageUrl("HTTP://a.test/1.jpg")).isEqualTo("https://a.test/1.jpg");
+        assertThat(EventTexts.imageUrl("https://a.test/1.jpg")).isEqualTo("https://a.test/1.jpg");
+        assertThat(EventTexts.imageUrl("ftp://a.test/1.jpg")).isNull();
+        assertThat(EventTexts.imageUrl(null)).isNull();
+        assertThat(EventTexts.enteredImageUrl(" http://a.test/1.jpg ")).isEqualTo("http://a.test/1.jpg");
+        assertThat(EventTexts.enteredImageUrl("javascript:alert(1)")).isNull();
+        // https 로 바꾸면 한 글자 늘어난다: DB 에 넣을 수 있는 2000자를 넘으면 버린다
+        String max = "http://a.test/" + "x".repeat(2000 - "http://a.test/".length());
+        assertThat(EventTexts.enteredImageUrl(max)).isEqualTo(max);
+        assertThat(EventTexts.imageUrl(max)).isNull();
+        assertThat(EventTexts.imageUrl(max.substring(0, 1999))).hasSize(2000).startsWith("https://");
+    }
+
+    @Test
     void extractsStartAndEndTimesFromFreeText() {
         assertThat(EventTexts.times("19:30 (80분)")).containsExactly(LocalTime.of(19, 30), null);
         assertThat(EventTexts.times("17:00 (러닝타임 120분)")).containsExactly(LocalTime.of(17, 0), null);

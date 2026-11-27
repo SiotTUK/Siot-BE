@@ -89,10 +89,22 @@ public final class EventTexts {
     }
 
     /**
-     * 사진 URL (BE #19): 앞뒤 공백을 빼고 http(s):// 로 시작하는 값만. 2000자를 넘거나 다른 값이면 null
-     * (DB 제약 ck_event_thumbnail_url 과 같은 규칙. 어긋난 값 때문에 행사 저장이 실패하지 않게 한다)
+     * 수집한 사진 URL (BE #19): {@link #enteredImageUrl} 규칙에 더해 http:// 는 https:// 로 바꾼다
+     * (https 화면에서 http 사진은 막히거나 경고가 난다). 바꾼 주소가 2000자를 넘으면 null
      */
     public static String imageUrl(String text) {
+        String url = enteredImageUrl(text);
+        if (url == null || !url.regionMatches(true, 0, "http://", 0, 7)) {
+            return url;
+        }
+        return enteredImageUrl("https://" + url.substring(7));
+    }
+
+    /**
+     * 관리자가 입력한 사진 URL: 앞뒤 공백을 빼고 http(s):// 로 시작하는 값만, 주소는 바꾸지 않는다.
+     * 2000자를 넘거나 다른 값이면 null (DB 제약 ck_event_thumbnail_url 과 같은 규칙. 어긋난 값 때문에 행사 저장이 실패하지 않게 한다)
+     */
+    public static String enteredImageUrl(String text) {
         String url = text == null ? null : text.strip();
         if (url == null || url.isEmpty() || url.length() > 2000) {
             return null;

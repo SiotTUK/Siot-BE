@@ -147,7 +147,7 @@ public class AdminEventService {
             event.editPriceInfo(EventTexts.clean(request.priceInfo()), false);
             event.editApplicationUrl(EventTexts.clean(request.applicationUrl()), false);
             event.editSourceUrl(EventTexts.clean(request.sourceUrl()), false);
-            event.editThumbnailUrl(EventTexts.imageUrl(request.thumbnailUrl()), false);
+            event.editThumbnailUrl(EventTexts.enteredImageUrl(request.thumbnailUrl()), false);
             event.editRegionCode(request.region(), false);
             // 관리자가 정한 다문화 여부는 잠근다 (다른 출처의 같은 행사가 빈 칸을 채울 때 키워드로 다시 계산하지 않게)
             if (request.multicultural() != null) {
@@ -267,7 +267,7 @@ public class AdminEventService {
             }
             // 사진도 번역할 글이 아니라 revision 을 올리지 않는다. "" 이면 비우고 잠근다 (수집이 다시 넣지 않게, BE #19)
             if (request.thumbnailUrl() != null) {
-                event.editThumbnailUrl(EventTexts.imageUrl(request.thumbnailUrl()), true);
+                event.editThumbnailUrl(EventTexts.enteredImageUrl(request.thumbnailUrl()), true);
             }
 
             event.editedBy(adminId);
