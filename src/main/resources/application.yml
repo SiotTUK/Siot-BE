@@ -116,6 +116,8 @@ siot:
   event:
     # 공공데이터포털 키: TourAPI·전국문화축제표준데이터. 비어 있으면 두 출처는 FAILED 로 기록 (지지씨는 키 없이 동작)
     api-key: ${EVENT_API_KEY:}
+    # 사용자에게 보여 주는 지역 (SIHEUNG, GYEONGGI. 쉼표로 여러 개). 수집·관리자 API 는 모든 지역 (EventVisibilityProperties)
+    public-regions: ${EVENT_PUBLIC_REGIONS:SIHEUNG}
     http-timeout: 30s
     # 번역(Gemini) 호출 사이 간격. 실패하면 남은 행사는 다음 주기에 다시 번역한다
     translation-pause: 1s

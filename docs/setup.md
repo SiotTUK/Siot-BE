@@ -23,6 +23,7 @@ cp .env.example .env
 | `BACKEND_PORT` | 호스트에 노출할 포트 | 8080 |
 | `SCHEDULING_ENABLED` | 예약 작업 사용 여부 | true |
 | `EVENT_COLLECT_CRON` | 행사 수집 주기 (EVE-01, Asia/Seoul) | `0 0 3 * * *` |
+| `EVENT_PUBLIC_REGIONS` | 사용자에게 보여 주는 행사 지역 (`SIHEUNG`, `GYEONGGI`, 쉼표로 여러 개). `SIHEUNG,GYEONGGI`면 지금과 같은 동작(경기도 행사도 보임). 수집·관리자 API 는 모든 지역 ([api-events.md](api-events.md)) | `SIHEUNG` |
 | `NOTIFICATION_DISPATCH_INTERVAL` | 예약 알림 발송 확인 주기 (NTF-05) | 1m |
 | `DOCUMENT_STORAGE_DIR` | 업로드한 문서(PDF) 저장 폴더 (ADM-02). compose 는 `document-data` 볼륨 | `./data/documents` |
 | `MAIL_HOST` / `MAIL_PORT` | SMTP 서버 | 로컬 localhost:1025, compose mailpit:1025 |

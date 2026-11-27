@@ -1,5 +1,6 @@
 package com.siot.backend.rag.service;
 
+import com.siot.backend.event.collect.EventVisibilityProperties;
 import com.siot.backend.rag.dto.RelatedPage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -19,7 +20,8 @@ import java.util.Set;
  * <p>
  * 행사 데이터(event, event_translation)는 역할 B 가 수집·관리한다. 여기서는 읽기만 하며, 다음 약속에 기댄다.
  * <ul>
- *   <li>보여 줄 행사 = {@code status = 'ACTIVE'} (관리자 삭제·취소는 다른 값)</li>
+ *   <li>보여 줄 행사 = {@code status = 'ACTIVE'} (관리자 삭제·취소는 다른 값) 이고 공개 지역
+ *       ({@code siot.event.public-regions}. 그 밖의 행사는 상세가 404)</li>
  *   <li>{@code event_id} 는 재수집해도 바뀌지 않는다 (출처 + 원본 ID 로 갱신) → 프론트엔드 경로 /events/{eventId}</li>
  *   <li>모든 행사에 ko 번역 행이 있다 (질문 언어 번역이 없으면 ko 제목)</li>
  * </ul>
@@ -43,6 +45,7 @@ public class EventRelatedPageFinder {
             JOIN event_translation ko ON ko.event_id = e.event_id AND ko.language = 'ko'
             LEFT JOIN event_translation t ON t.event_id = e.event_id AND t.language = :language
             WHERE e.status = 'ACTIVE'
+              AND e.region_code IN (:regions)
               AND COALESCE(e.ends_on, e.starts_on) >= :today
             ORDER BY e.starts_on NULLS LAST, e.event_id
             LIMIT :limit
@@ -50,6 +53,7 @@ public class EventRelatedPageFinder {
 
     private final NamedParameterJdbcTemplate jdbc;
     private final Clock clock;
+    private final EventVisibilityProperties visibility;
 
     private record Candidate(long id, boolean multicultural, LocalDate startsOn, String koTitle, String title, int score,
                              boolean categoryMatch) {
@@ -66,6 +70,7 @@ public class EventRelatedPageFinder {
                 .collect(java.util.stream.Collectors.toSet());
         List<Candidate> candidates = jdbc.query(SQL, new MapSqlParameterSource()
                         .addValue("language", language)
+                        .addValue("regions", visibility.publicRegions())
                         .addValue("today", LocalDate.now(clock))
                         .addValue("limit", CANDIDATES),
                 (rs, rowNum) -> {

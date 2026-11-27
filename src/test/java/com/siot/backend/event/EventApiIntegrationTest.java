@@ -68,8 +68,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * EVE-03·04·05·07~10, ADM-05 행사 API 통합 테스트. 오늘 = 2026-11-20 (한국 시간).
  * 수집 출처는 실제 빈을 감싸 응답을 고정하고, 번역(Gemini)과 일정 변경 알림은 모킹한다.
+ * <p>
+ * 공개 지역을 SIHEUNG,GYEONGGI 로 두고 본다 (지역 제한 전과 같은 동작). 기본값(SIHEUNG)은 {@link EventPublicRegionIntegrationTest}.
  */
 @SpringBootTest(properties = {
+        "siot.event.public-regions=SIHEUNG,GYEONGGI",
         "siot.scheduling.enabled=false",
         "siot.event.translation-pause=0s"
 })

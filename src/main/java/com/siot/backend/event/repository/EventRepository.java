@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,6 +49,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     // ---------------------------------------------------------------- 회원 조회 (EVE-03~05, EVE-10)
     // 종료일이 없으면 시작일, 시작일이 없으면 종료일로 본다 (둘 중 하나는 늘 있다)
+    // publicRegions = 사용자에게 보여 주는 지역 (siot.event.public-regions)
 
     /**
      * 진행 예정·진행 중 (종료일 >= today), 기간 [from, to] 와 겹치는 것.
@@ -58,6 +60,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             SELECT e FROM Event e
             WHERE e.status = 'ACTIVE'
               AND COALESCE(e.endsOn, e.startsOn) >= :today
+              AND e.regionCode IN :publicRegions
               AND (:anyRegion = true OR e.regionCode = :region)
               AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
@@ -70,12 +73,14 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             SELECT count(e) FROM Event e
             WHERE e.status = 'ACTIVE'
               AND COALESCE(e.endsOn, e.startsOn) >= :today
+              AND e.regionCode IN :publicRegions
               AND (:anyRegion = true OR e.regionCode = :region)
               AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
             """)
-    Page<Event> findUpcoming(@Param("today") LocalDate today, @Param("anyRegion") boolean anyRegion,
+    Page<Event> findUpcoming(@Param("publicRegions") Collection<String> publicRegions,
+                             @Param("today") LocalDate today, @Param("anyRegion") boolean anyRegion,
                              @Param("region") String region,
                              @Param("anyCategory") boolean anyCategory, @Param("category") EventCategory category, @Param("from") LocalDate from,
                              @Param("to") LocalDate to, @Param("sort") String sort, @Param("now") OffsetDateTime now,
@@ -86,6 +91,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             SELECT e FROM Event e
             WHERE e.status = 'ACTIVE'
               AND COALESCE(e.endsOn, e.startsOn) < :today
+              AND e.regionCode IN :publicRegions
               AND (:anyRegion = true OR e.regionCode = :region)
               AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
@@ -97,12 +103,14 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             SELECT count(e) FROM Event e
             WHERE e.status = 'ACTIVE'
               AND COALESCE(e.endsOn, e.startsOn) < :today
+              AND e.regionCode IN :publicRegions
               AND (:anyRegion = true OR e.regionCode = :region)
               AND (:anyCategory = true OR e.category = :category)
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
             """)
-    Page<Event> findPast(@Param("today") LocalDate today, @Param("anyRegion") boolean anyRegion,
+    Page<Event> findPast(@Param("publicRegions") Collection<String> publicRegions,
+                         @Param("today") LocalDate today, @Param("anyRegion") boolean anyRegion,
                          @Param("region") String region,
                          @Param("anyCategory") boolean anyCategory, @Param("category") EventCategory category, @Param("from") LocalDate from,
                          @Param("to") LocalDate to, @Param("sort") String sort, Pageable pageable);
@@ -114,17 +122,21 @@ public interface EventRepository extends JpaRepository<Event, Long> {
               AND COALESCE(e.endsOn, e.startsOn) >= :from
               AND COALESCE(e.startsOn, e.endsOn) <= :to
               AND (:anyCategory = true OR e.category = :category)
+              AND e.regionCode IN :publicRegions
             ORDER BY COALESCE(e.startsOn, e.endsOn) ASC, e.id ASC
             """)
-    List<Event> findOverlapping(@Param("from") LocalDate from, @Param("to") LocalDate to,
+    List<Event> findOverlapping(@Param("publicRegions") Collection<String> publicRegions,
+                                @Param("from") LocalDate from, @Param("to") LocalDate to,
                                 @Param("anyCategory") boolean anyCategory, @Param("category") EventCategory category);
 
     /** 진행 예정·진행 중인 보이는 행사 전부 (EVE-05 추천 후보) */
     @Query("""
             SELECT e FROM Event e
             WHERE e.status = 'ACTIVE' AND COALESCE(e.endsOn, e.startsOn) >= :today
+              AND e.regionCode IN :publicRegions
             """)
-    List<Event> findCurrent(@Param("today") LocalDate today);
+    List<Event> findCurrent(@Param("publicRegions") Collection<String> publicRegions,
+                            @Param("today") LocalDate today);
 
     /** 관리자 등록 중복 확인 후보 (EVE-07): 시작일이 같은 ACTIVE 행사 */
     @Query("""

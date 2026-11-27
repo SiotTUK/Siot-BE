@@ -2,6 +2,7 @@ package com.siot.backend.event.service;
 
 import com.siot.backend.event.collect.EventRegion;
 import com.siot.backend.event.collect.EventSourceType;
+import com.siot.backend.event.collect.EventVisibilityProperties;
 import com.siot.backend.event.domain.Event;
 import com.siot.backend.event.domain.EventCategory;
 import com.siot.backend.event.domain.EventCollectionRun;
@@ -44,7 +45,8 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 회원 행사 조회 (EVE-03·04·05·10). 보이는 행사 = status ACTIVE. 날짜는 한국 시간 오늘 기준.
+ * 회원 행사 조회 (EVE-03·04·05·10). 보이는 행사 = status ACTIVE + 공개 지역 ({@link EventVisibilityProperties}).
+ * 날짜는 한국 시간 오늘 기준.
  * 종료일이 없으면 시작일, 시작일이 없으면 종료일로 본다.
  */
 @Service
@@ -69,12 +71,13 @@ public class EventQueryService {
     private final EventCollectionRunRepository runRepository;
     private final AppUserRepository userRepository;
     private final EventLocalizer localizer;
+    private final EventVisibilityProperties visibility;
     private final Clock clock;
 
     /**
      * EVE-10 목록. 기본은 진행 예정·진행 중(시작일 가까운 순), past=true 면 지난 행사(최근에 끝난 순).
      *
-     * @param region SIHEUNG / GYEONGGI, null 이면 전체
+     * @param region SIHEUNG / GYEONGGI, null 이면 공개 지역 전체. 공개하지 않는 지역이면 빈 결과
      * @param from   이 날 이후에 끝나는 행사 (null 이면 제한 없음)
      * @param to     이 날 이전에 시작하는 행사 (null 이면 제한 없음)
      */
@@ -120,19 +123,19 @@ public class EventQueryService {
         boolean anyCategory = categoryFilter == null;
         EventCategory categoryValue = anyCategory ? EventCategory.EVENT : categoryFilter; // anyCategory 면 쓰지 않는 값
         Page<Event> events = past
-                ? eventRepository.findPast(today, region == null, region == null ? "" : region, anyCategory,
+                ? eventRepository.findPast(visibility.publicRegions(), today, region == null, region == null ? "" : region, anyCategory,
                 categoryValue, start, end, sortValue, pageable)
-                : eventRepository.findUpcoming(today, region == null, region == null ? "" : region, anyCategory,
+                : eventRepository.findUpcoming(visibility.publicRegions(), today, region == null, region == null ? "" : region, anyCategory,
                 categoryValue, start, end, sortValue, java.time.OffsetDateTime.now(clock), pageable);
         String language = language(userId);
         Map<Long, EventLocalizer.Text> texts = localizer.texts(ids(events.getContent()), language);
         return PageResponse.from(events, event -> summary(event, texts.get(event.getId()), language));
     }
 
-    /** EVE-04 상세. 지운 행사(DELETED)는 404 */
+    /** EVE-04 상세. 지운 행사(DELETED)와 공개하지 않는 지역의 행사는 404 */
     public EventDetailResponse detail(Long userId, Long eventId) {
         Event event = eventRepository.findById(eventId)
-                .filter(found -> !found.isDeleted())
+                .filter(visibility::isVisible)
                 .orElseThrow(() -> new BusinessException(ErrorCode.EVENT_NOT_FOUND));
         EventLocalizer.Text text = localizer.text(eventId, language(userId));
         if (text == null) {
@@ -155,7 +158,7 @@ public class EventQueryService {
         int limit = Math.min(Math.max(size, 1), 20);
         AppUser user = userRepository.findById(userId).orElse(null);
         Set<String> wanted = wantedTags(user);
-        List<Event> candidates = eventRepository.findCurrent(LocalDate.now(clock));
+        List<Event> candidates = eventRepository.findCurrent(visibility.publicRegions(), LocalDate.now(clock));
         Map<Long, Set<String>> tags = new HashMap<>();
         if (!wanted.isEmpty() && !candidates.isEmpty()) {
             for (EventTag tag : tagRepository.findByEventIdIn(ids(candidates))) {
@@ -200,8 +203,8 @@ public class EventQueryService {
         }
         EventCategory categoryFilter = category(category);
         YearMonth yearMonth = YearMonth.of(year, month);
-        List<Event> events = eventRepository.findOverlapping(yearMonth.atDay(1), yearMonth.atEndOfMonth(),
-                categoryFilter == null, categoryFilter == null ? EventCategory.EVENT : categoryFilter);
+        List<Event> events = eventRepository.findOverlapping(visibility.publicRegions(),
+                yearMonth.atDay(1), yearMonth.atEndOfMonth(), categoryFilter == null, categoryFilter == null ? EventCategory.EVENT : categoryFilter);
         String language = language(userId);
         Map<Long, EventLocalizer.Text> texts = localizer.texts(ids(events), language);
         return events.stream()
