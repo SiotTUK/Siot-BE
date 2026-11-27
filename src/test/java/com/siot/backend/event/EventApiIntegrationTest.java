@@ -26,6 +26,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,6 +35,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -458,6 +460,51 @@ class EventApiIntegrationTest {
         collectionService.collectAll();
         mockMvc.perform(get("/api/events/" + eventId).cookie(member))
                 .andExpect(jsonPath("$.data.thumbnailUrl").value("https://admin.test/poster.png"));
+
+        // 관리자가 입력한 http 주소는 바꾸지 않는다
+        mockMvc.perform(patch("/api/admin/events/" + eventId).with(csrf()).cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"thumbnailUrl\": \"http://admin.test/poster.png\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.thumbnailUrl").value("http://admin.test/poster.png"));
+        mockMvc.perform(post("/api/admin/events").with(csrf()).cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"title": "http 사진 행사", "startsOn": "2026-12-22", "region": "SIHEUNG",
+                                 "thumbnailUrl": "http://admin.test/new.png"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.thumbnailUrl").value("http://admin.test/new.png"));
+    }
+
+    @Test
+    void httpsMigrationUpgradesOnlyUnlockedCollectedPhotosOfKnownHosts() throws Exception {
+        long tourApiPhoto = photo("TOURAPI", "m1", "http://tong.visitkorea.or.kr/cms/1.jpg", false);
+        long ggcPhoto = photo("GGC", "m2", "HTTP://ggc.ggcf.kr/uploadimg/2.jpg", false);
+        long locked = photo("TOURAPI", "m3", "http://tong.visitkorea.or.kr/cms/3.jpg", true);
+        long manual = photo("MANUAL", "m4", "http://tong.visitkorea.or.kr/cms/4.jpg", false);
+        long otherHost = photo("GGC", "m5", "http://other.test/5.jpg", false);
+        long lookalikeHost = photo("GGC", "m6", "http://ggc.ggcf.kr.other.test/6.jpg", false);
+
+        jdbc.execute(new ClassPathResource("db/migration/V2026_11_28_0600__event_thumbnail_https.sql")
+                .getContentAsString(StandardCharsets.UTF_8));
+
+        assertThat(thumbnail(tourApiPhoto)).isEqualTo("https://tong.visitkorea.or.kr/cms/1.jpg");
+        assertThat(thumbnail(ggcPhoto)).isEqualTo("https://ggc.ggcf.kr/uploadimg/2.jpg");
+        assertThat(thumbnail(locked)).isEqualTo("http://tong.visitkorea.or.kr/cms/3.jpg");
+        assertThat(thumbnail(manual)).isEqualTo("http://tong.visitkorea.or.kr/cms/4.jpg");
+        assertThat(thumbnail(otherHost)).isEqualTo("http://other.test/5.jpg");
+        assertThat(thumbnail(lookalikeHost)).isEqualTo("http://ggc.ggcf.kr.other.test/6.jpg");
+    }
+
+    private long photo(String source, String externalId, String url, boolean locked) {
+        long eventId = event(source, externalId, "사진 " + externalId, "2026-12-18", "2026-12-18", EventRegion.SIHEUNG);
+        jdbc.update("UPDATE event SET thumbnail_url = ?, thumbnail_url_locked = ? WHERE event_id = ?", url, locked,
+                eventId);
+        return eventId;
+    }
+
+    private String thumbnail(long eventId) {
+        return jdbc.queryForObject("SELECT thumbnail_url FROM event WHERE event_id = ?", String.class, eventId);
     }
 
     private long eventIdTitled(String title) {
