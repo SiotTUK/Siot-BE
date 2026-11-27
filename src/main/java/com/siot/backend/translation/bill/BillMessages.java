@@ -38,7 +38,7 @@ final class BillMessages {
                     "zh", "如拖欠地方税，延长滞留期间可能会受到限制。",
                     "vi", "Nếu nợ thuế địa phương, việc gia hạn thời gian lưu trú của bạn có thể bị hạn chế."),
             OVERDUE, Map.of(
-                    "ko", "납부 기한(%s)이 지났습니다. 가산세가 붙었을 수 있으니 고지서의 문의처에 확인해 주세요.",
+                    "ko", "납부 기한(%s)이 지났습니다. 가산세나 연체금이 붙었을 수 있으니 고지서의 문의처에 확인해 주세요.",
                     "en", "The due date (%s) has passed. A penalty may have been added, so please check with the contact on the bill.",
                     "zh", "缴纳期限（%s）已过。可能已加收滞纳金，请向通知书上的咨询处确认。",
                     "vi", "Đã quá hạn nộp (%s). Có thể đã bị cộng tiền phạt, hãy hỏi nơi liên hệ ghi trên giấy báo."));
