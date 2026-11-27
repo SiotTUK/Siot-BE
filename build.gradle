@@ -84,3 +84,14 @@ tasks.named('test') {
 tasks.named('jar') {
     enabled = false
 }
+
+// Docker 빌드의 의존성 레이어용 (Dockerfile): bootJar 에 필요한 라이브러리 파일(JAR)까지 미리 받는다.
+// `dependencies` 작업은 목록(POM)만 받아서, 이 작업 없이는 bootJar 가 빌드마다 Maven Central 에서 JAR 를 다시 받았다.
+tasks.register('downloadDependencies') {
+    description = 'Downloads the libraries bootJar needs (compile, annotation processing, runtime).'
+    def classpaths = ['compileClasspath', 'annotationProcessor', 'runtimeClasspath', 'productionRuntimeClasspath']
+            .collect { configurations.named(it) }
+    doLast {
+        classpaths.each { it.get().resolve() }
+    }
+}
