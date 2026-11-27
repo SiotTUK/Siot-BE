@@ -144,14 +144,33 @@ configs:
           reverse_proxy backend:8080
         }
 
-        # 그 외는 프론트엔드 (SPA: 없는 경로는 index.html)
+        # 그 외는 프론트엔드
         handle {
           root * /srv
-          @assets path /assets/*
-          header @assets Cache-Control "public, max-age=31536000, immutable"
-          @pages not path /assets/*
-          header @pages Cache-Control "no-cache"
-          try_files {path} /index.html
-          file_server
+
+          # 해시가 붙은 빌드 파일: 있으면 1년 캐시
+          @asset {
+            path /assets/*
+            file
+          }
+          handle @asset {
+            header Cache-Control "public, max-age=31536000, immutable"
+            file_server
+          }
+
+          # 없는 빌드 파일은 index.html 로 대신하지 않고 캐시하지 않는 404.
+          # index.html 로 답하면 브라우저가 그 HTML 을 CSS·JS 자리에 1년 동안 캐시해 화면이 깨진다
+          # (배포 중이나 배포 전에 열어 둔 탭이 예전 파일을 요청할 때)
+          handle /assets/* {
+            header Cache-Control "no-store"
+            respond 404
+          }
+
+          # 화면 경로 (SPA: 없는 경로는 index.html)
+          handle {
+            header Cache-Control "no-cache"
+            try_files {path} /index.html
+            file_server
+          }
         }
       }

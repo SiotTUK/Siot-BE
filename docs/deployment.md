@@ -138,7 +138,7 @@ curl -f localhost:8080/actuator/health/readiness
 
 ### 프론트엔드 배포 (수동)
 
-프론트엔드는 아직 CI 가 없다. Siot-FE 에서 빌드해 VM 의 `/opt/siot/frontend` 를 바꾼다. Caddy 는 파일을 바로 읽으므로 재시작이 필요 없다.
+평소에는 Siot-FE CI(`frontend-ci.yml`)가 main 병합 때 배포한다. 수동으로 할 때도 같은 순서를 따른다. Siot-FE 에서 빌드해 VM 의 `/opt/siot/frontend` 를 바꾼다. Caddy 는 파일을 바로 읽으므로 재시작이 필요 없다.
 
 ```bash
 # Siot-FE 저장소에서
@@ -146,12 +146,20 @@ npm ci && npm run build
 tar -czf fe-dist.tgz -C dist .
 gcloud compute scp fe-dist.tgz instance-20261113-012436:/tmp/ --zone asia-northeast3-c
 gcloud compute ssh instance-20261113-012436 --zone asia-northeast3-c --command '
-  sudo rm -rf /opt/siot/frontend.old && sudo cp -a /opt/siot/frontend /opt/siot/frontend.old &&
-  sudo find /opt/siot/frontend -mindepth 1 -delete &&
-  sudo tar -xzf /tmp/fe-dist.tgz -C /opt/siot/frontend && rm /tmp/fe-dist.tgz'
+  set -e
+  D=/opt/siot/frontend; S=$(mktemp -d); tar -xzf /tmp/fe-dist.tgz -C $S
+  sudo rm -rf $D.old && sudo cp -a $D $D.old
+  sudo mkdir -p $D/assets && sudo cp -a $S/assets/. $D/assets/
+  sudo find $D -mindepth 1 -maxdepth 1 ! -name assets ! -name index.html -exec rm -rf {} +
+  sudo find $S -mindepth 1 -maxdepth 1 ! -name assets ! -name index.html -exec cp -a {} $D/ \;
+  sudo cp -a $S/index.html $D/.index.html.new && sudo mv -f $D/.index.html.new $D/index.html
+  sudo find $D/assets -type f -mtime +14 -delete
+  rm -rf $S /tmp/fe-dist.tgz'
 ```
 
 - 폴더를 `mv` 로 바꿔치기하면 안 된다. 컨테이너의 bind mount 는 원래 폴더를 계속 가리켜서 예전 파일이 나간다. 위처럼 **폴더 안의 내용만** 바꾼다.
+- 순서가 중요하다: 새 `assets/` 를 먼저 넣고 `index.html` 을 마지막에 바꾼다. 예전 `assets/` 는 14일 남긴다(배포 전에 열어 둔 탭이 예전 화면 묶음을 불러온다). 폴더를 비운 뒤 복사하면 그 사이 요청된 CSS·JS 가 없다.
+- Caddy 는 없는 `/assets/*` 에 캐시하지 않는 404 를 준다. 예전에는 `index.html` 을 200 + 1년 캐시(`immutable`)로 줘서, 그 HTML 이 CSS 자리에 캐시되면 화면 스타일이 빠졌다(생활 안내 화면, 2026-11-28). 이미 그렇게 캐시된 브라우저는 강력 새로고침(Ctrl+Shift+R)이나 사이트 데이터 삭제로 풀린다.
 - 롤백: `sudo find /opt/siot/frontend -mindepth 1 -delete && sudo cp -a /opt/siot/frontend.old/. /opt/siot/frontend/`.
 
 ### 이미지 정리 정책
