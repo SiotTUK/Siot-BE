@@ -3,6 +3,8 @@ package com.siot.backend.translation.bill;
 import com.siot.backend.TestcontainersConfiguration;
 import com.siot.backend.auth.service.SignupVerificationService;
 import com.siot.backend.global.exception.GlobalExceptionHandler;
+import com.siot.backend.schedule.domain.CalendarSchedule;
+import com.siot.backend.schedule.repository.CalendarScheduleRepository;
 import com.siot.backend.translation.BillReader;
 import com.siot.backend.translation.BillReading;
 import jakarta.servlet.http.Cookie;
@@ -33,6 +35,7 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -55,6 +58,9 @@ class BillTranslationIntegrationTest {
 
     @Autowired
     StringRedisTemplate redisTemplate;
+
+    @Autowired
+    CalendarScheduleRepository schedules;
 
     @MockitoBean
     BillReader billReader;
@@ -97,6 +103,56 @@ class BillTranslationIntegrationTest {
                 .andExpect(jsonPath("$.data.relatedGuides[0].title").isNotEmpty())
                 .andExpect(jsonPath("$.data.firstPageOnly").value(false))
                 .andExpect(jsonPath("$.data.pageCount").value(1));
+    }
+
+    /** CAL-03 세금 상세 보기: 세목 → taxKind, 납기가 든 공통 세금 일정 → taxScheduleId. 저장한 결과를 다시 볼 때도 같다 */
+    @Test
+    void linksTaxBillToTheCommonTaxScheduleOfItsDueDate() throws Exception {
+        // 다른 테스트의 2099년 일정과 겹치지 않게 2097년
+        CalendarSchedule june = schedules.saveAndFlush(CalendarSchedule.create(null, "TAX_CAR",
+                LocalDate.of(2097, 6, 16), LocalDate.of(2097, 6, 30), null, null, true, null));
+        when(billReader.read(any(), eq("image/jpeg"), anyString())).thenReturn(new BillReading(true, null,
+                "TAX_NOTICE", "시흥시", "자동차세 (1기분)", "12가3456", 123450L, LocalDate.of(2097, 6, 30), null, null,
+                null, List.of(), null, List.of("자동차세 123,450원"),
+                new BillReading.Summary("Car tax", "Pay by 2097-06-30.", "Pay 123,450 won.", "Wetax")));
+
+        MvcResult result = mockMvc.perform(multipart("/api/translations/bills").file(jpeg())
+                        .param("consent", "true").cookie(member).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taxKind").value("TAX_CAR"))
+                .andExpect(jsonPath("$.data.taxScheduleId").value(june.getId()))
+                .andReturn();
+        Number id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+
+        mockMvc.perform(get("/api/translations/bills/" + id).cookie(member))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taxKind").value("TAX_CAR"))
+                .andExpect(jsonPath("$.data.taxScheduleId").value(june.getId()));
+    }
+
+    /** 세금이 아닌 고지서, 또는 납기가 든 공통 일정이 없으면 연결하지 않는다 (종류만 안다) */
+    @Test
+    void leavesTaxScheduleEmptyWithoutMatchingSchedule() throws Exception {
+        when(billReader.read(any(), eq("image/jpeg"), anyString())).thenReturn(new BillReading(true, null,
+                "TAX_NOTICE", "시흥시", "재산세", null, 50000L, LocalDate.of(2096, 1, 5), null, null,
+                null, List.of(), null, List.of("재산세 50,000원"),
+                new BillReading.Summary("Property tax", "Pay by 2096-01-05.", "Pay 50,000 won.", "Wetax")));
+        mockMvc.perform(multipart("/api/translations/bills").file(jpeg()).param("consent", "true")
+                        .cookie(member).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taxKind").value("TAX_PROPERTY"))
+                .andExpect(jsonPath("$.data.taxScheduleId").doesNotExist());
+
+        when(billReader.read(any(), eq("image/jpeg"), anyString())).thenReturn(new BillReading(true, null,
+                "UTILITY", "시흥시", "상수도요금", null, 20000L, LocalDate.of(2096, 1, 5), null, null,
+                null, List.of(), null, List.of("상수도요금 20,000원"),
+                new BillReading.Summary("Water bill", "Pay by 2096-01-05.", "Pay 20,000 won.", "Bank")));
+        redisTemplate.delete("siot:rate:" + BillTranslationService.RATE_LIMIT_KEY + memberId + ":interval");
+        mockMvc.perform(multipart("/api/translations/bills").file(jpeg()).param("consent", "true")
+                        .cookie(member).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taxKind").doesNotExist())
+                .andExpect(jsonPath("$.data.taxScheduleId").doesNotExist());
     }
 
     @Test

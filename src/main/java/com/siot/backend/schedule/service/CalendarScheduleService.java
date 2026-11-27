@@ -351,6 +351,21 @@ public class CalendarScheduleService {
     }
 
     /**
+     * 고지서 납기가 든 같은 종류의 공통 세금 일정 (RUL-07 → CAL-03). 여럿이면 먼저 시작하는 것.
+     *
+     * @param kind    세금 종류 ({@link TaxKind})
+     * @param dueDate 고지서 납기 내 기한
+     * @return 일정 ID, 종류·기한이 없거나 그런 일정이 없으면 null
+     */
+    public Long findTaxScheduleId(String kind, LocalDate dueDate) {
+        if (kind == null || dueDate == null) {
+            return null;
+        }
+        return taxSchedules(calendarScheduleRepository.findByActiveTrueOrderByStartsOnAsc())
+                .find(kind, dueDate, dueDate, dueDate);
+    }
+
+    /**
      * CAL-03 전체 세금 상세 목록 조회
      */
     public List<TaxDetailResponse> getTaxSchedules(String language) {

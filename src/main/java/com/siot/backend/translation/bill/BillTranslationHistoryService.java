@@ -2,6 +2,8 @@ package com.siot.backend.translation.bill;
 
 import com.siot.backend.global.exception.BusinessException;
 import com.siot.backend.global.exception.ErrorCode;
+import com.siot.backend.schedule.domain.TaxKind;
+import com.siot.backend.schedule.service.CalendarScheduleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,8 @@ import java.util.List;
  *   <li>읽을 수 있었던 결과(readable=true)만 저장한다. 사진은 저장하지 않고, 결과는 이미 개인정보를 가린 값이다</li>
  *   <li>회원당 최근 {@value #MAX_RECENT}개만 남긴다. 다만 마감 알림이 남은(기한 전) 번역은 알림이 갈 때까지 지우지 않는다</li>
  *   <li>마감 알림은 납부 기한이 있고 지나지 않은 번역만 켤 수 있다. 알림은 {@link BillDueNotifier} 가 만든다</li>
+ *   <li>세금 상세 연결(taxKind·taxScheduleId)은 돌려줄 때마다 세목·기한으로 다시 찾는다. 공통 세금 일정은 해마다 새로
+ *   만들어지고 관리자가 고칠 수 있기 때문이다</li>
  * </ul>
  */
 @Service
@@ -29,6 +33,7 @@ public class BillTranslationHistoryService {
 
     private final BillTranslationRepository repository;
     private final JsonMapper jsonMapper;
+    private final CalendarScheduleService calendarScheduleService;
     /** 한국 시간 (ClockConfig) */
     private final Clock clock;
 
@@ -50,7 +55,7 @@ public class BillTranslationHistoryService {
         }
         repository.flush(); // created_at 을 응답에 담는다
         prune(userId, today);
-        return response.withSaved(saved.getId(), saved.isReminder(), saved.getCreatedAt());
+        return withTax(response.withSaved(saved.getId(), saved.isReminder(), saved.getCreatedAt()));
     }
 
     /** 최근 번역 목록 (새것부터, 최대 {@value #MAX_RECENT}개) */
@@ -109,7 +114,14 @@ public class BillTranslationHistoryService {
     }
 
     private BillTranslationResponse response(BillTranslation translation) {
-        return read(translation).withSaved(translation.getId(), translation.isReminder(), translation.getCreatedAt());
+        return withTax(read(translation).withSaved(translation.getId(), translation.isReminder(),
+                translation.getCreatedAt()));
+    }
+
+    /** 세목으로 세금 종류를, 납기 내 기한으로 그 회차의 공통 세금 일정을 찾아 채운다 (CAL-03 세금 상세 보기) */
+    private BillTranslationResponse withTax(BillTranslationResponse response) {
+        String kind = TaxKind.forTaxType(response.taxType());
+        return response.withTax(kind, calendarScheduleService.findTaxScheduleId(kind, response.dueDate()));
     }
 
     private String write(BillTranslationResponse response) {
