@@ -370,6 +370,95 @@ class ChecklistServiceTest {
     }
 
     @Test
+    @DisplayName("보이는 이유: 표시 조건이 본 온보딩 답을 코드와 요청 언어 문구로, 공통 항목은 null (BE #42)")
+    void getMyChecklist_displayReason() {
+        // given: 처음 입국 · 일하러 옴 · 자차 · 자녀 · 재외동포(F-4) · 체류 만료일 입력, 이사(LC-01) 등록
+        Long userId = 1L;
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
+        AppUser user = AppUser.create("user@siot.kr", "hash");
+        user.updateOnboarding(UserType.NEW, today.minusDays(10), Purpose.WORK,
+                Set.of(Residence.CAR, Residence.KIDS, Residence.F4), today.plusMonths(6));
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+
+        List<Guide> checklist = List.of(
+                guide(1L, "CL-01", "CHECKLIST", null), guide(2L, "CL-02", "CHECKLIST", null),
+                guide(4L, "CL-04", "CHECKLIST", null), guide(5L, "CL-05", "CHECKLIST", null),
+                guide(6L, "CL-06", "CHECKLIST", null), guide(7L, "CL-07", "CHECKLIST", null),
+                guide(10L, "CL-10", "CHECKLIST", null), guide(11L, "CL-11", "CHECKLIST", null),
+                guide(12L, "CL-12", "CHECKLIST", null), guide(20L, "CL-20", "CHECKLIST", null));
+        List<Guide> lifeChangeTasks = List.of(
+                guide(101L, "LC-01-1", "LIFE_CHANGE_TASK", "LC-01"), guide(102L, "LC-01-2", "LIFE_CHANGE_TASK", "LC-01"),
+                guide(103L, "LC-01-3", "LIFE_CHANGE_TASK", "LC-01"), guide(104L, "LC-01-4", "LIFE_CHANGE_TASK", "LC-01"),
+                guide(105L, "LC-01-5", "LIFE_CHANGE_TASK", "LC-01"));
+        given(guideRepository.findByKindOrderBySortOrderAsc("CHECKLIST")).willReturn(checklist);
+        given(guideRepository.findByKindOrderBySortOrderAsc("LIFE_CHANGE_TASK")).willReturn(lifeChangeTasks);
+        given(guideTranslationRepository.findByGuideIdInAndLanguage(anyCollection(), anyString())).willReturn(List.of());
+        given(progressRepository.findByUserId(userId)).willReturn(List.of());
+        given(lifeChangeRepository.findByUserId(userId))
+                .willReturn(List.of(MemberLifeChange.of(userId, "LC-01", today.minusDays(2))));
+
+        // when
+        java.util.Map<String, ChecklistItemResponse> items = checklistService.getMyChecklist(userId, "en").items().stream()
+                .collect(java.util.stream.Collectors.toMap(ChecklistItemResponse::code, i -> i));
+
+        // then: 조건에 맞지 않는 항목은 그대로 빠진다 (CL-01 은 F-4 라서, CL-06 은 공부가 아니라서, CL-11 은 자가가 아니라서)
+        assertThat(items.keySet()).containsExactlyInAnyOrder(
+                "CL-02", "CL-04", "CL-05", "CL-07", "CL-10", "CL-12", "CL-20",
+                "LC-01-2", "LC-01-3", "LC-01-4", "LC-01-5");
+        assertReason(items.get("CL-02"), "F4", "Because you are an overseas Korean (F-4)");
+        assertReason(items.get("CL-05"), "STAY_EXPIRY", "Because you entered your stay expiry date");
+        assertReason(items.get("CL-07"), "PURPOSE_WORK", "Because you came to work");
+        assertReason(items.get("CL-10"), "CAR", "Because you own a vehicle");
+        assertReason(items.get("CL-12"), "KIDS", "Because you have children");
+        assertReason(items.get("LC-01-2"), "F4", "Because you are an overseas Korean (F-4)");
+        assertReason(items.get("LC-01-3"), "CAR", "Because you own a vehicle");
+        assertReason(items.get("LC-01-4"), "KIDS", "Because you have children");
+        // 공통: 누구에게나(CL-04, LC-01-5), 처음 입국 구분만으로(CL-20)
+        assertReason(items.get("CL-04"), null, null);
+        assertReason(items.get("CL-20"), null, null);
+        assertReason(items.get("LC-01-5"), null, null);
+    }
+
+    @Test
+    @DisplayName("보이는 이유: F-4 가 아니면 체류지 변경 신고는 공통, 목적·거주 정보에 따라 다른 이유 (BE #42)")
+    void getMyChecklist_displayReason_otherAnswers() {
+        Long userId = 1L;
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
+        AppUser user = AppUser.create("user@siot.kr", "hash");
+        user.updateOnboarding(UserType.LIVING, today.minusYears(1), Purpose.STUDY, Set.of(Residence.HOUSE), null);
+        given(appUserRepository.findById(userId)).willReturn(Optional.of(user));
+
+        given(guideRepository.findByKindOrderBySortOrderAsc("CHECKLIST")).willReturn(List.of(
+                guide(6L, "CL-06", "CHECKLIST", null), guide(10L, "CL-10", "CHECKLIST", null),
+                guide(11L, "CL-11", "CHECKLIST", null), guide(20L, "CL-20", "CHECKLIST", null)));
+        given(guideRepository.findByKindOrderBySortOrderAsc("LIFE_CHANGE_TASK")).willReturn(List.of(
+                guide(101L, "LC-01-1", "LIFE_CHANGE_TASK", "LC-01"), guide(102L, "LC-01-2", "LIFE_CHANGE_TASK", "LC-01")));
+        given(guideTranslationRepository.findByGuideIdInAndLanguage(anyCollection(), eq("ko"))).willReturn(List.of());
+        given(progressRepository.findByUserId(userId)).willReturn(List.of());
+        given(lifeChangeRepository.findByUserId(userId))
+                .willReturn(List.of(MemberLifeChange.of(userId, "LC-01", today.minusDays(2))));
+
+        java.util.Map<String, ChecklistItemResponse> items = checklistService.getMyChecklist(userId, "ko").items().stream()
+                .collect(java.util.stream.Collectors.toMap(ChecklistItemResponse::code, i -> i));
+
+        assertThat(items.keySet()).containsExactlyInAnyOrder("CL-06", "CL-11", "LC-01-1");
+        assertReason(items.get("CL-06"), "PURPOSE_STUDY", "공부하러 와서");
+        assertReason(items.get("CL-11"), "HOUSE", "자가라서");
+        assertReason(items.get("LC-01-1"), null, null);
+    }
+
+    private static Guide guide(Long id, String code, String kind, String lifeChangeCode) {
+        Guide guide = Guide.create(code, kind, ItemType.REQUIRED, null, id.intValue(), lifeChangeCode, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(guide, "id", id);
+        return guide;
+    }
+
+    private static void assertReason(ChecklistItemResponse item, String reason, String label) {
+        assertThat(item.reason()).as(item.code() + " reason").isEqualTo(reason);
+        assertThat(item.reasonLabel()).as(item.code() + " reasonLabel").isEqualTo(label);
+    }
+
+    @Test
     @DisplayName("세션은 있는데 회원이 없으면 다른 본인 API처럼 401 UNAUTHORIZED (BE #24)")
     void getMyChecklist_missingMember_isUnauthorized() {
         given(appUserRepository.findById(99L)).willReturn(Optional.empty());

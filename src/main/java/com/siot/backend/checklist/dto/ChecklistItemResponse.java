@@ -97,6 +97,16 @@ public record ChecklistItemResponse(
         String contentLanguage,
         @Schema(description = "COM-02 요청 언어 문구인지. false 면 한국어 원문으로 대체했거나 문구가 없음 → '번역 준비 중' 표시. "
                 + "한국어 요청은 원문이 있으면 true. 조건부 문구(variantBodies)만 한국어로 대체된 경우도 false", example = "true")
-        boolean translated
+        boolean translated,
+
+        // BE #42 보이는 이유 (시안 v2 '자차가 있어서 보여요')
+        @Schema(description = "이 항목이 보이는 이유 (표시 조건이 본 온보딩 답): CAR / KIDS / HOUSE / F4 / STAY_EXPIRY / "
+                + "PURPOSE_STUDY / PURPOSE_WORK / PURPOSE_FAMILY / PURPOSE_OTHER. "
+                + "누구에게나 또는 처음 입국·거주 중 구분만으로 보이는 공통 항목이면 null",
+                nullable = true, example = "CAR")
+        String reason,
+        @Schema(description = "보이는 이유의 짧은 문구 (요청 언어, 온보딩 선택지와 같은 말). 화면은 그대로 칩으로 쓰거나 "
+                + "'… 보여요' 문장에 넣는다. reason 이 null 이면 null", nullable = true, example = "자차가 있어서")
+        String reasonLabel
 ) {
 }

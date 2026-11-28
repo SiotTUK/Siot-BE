@@ -147,6 +147,26 @@ erDiagram
 생활 변화 할 일 코드(`LC-01-1` 형식)는 규칙표에 없어서 백엔드에서 정했다. 규칙표의 변화 ID(LC-01)는 `guide.life_change_code` 와 `member_life_change.life_change_code` 에 그대로 쓴다.
 en / zh / vi 문구와 장소·준비물·과태료 등 상세는 관리자 화면(또는 후속 마이그레이션)에서 채운다.
 
+### 보이는 이유 (`reason`, BE #42)
+
+체크리스트 응답(`GET /api/members/me/checklist`)의 `reason`·`reasonLabel` 은 위 표시 조건이 본 온보딩 답이다. 시안 v2 의 '자차가 있어서 보여요' 같은 안내에 쓴다. 조건과 이유는 `ChecklistService.evaluateDisplay` 의 같은 줄에 적어 어긋나지 않게 한다.
+
+| reason | 문구 (ko) | 항목 |
+|---|---|---|
+| `CAR` | 자차가 있어서 | CL-10, LC-01-3 |
+| `KIDS` | 자녀가 있어서 | CL-12, LC-01-4 |
+| `HOUSE` | 자가라서 | CL-11 |
+| `F4` | 재외동포(F-4)라서 | CL-02, CL-13, LC-01-2 |
+| `STAY_EXPIRY` | 체류 만료일을 입력해서 | CL-05 |
+| `PURPOSE_STUDY` | 공부하러 와서 | CL-06, LC-02-3 |
+| `PURPOSE_WORK` | 일하러 와서 | CL-07, LC-02-1, LC-02-2 |
+| `PURPOSE_FAMILY` | 가족과 살아서 | CL-08 |
+| `PURPOSE_OTHER` | 체류 목적이 기타·모름이라서 | CL-09 (목적을 고르지 않은 회원 포함) |
+| `null` (공통) | — | CL-01, CL-04, CL-20~22, LC-01-1, LC-01-5, LC-02-4, 그 밖의 생활 변화 할 일 |
+
+- 처음 입국·거주 중 구분(`userType`)은 이유로 보지 않는다. 그 구분만으로 보이는 CL-01·CL-20~22 는 공통이다.
+- `reasonLabel` 은 요청 언어(ko/en/zh/vi) 짧은 문구이고 온보딩 선택지와 같은 말을 쓴다 (`ChecklistDisplayReason`).
+
 ## 11/13 요구사항 수정으로 바뀐 것
 
 | 요구사항 | DB 변경 |
