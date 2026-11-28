@@ -10,6 +10,18 @@
 | PATCH | `/api/admin/chat/reviews/{messageId}` | ADM-08 | 처리 여부·메모 `{ "reviewed": true, "adminMemo": "..." }` |
 | GET | `/api/admin/guides/{code}/translations/{language}` | CHK-06 | 항목 상세 문구 조회 (한 언어) |
 | PUT | `/api/admin/guides/{code}/translations/{language}` | CHK-06, NTF-07 | 항목 상세 문구 저장. `noticeChanged` 로 실제 안내 내용 변경 여부 표시 |
+| GET | `/api/admin/rules?category=&keyword=&includeDeleted=` | ADM-06 | 생활수칙 목록 (한국어 제목, FAQ·삭제 여부, 번역 있는/없는 언어) |
+| GET | `/api/admin/rules/{code}` | ADM-06 | 생활수칙 상세 (수정 폼용 한국어 원문 전체, 삭제한 항목도) |
+| POST | `/api/admin/rules` | RUL-09, RUL-13 | 생활수칙 등록 (en·zh·vi 자동 번역). 쓰던 코드면 409 `DUPLICATE_GUIDE_CODE` |
+| PUT | `/api/admin/rules/{code}` | RUL-10, NTF-07 | 생활수칙 수정. `noticeChanged=true` 면 변경 알림 |
+| DELETE | `/api/admin/rules/{code}` | RUL-11 | 생활수칙 소프트 삭제 |
+| GET | `/api/admin/rule-categories` | RUL-12 | 카테고리 목록 (생활수칙 수, en·zh·vi 이름) |
+| PUT | `/api/admin/rule-categories/{category}` | RUL-12 | 카테고리 이름 바꾸기 `{ "name" }` (있는 이름이면 합침) |
+| PUT | `/api/admin/rule-categories/{category}/translations/{language}` | RUL-13 | 카테고리명 번역 고치기 `{ "name" }` |
+| GET | `/api/admin/rule-faqs` | RUL-04 | FAQ 목록 (순서대로, 언어별 질문·답변, 연결 항목) |
+| POST | `/api/admin/rule-faqs` | RUL-04 | FAQ 등록 `{ "sortOrder", "ruleCode", "translations": { "ko": { "question", "answer" }, ... } }` (ko 필수) |
+| PUT | `/api/admin/rule-faqs/{faqId}` | RUL-04 | FAQ 수정 (통째로 바꿈, 보내지 않은 언어는 지움). 없으면 404 `RULE_FAQ_NOT_FOUND` |
+| DELETE | `/api/admin/rule-faqs/{faqId}` | RUL-04 | FAQ 삭제 |
 | GET | `/api/admin/documents?page=&size=` | ADM-03 | 문서 목록 (최근 등록 순, 현재 버전·최근 업로드 버전 상태) |
 | POST | `/api/admin/documents` | ADM-02 | 새 문서 등록 (multipart: `file`, `name`, `sourceUrl`, `publishedOn`, `excludedPages`) |
 | PATCH | `/api/admin/documents/{documentId}` | ADM-03 | 문서 정보 수정 `{ "name", "sourceUrl", "publishedOn", "active" }` (보낸 값만) |

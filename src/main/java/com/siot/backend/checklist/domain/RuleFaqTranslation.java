@@ -33,6 +33,20 @@ public class RuleFaqTranslation {
     @Column(nullable = false, columnDefinition = "text")
     private String answer;
 
+    public static RuleFaqTranslation create(Long faqId, String language, String question, String answer) {
+        RuleFaqTranslation translation = new RuleFaqTranslation();
+        translation.faqId = faqId;
+        translation.language = language;
+        translation.question = question;
+        translation.answer = answer;
+        return translation;
+    }
+
+    public void update(String question, String answer) {
+        this.question = question;
+        this.answer = answer;
+    }
+
     @lombok.EqualsAndHashCode
     @lombok.NoArgsConstructor
     @lombok.AllArgsConstructor

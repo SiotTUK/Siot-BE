@@ -189,6 +189,17 @@ public class AdminRuleService {
                 guide.getNoticeChangedAt(), translated, missing);
     }
 
+    /** ADM-06: 수정 폼을 채울 한국어 원문 전체. 삭제한 생활수칙도 읽는다 */
+    @Transactional(readOnly = true)
+    public RuleResponse getRule(String code) {
+        Guide guide = guideRepository.findByCode(code)
+                .filter(g -> "RULE".equals(g.getKind()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.GUIDE_NOT_FOUND));
+        GuideTranslation ko = guideTranslationRepository.findByGuideIdAndLanguage(guide.getId(), "ko")
+                .orElseThrow(() -> new BusinessException(ErrorCode.GUIDE_NOT_FOUND));
+        return toRuleResponse(guide, ko);
+    }
+
     /**
      * RUL-11, ADM-06: 관리자 생활수칙 소프트 삭제
      */
