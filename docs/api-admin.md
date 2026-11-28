@@ -10,6 +10,8 @@
 | PATCH | `/api/admin/chat/reviews/{messageId}` | ADM-08 | 처리 여부·메모 `{ "reviewed": true, "adminMemo": "..." }` |
 | GET | `/api/admin/guides/{code}/translations/{language}` | CHK-06 | 항목 상세 문구 조회 (한 언어) |
 | PUT | `/api/admin/guides/{code}/translations/{language}` | CHK-06, NTF-07 | 항목 상세 문구 저장. `noticeChanged` 로 실제 안내 내용 변경 여부 표시 |
+| GET | `/api/admin/guides/{code}` | CHK-06, NTF-07 | 항목 출처 링크·문의 전화 조회 (언어 공통) `{ "code", "kind", "sourceUrl", "contact", "updatedAt" }` |
+| PATCH | `/api/admin/guides/{code}` | CHK-06, NTF-07 | 항목 출처 링크·문의 전화 수정 `{ "sourceUrl", "contact" }` (보낸 값만, 빈 문자열은 지움, 링크는 http(s)://) |
 | GET | `/api/admin/rules?category=&keyword=&includeDeleted=` | ADM-06 | 생활수칙 목록 (한국어 제목, FAQ·삭제 여부, 번역 있는/없는 언어) |
 | GET | `/api/admin/rules/{code}` | ADM-06 | 생활수칙 상세 (수정 폼용 한국어 원문 전체, 삭제한 항목도) |
 | POST | `/api/admin/rules` | RUL-09, RUL-13 | 생활수칙 등록 (en·zh·vi 자동 번역). 쓰던 코드면 409 `DUPLICATE_GUIDE_CODE` |
