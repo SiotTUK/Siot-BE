@@ -386,6 +386,36 @@ class AdminIntegrationTest {
         patchGuide(signup(newEmail()), code, "{\"contact\":\"1\"}").andExpect(status().isForbidden());
     }
 
+    @Test
+    void adminReadsGuideSourceUrlAndContact() throws Exception {
+        Cookie admin = login(ADMIN_EMAIL);
+        String code = "T-" + ThreadLocalRandom.current().nextInt(100_000, 999_999);
+        jdbcTemplate.update("INSERT INTO guide (code, kind, contact, source_url) VALUES (?, 'RULE', '1345', 'https://old.example')", code);
+
+        mockMvc.perform(get("/api/admin/guides/{code}", code).cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.code").value(code))
+                .andExpect(jsonPath("$.data.kind").value("RULE"))
+                .andExpect(jsonPath("$.data.sourceUrl").value("https://old.example"))
+                .andExpect(jsonPath("$.data.contact").value("1345"));
+
+        // 지운 값은 응답에서 빠지고, 조회는 수정 기록을 남기지 않는다
+        patchGuide(admin, code, "{\"sourceUrl\":\"\"}").andExpect(status().isOk());
+        String updatedAt = jdbcTemplate.queryForObject("SELECT updated_at::text FROM guide WHERE code = ?", String.class, code);
+        mockMvc.perform(get("/api/admin/guides/{code}", code).cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sourceUrl").doesNotExist())
+                .andExpect(jsonPath("$.data.contact").value("1345"));
+        assertThat(jdbcTemplate.queryForObject("SELECT updated_at::text FROM guide WHERE code = ?", String.class, code))
+                .isEqualTo(updatedAt);
+
+        mockMvc.perform(get("/api/admin/guides/{code}", "NO-SUCH-CODE").cookie(admin))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("GUIDE_NOT_FOUND"));
+        mockMvc.perform(get("/api/admin/guides/{code}", code).cookie(signup(newEmail())))
+                .andExpect(status().isForbidden());
+    }
+
     private ResultActions patchGuide(Cookie session, String code, String json) throws Exception {
         return mockMvc.perform(patch("/api/admin/guides/{code}", code).cookie(session).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content(json));

@@ -92,6 +92,16 @@ public class AdminGuideService {
     public GuideInfoResponse updateInfo(Long adminId, String code, GuideInfoUpdateRequest request) {
         Guide guide = findGuide(code);
         guide.updateSourceAndContact(request.sourceUrl(), request.contact(), adminId, OffsetDateTime.now(clock));
+        return toInfoResponse(guide);
+    }
+
+    /** 출처 링크·문의 전화 조회. 수정 화면이 지금 값을 채워 보여 주는 데 쓴다 */
+    @Transactional(readOnly = true)
+    public GuideInfoResponse getInfo(String code) {
+        return toInfoResponse(findGuide(code));
+    }
+
+    private static GuideInfoResponse toInfoResponse(Guide guide) {
         return new GuideInfoResponse(guide.getCode(), guide.getKind(), guide.getSourceUrl(), guide.getContact(),
                 guide.getUpdatedAt());
     }

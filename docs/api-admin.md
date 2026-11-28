@@ -10,6 +10,8 @@
 | PATCH | `/api/admin/chat/reviews/{messageId}` | ADM-08 | 처리 여부·메모 `{ "reviewed": true, "adminMemo": "..." }` |
 | GET | `/api/admin/guides/{code}/translations/{language}` | CHK-06 | 항목 상세 문구 조회 (한 언어) |
 | PUT | `/api/admin/guides/{code}/translations/{language}` | CHK-06, NTF-07 | 항목 상세 문구 저장. `noticeChanged` 로 실제 안내 내용 변경 여부 표시 |
+| GET | `/api/admin/guides/{code}` | CHK-06, NTF-07 | 항목 출처 링크·문의 전화 조회 (언어 공통) `{ "code", "kind", "sourceUrl", "contact", "updatedAt" }` |
+| PATCH | `/api/admin/guides/{code}` | CHK-06, NTF-07 | 항목 출처 링크·문의 전화 수정 `{ "sourceUrl", "contact" }` (보낸 값만, 빈 문자열은 지움, 링크는 http(s)://) |
 | GET | `/api/admin/documents?page=&size=` | ADM-03 | 문서 목록 (최근 등록 순, 현재 버전·최근 업로드 버전 상태) |
 | POST | `/api/admin/documents` | ADM-02 | 새 문서 등록 (multipart: `file`, `name`, `sourceUrl`, `publishedOn`, `excludedPages`) |
 | PATCH | `/api/admin/documents/{documentId}` | ADM-03 | 문서 정보 수정 `{ "name", "sourceUrl", "publishedOn", "active" }` (보낸 값만) |
