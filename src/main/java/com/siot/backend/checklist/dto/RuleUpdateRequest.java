@@ -73,7 +73,7 @@ public record RuleUpdateRequest(
         String sourceName,
 
         @NotNull
-        @Schema(description = "실제 안내 내용 변경 여부 (NTF-07: 변경 알림 발송 유도)", example = "true")
+        @Schema(description = "실제 안내 내용 변경 여부 (NTF-07). true 면 상세 '변경됨' 표시용 notice_changed_at 을 기록한다. 생활수칙은 변경 알림을 보내지 않는다", example = "true")
         Boolean noticeChanged,
 
         @Size(max = 30)

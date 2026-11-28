@@ -65,7 +65,8 @@ public class AdminRuleController {
     }
 
     @Operation(summary = "RUL-10·ADM-06 생활수칙 수정",
-            description = "생활수칙을 수정합니다. noticeChanged=true 인 경우 중요 안내 내용 변경으로 기록되어 회원들에게 변경 알림이 발송됩니다 (NTF-07).")
+            description = "생활수칙을 수정합니다. noticeChanged=true 면 notice_changed_at 을 지금으로 기록해 상세 화면에 '변경됨'을 표시합니다. "
+                    + "생활수칙은 변경 알림을 보내지 않습니다 (NTF-07 변경 알림은 체크리스트·생활 변화 할 일만).")
     @PutMapping("/{code}")
     public ResponseEntity<ApiResponse<RuleResponse>> updateRule(
             @AuthenticationPrincipal MemberPrincipal principal,

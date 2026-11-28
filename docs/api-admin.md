@@ -16,7 +16,7 @@
 | GET | `/api/admin/rules?category=&keyword=&includeDeleted=` | ADM-06 | 생활수칙 목록 (한국어 제목, FAQ·삭제 여부, 번역 있는/없는 언어) |
 | GET | `/api/admin/rules/{code}` | ADM-06 | 생활수칙 상세 (수정 폼용 한국어 원문 전체, 삭제한 항목도) |
 | POST | `/api/admin/rules` | RUL-09, RUL-13 | 생활수칙 등록 (en·zh·vi 자동 번역). 쓰던 코드면 409 `DUPLICATE_GUIDE_CODE` |
-| PUT | `/api/admin/rules/{code}` | RUL-10, NTF-07 | 생활수칙 수정. `noticeChanged=true` 면 변경 알림 |
+| PUT | `/api/admin/rules/{code}` | RUL-10, NTF-07 | 생활수칙 수정. `noticeChanged=true` 면 상세 '변경됨' 표시용 `notice_changed_at` 만 기록 (생활수칙은 변경 알림을 보내지 않음) |
 | DELETE | `/api/admin/rules/{code}` | RUL-11 | 생활수칙 소프트 삭제 |
 | GET | `/api/admin/rule-categories` | RUL-12 | 카테고리 목록 (생활수칙 수, en·zh·vi 이름) |
 | PUT | `/api/admin/rule-categories/{category}` | RUL-12 | 카테고리 이름 바꾸기 `{ "name" }` (있는 이름이면 합침) |
@@ -81,7 +81,11 @@ PUT /api/admin/guides/CL-01/translations/ko
   - 어느 쪽이든 `updated_at`(CHK-06 수정일)과 수정한 관리자(`updated_by`)는 바뀝니다.
 - 아직 없는 언어면 새로 만듭니다. 조회(GET)는 없는 언어면 404 `GUIDE_TRANSLATION_NOT_FOUND`.
 - 없거나 삭제한 항목 404 `GUIDE_NOT_FOUND`, 지원하지 않는 언어·제목 없음·`noticeChanged` 없음 400 `INVALID_INPUT`.
-- 변경 알림 발송(NTF-07 1·4번: 대상 회원에게 알림)은 아직 없습니다. 지금은 변경 시각 기록까지만 합니다.
+- `noticeChanged=true` 면 대상 회원에게 변경 알림(`NOTICE_CHANGED`)도 보냅니다 (NTF-07). 항목 종류에 따라 대상이 다릅니다.
+  - 체크리스트 항목(`CHECKLIST`): 입국일을 입력했고, 그 항목을 완료·해당 없음으로 표시하지 않은 회원 (매년 내는 세금 항목 CL-10·11은 납부 회차별 표시라 이 조건으로 빼지 않음)
+  - 생활 변화 할 일(`LIFE_CHANGE_TASK`): 그 생활 변화를 등록한 회원 (등록 회차의 할 일을 완료·해당 없음으로 표시했으면 제외)
+  - 생활수칙(`RULE`): 대상이 없어 알림을 보내지 않습니다. `notice_changed_at` 만 기록합니다.
+  - 알림 설정에서 `NOTICE_CHANGED` 를 끈 회원은 빼고, 같은 변경(같은 `notice_changed_at`)은 회원마다 한 번만 보냅니다.
 
 ## 문서 등록·교체·반영 (ADM-02~04, NTF-06)
 
