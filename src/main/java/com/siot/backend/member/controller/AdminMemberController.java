@@ -35,7 +35,7 @@ public class AdminMemberController {
 
     private final AdminMemberService adminMemberService;
 
-    @Operation(summary = "ADM-01 회원 검색", description = "가입 최신순. size 는 1~100.")
+    @Operation(summary = "ADM-01 회원 검색", description = "관리자가 먼저, 그다음 가입 최신순. size 는 1~100.")
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponse<AdminMemberResponse>>> search(
             @Parameter(description = "이메일 부분 일치 (대소문자 무시)") @RequestParam(required = false) String email,

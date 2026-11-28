@@ -4,10 +4,11 @@
 
 | 메서드 | 경로 | 요구사항 | 설명 |
 |---|---|---|---|
-| GET | `/api/admin/members?email=&role=&page=&size=` | ADM-01 | 회원 검색 (이메일 부분 일치, 권한, 가입 최신순) |
+| GET | `/api/admin/members?email=&role=&page=&size=` | ADM-01 | 회원 검색 (이메일 부분 일치, 권한). 관리자가 먼저, 그다음 가입 최신순 |
 | PUT | `/api/admin/members/{memberId}/role` | ADM-01 | 권한 변경 `{ "role": "ADMIN" \| "USER" }` |
-| GET | `/api/admin/chat/reviews?type=&reviewed=&page=&size=` | ADM-08 | 부정 평가 답변·근거 없음 질문 목록 |
+| GET | `/api/admin/chat/reviews?type=&reviewed=&messageId=&keyword=&page=&size=` | ADM-08 | 부정 평가 답변·근거 없음 질문 목록. `messageId` 답변 번호, `keyword` 질문·답변·의견 부분 일치(대소문자 무시, 가린 문구 기준, 100자 이하) |
 | PATCH | `/api/admin/chat/reviews/{messageId}` | ADM-08 | 처리 여부·메모 `{ "reviewed": true, "adminMemo": "..." }` |
+| GET | `/api/admin/guides?kind=` | CHK-06 | 문구를 고칠 항목 목록 `[{ "code", "kind", "title", "category", "lifeChangeCode" }]` (삭제 제외, 체크리스트 → 생활 변화 할 일 → 생활수칙 순, `kind` 로 한 종류만) |
 | GET | `/api/admin/guides/{code}/translations/{language}` | CHK-06 | 항목 상세 문구 조회 (한 언어) |
 | PUT | `/api/admin/guides/{code}/translations/{language}` | CHK-06, NTF-07 | 항목 상세 문구 저장. `noticeChanged` 로 실제 안내 내용 변경 여부 표시 |
 | GET | `/api/admin/guides/{code}` | CHK-06, NTF-07 | 항목 출처 링크·문의 전화 조회 (언어 공통) `{ "code", "kind", "sourceUrl", "contact", "updatedAt" }` |

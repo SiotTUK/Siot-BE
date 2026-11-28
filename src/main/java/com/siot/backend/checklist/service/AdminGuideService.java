@@ -5,6 +5,7 @@ import com.siot.backend.checklist.domain.GuideTranslation;
 import com.siot.backend.checklist.domain.GuideTranslationId;
 import com.siot.backend.checklist.dto.GuideInfoResponse;
 import com.siot.backend.checklist.dto.GuideInfoUpdateRequest;
+import com.siot.backend.checklist.dto.GuideSummaryResponse;
 import com.siot.backend.checklist.dto.GuideTranslationResponse;
 import com.siot.backend.checklist.dto.GuideTranslationUpdateRequest;
 import com.siot.backend.checklist.repository.GuideRepository;
@@ -29,6 +30,8 @@ import java.util.Set;
 public class AdminGuideService {
 
     private static final Set<String> LANGUAGES = Set.of("ko", "en", "zh", "vi");
+    /** 항목 목록의 종류 순서 */
+    private static final List<String> LIST_KINDS = List.of("CHECKLIST", "LIFE_CHANGE_TASK", "RULE");
 
     private final GuideRepository guideRepository;
     private final GuideTranslationRepository translationRepository;
@@ -93,6 +96,37 @@ public class AdminGuideService {
         Guide guide = findGuide(code);
         guide.updateSourceAndContact(request.sourceUrl(), request.contact(), adminId, OffsetDateTime.now(clock));
         return toInfoResponse(guide);
+    }
+
+    /** 문구 수정 화면에서 고를 항목 목록 (삭제한 항목 제외). kind 가 비면 전체 */
+    @Transactional(readOnly = true)
+    public List<GuideSummaryResponse> list(String kind) {
+        List<Guide> guides;
+        if (kind == null || kind.isBlank()) {
+            guides = guideRepository.findAll();
+        } else {
+            String value = kind.strip().toUpperCase(java.util.Locale.ROOT);
+            if (!LIST_KINDS.contains(value)) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "kind 는 CHECKLIST, LIFE_CHANGE_TASK, RULE 중 하나입니다.");
+            }
+            guides = guideRepository.findByKindOrderBySortOrderAsc(value);
+        }
+        List<Guide> alive = guides.stream().filter(g -> !g.isDeleted()).toList();
+        java.util.Map<Long, String> titles = translationRepository
+                .findByGuideIdInAndLanguage(alive.stream().map(Guide::getId).toList(), "ko").stream()
+                .collect(java.util.stream.Collectors.toMap(GuideTranslation::getGuideId, GuideTranslation::getTitle, (a, b) -> a));
+        return alive.stream()
+                .sorted(java.util.Comparator.comparingInt((Guide g) -> kindOrder(g.getKind()))
+                        .thenComparingInt(Guide::getSortOrder)
+                        .thenComparing(Guide::getCode))
+                .map(g -> new GuideSummaryResponse(g.getCode(), g.getKind(), titles.get(g.getId()),
+                        g.getCategory(), g.getLifeChangeCode()))
+                .toList();
+    }
+
+    private static int kindOrder(String kind) {
+        int index = LIST_KINDS.indexOf(kind);
+        return index < 0 ? LIST_KINDS.size() : index;
     }
 
     /** 출처 링크·문의 전화 조회. 수정 화면이 지금 값을 채워 보여 주는 데 쓴다 */

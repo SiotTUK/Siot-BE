@@ -128,7 +128,27 @@ class AdminIntegrationTest {
         Cookie user = signup(newEmail());
         mockMvc.perform(get("/api/admin/members").cookie(user)).andExpect(status().isForbidden());
         mockMvc.perform(get("/api/admin/chat/reviews").cookie(user)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/admin/guides").cookie(user)).andExpect(status().isForbidden());
         mockMvc.perform(get("/api/admin/members")).andExpect(status().isUnauthorized());
+    }
+
+    /** 관리자가 먼저, 그다음 가입 최신순 (새로 가입한 일반 회원도 관리자 뒤) */
+    @Test
+    void memberListPutsAdminsFirst() throws Exception {
+        Cookie admin = login(ADMIN_EMAIL);
+        String email = newEmail();
+        signup(email);
+
+        String body = mockMvc.perform(get("/api/admin/members").param("size", "100").cookie(admin))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        List<String> roles = JsonPath.read(body, "$.data.content[*].role");
+        int firstUser = roles.indexOf("USER");
+        assertThat(roles).contains("ADMIN");
+        assertThat(firstUser).isPositive();
+        assertThat(roles.subList(firstUser, roles.size())).allMatch("USER"::equals);
+        // 일반 회원 중에서는 가입 최신순
+        assertThat(JsonPath.<List<String>>read(body, "$.data.content[*].email").get(firstUser)).isEqualTo(email);
     }
 
     @Test
@@ -237,6 +257,77 @@ class AdminIntegrationTest {
                         .content("{\"reviewed\":true}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("CHAT_REVIEW_NOT_FOUND"));
+    }
+
+    /** 답변 번호로 한 건, 질문·답변·의견 문구로 찾는다 (대소문자 무시, % 는 글자 그대로) */
+    @Test
+    void reviewsCanBeSearchedByMessageIdAndText() throws Exception {
+        Cookie admin = login(ADMIN_EMAIL);
+        String email = newEmail();
+        signup(email);
+        long conversationId = jdbcTemplate.queryForObject(
+                "INSERT INTO chat_conversation (user_id, language) VALUES (?, 'en') RETURNING conversation_id",
+                Long.class, memberId(email));
+        String tag = "Zq" + ThreadLocalRandom.current().nextLong(1_000_000L, 9_999_999L);
+        long byQuestion = qa(conversationId, "Where do I renew my " + tag + " card?", "Visit the office.",
+                "ANSWERED", false, null);
+        long byAnswer = qa(conversationId, "What about fees?", "It costs 100% of " + tag.toLowerCase() + " fee.",
+                "NO_EVIDENCE", null, null);
+        long byComment = qa(conversationId, "Opening hours?", "9 to 6.", "ANSWERED", false, "old " + tag);
+        long other = qa(conversationId, "Parking?", "There is none.", "ANSWERED", false, null);
+
+        assertThat(searchReviews(admin, "keyword", tag.toUpperCase()))
+                .containsExactlyInAnyOrder((int) byQuestion, (int) byAnswer, (int) byComment);
+        assertThat(searchReviews(admin, "keyword", "100%")).contains((int) byAnswer).doesNotContain((int) other);
+        assertThat(searchReviews(admin, "messageId", String.valueOf(byComment))).containsExactly((int) byComment);
+        // 검토 대상이 아닌 질문 메시지 번호는 나오지 않는다
+        assertThat(searchReviews(admin, "messageId", String.valueOf(byComment - 1))).isEmpty();
+
+        mockMvc.perform(get("/api/admin/chat/reviews").param("keyword", "a".repeat(101)).cookie(admin))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+    }
+
+    private List<Integer> searchReviews(Cookie admin, String param, String value) throws Exception {
+        String body = mockMvc.perform(get("/api/admin/chat/reviews").param(param, value).param("size", "100")
+                        .cookie(admin))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        return JsonPath.read(body, "$.data.content[*].messageId");
+    }
+
+    // ================================================================ CHK-06 항목 목록
+
+    @Test
+    void adminListsGuidesToPickForTextEditing() throws Exception {
+        Cookie admin = login(ADMIN_EMAIL);
+        String deleted = "DEL-" + ThreadLocalRandom.current().nextLong(1_000_000L, 9_999_999L);
+        jdbcTemplate.update("INSERT INTO guide (code, kind, item_type, deleted_at) VALUES (?, 'RULE', 'REQUIRED', now())",
+                deleted);
+
+        String body = mockMvc.perform(get("/api/admin/guides").cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.code == 'CL-01')].title").value("외국인등록"))
+                .andExpect(jsonPath("$.data[?(@.code == 'CL-01')].kind").value("CHECKLIST"))
+                .andExpect(jsonPath("$.data[?(@.code == 'LC-01-1')].lifeChangeCode").value("LC-01"))
+                .andReturn().getResponse().getContentAsString();
+        List<String> codes = JsonPath.read(body, "$.data[*].code");
+        List<String> kinds = JsonPath.read(body, "$.data[*].kind");
+        assertThat(codes).contains("CL-01", "LC-01-1", "waste-food").doesNotContain(deleted);
+        // 체크리스트 → 생활 변화 할 일 → 생활수칙
+        assertThat(kinds.lastIndexOf("CHECKLIST")).isLessThan(kinds.indexOf("LIFE_CHANGE_TASK"));
+        assertThat(kinds.lastIndexOf("LIFE_CHANGE_TASK")).isLessThan(kinds.indexOf("RULE"));
+
+        String rules = mockMvc.perform(get("/api/admin/guides").param("kind", "rule").cookie(admin))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<List<String>>read(rules, "$.data[*].kind")).isNotEmpty().allMatch("RULE"::equals);
+
+        mockMvc.perform(get("/api/admin/guides").param("kind", "EVENT").cookie(admin))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+        // 단건 조회 경로는 그대로
+        mockMvc.perform(get("/api/admin/guides/{code}", "CL-01").cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.code").value("CL-01"));
     }
 
     // ================================================================ helpers

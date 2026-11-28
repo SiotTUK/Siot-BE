@@ -24,7 +24,8 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
     @Query("""
             SELECT u FROM AppUser u
             WHERE LOCATE(:email, u.email) > 0
-            ORDER BY u.createdAt DESC, u.id DESC""")
+            ORDER BY CASE WHEN u.role = com.siot.backend.member.domain.Role.ADMIN THEN 0 ELSE 1 END,
+                     u.createdAt DESC, u.id DESC""")
     Page<AppUser> searchForAdmin(@Param("email") String email, Pageable pageable);
 
     @Query("""

@@ -40,17 +40,21 @@ public class AdminChatReviewController {
      * @param reviewed false = 미처리만, true = 처리 완료만, 생략 = 전체
      */
     @Operation(summary = "ADM-08 검토 목록",
-            description = "최신순. 질문·답변·의견은 개인정보를 가린 값만 보이고 회원 신원 정보는 없다.")
+            description = "최신순. 질문·답변·의견은 개인정보를 가린 값만 보이고 회원 신원 정보는 없다. "
+                    + "messageId 로 한 건을 찾거나 keyword 로 질문·답변·의견 문구를 찾는다(가린 문구 기준).")
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponse<ChatReviewResponse>>> list(
             @Parameter(description = "ALL / NEGATIVE(도움이 안 됐어요) / NO_EVIDENCE(자료에서 답을 못 찾음)")
             @RequestParam(defaultValue = "ALL") ReviewType type,
             @Parameter(description = "false = 미처리만, true = 처리 완료만, 생략 = 전체")
             @RequestParam(required = false) Boolean reviewed,
+            @Parameter(description = "답변 번호(messageId)로 찾기") @RequestParam(required = false) Long messageId,
+            @Parameter(description = "질문·답변·사용자 의견 부분 일치 (대소문자 무시, 100자 이하)")
+            @RequestParam(required = false) String keyword,
             @Parameter(description = "페이지 (0부터)") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "페이지 크기 (최대 100)") @RequestParam(defaultValue = "20") int size) {
         PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100));
-        return ResponseEntity.ok(ApiResponse.of(PageResponse.from(chatReviewService.list(type, reviewed, pageable))));
+        return ResponseEntity.ok(ApiResponse.of(PageResponse.from(chatReviewService.list(type, reviewed, messageId, keyword, pageable))));
     }
 
     @Operation(summary = "ADM-08 처리 기록", description = "처리 여부와 메모(1000자 이하, 자료 보충 기록). 처리한 관리자와 시각이 저장된다.")

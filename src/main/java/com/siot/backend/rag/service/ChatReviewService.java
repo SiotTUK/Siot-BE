@@ -30,6 +30,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ChatReviewService {
 
+    static final int KEYWORD_MAX = 100;
+
     public enum ReviewType { ALL, NEGATIVE, NO_EVIDENCE }
 
     private final ChatMessageRepository messageRepository;
@@ -40,11 +42,20 @@ public class ChatReviewService {
      * @param reviewed null 이면 처리 여부와 관계없이
      */
     @Transactional(readOnly = true)
-    public Page<ChatReviewResponse> list(ReviewType type, Boolean reviewed, Pageable pageable) {
+    /**
+     * @param messageId 답변 번호로 찾기 (null = 전체)
+     * @param keyword   답변·질문·사용자 의견 부분 일치, 대소문자 무시 (비우면 전체). 개인정보를 가린 문구에서 찾는다
+     */
+    public Page<ChatReviewResponse> list(ReviewType type, Boolean reviewed, Long messageId, String keyword,
+                                         Pageable pageable) {
+        String search = keyword == null ? "" : keyword.strip().toLowerCase(java.util.Locale.ROOT);
+        if (search.length() > KEYWORD_MAX) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "검색어는 " + KEYWORD_MAX + "자 이하로 입력해 주세요.");
+        }
         boolean negative = type != ReviewType.NO_EVIDENCE;
         boolean noEvidence = type != ReviewType.NEGATIVE;
         Page<ChatMessage> page = messageRepository.findReviewTargets(
-                negative, noEvidence, AnswerStatus.NO_EVIDENCE.name(), reviewed, pageable);
+                negative, noEvidence, AnswerStatus.NO_EVIDENCE.name(), reviewed, messageId, search, pageable);
         Map<Long, List<SourceResponse>> sources = sourceRepository
                 .findByMessageIdInOrderBySourceOrderAsc(page.getContent().stream().map(ChatMessage::getId).toList())
                 .stream()
