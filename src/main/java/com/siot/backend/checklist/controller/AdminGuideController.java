@@ -43,7 +43,8 @@ public class AdminGuideController {
     @Operation(summary = "CHK-06·NTF-07 항목 문구 저장",
             description = "보낸 값으로 전부 바꾼다 (빠진 필드·빈 문자열은 지움). 없던 언어면 새로 만든다. "
                     + "noticeChanged=true(실제 안내 내용 변경)면 notice_changed_at 을 지금으로 기록해 상세 화면에 '변경됨'이 표시되고, "
-                    + "false(오타 수정 등)면 그대로 둔다. 어느 쪽이든 updated_at·updated_by 는 바뀐다.")
+                    + "false(오타 수정 등)면 그대로 둔다. 어느 쪽이든 updated_at·updated_by 는 바뀐다. "
+                    + "noticeChanged=true 이고 체크리스트·생활 변화 할 일이면 대상 회원에게 변경 알림(NOTICE_CHANGED)도 보낸다 (생활수칙은 보내지 않음).")
     @ApiErrorCodes(ErrorCode.GUIDE_NOT_FOUND)
     @PutMapping
     public ResponseEntity<ApiResponse<GuideTranslationResponse>> save(
