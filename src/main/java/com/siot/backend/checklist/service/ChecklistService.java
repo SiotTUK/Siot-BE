@@ -98,10 +98,12 @@ public class ChecklistService {
         for (Guide guide : allGuides) {
             if (guide.isDeleted()) continue;
 
-            // 표시 조건 평가
-            if (!shouldDisplayGuide(guide, user, lifeChanges)) {
+            // 표시 조건 평가. 보이는 이유도 같은 규칙에서 정한다 (BE #42)
+            Display display = evaluateDisplay(guide, user, lifeChanges);
+            if (!display.visible()) {
                 continue;
             }
+            ChecklistDisplayReason reason = display.reason();
 
             // 기한 및 회차 키 계산
             PeriodAndDeadline pd = calculatePeriodAndDeadline(guide, user, lifeChanges, today);
@@ -225,7 +227,9 @@ public class ChecklistService {
                     guide.getCategory(),
                     ChecklistCategories.label(guide.getCategory(), targetLang),
                     contentLanguage,
-                    translated
+                    translated,
+                    reason != null ? reason.name() : null,
+                    reason != null ? reason.label(targetLang) : null
             ));
         }
 
@@ -273,48 +277,63 @@ public class ChecklistService {
 
     // --- 규칙표 표시 조건 평가 (docs/erd.md 반영) ---
 
-    private boolean shouldDisplayGuide(Guide guide, AppUser user, Map<String, LocalDate> lifeChanges) {
+    /**
+     * 표시 여부와 보이는 이유 (BE #42). 이유는 표시 조건이 본 온보딩 답이고, null 이면 공통
+     * (누구에게나, 또는 처음 입국·거주 중 구분만으로 보임). 조건과 이유를 한 줄에 같이 적어 어긋나지 않게 한다.
+     */
+    record Display(boolean visible, ChecklistDisplayReason reason) {
+        static final Display HIDDEN = new Display(false, null);
+        static final Display COMMON = new Display(true, null);
+
+        static Display when(boolean condition, ChecklistDisplayReason reason) {
+            return condition ? new Display(true, reason) : HIDDEN;
+        }
+    }
+
+    private Display evaluateDisplay(Guide guide, AppUser user, Map<String, LocalDate> lifeChanges) {
         String code = guide.getCode();
         UserType userType = user.getUserType();
         Set<Residence> res = user.getResidences();
         Purpose purpose = user.effectivePurpose();
+        boolean f4 = res.contains(Residence.F4);
 
         // 1. 체크리스트 (CL-xx)
-        if ("CL-01".equals(code)) return userType == UserType.NEW && !res.contains(Residence.F4);
-        if ("CL-02".equals(code)) return userType == UserType.NEW && res.contains(Residence.F4);
-        if ("CL-04".equals(code)) return true; // 항상
-        if ("CL-05".equals(code)) return user.getStayExpiry() != null;
-        if ("CL-06".equals(code)) return purpose == Purpose.STUDY;
-        if ("CL-07".equals(code)) return purpose == Purpose.WORK;
-        if ("CL-08".equals(code)) return purpose == Purpose.FAMILY;
-        if ("CL-09".equals(code)) return purpose == Purpose.OTHER;
-        if ("CL-10".equals(code)) return res.contains(Residence.CAR);
-        if ("CL-11".equals(code)) return res.contains(Residence.HOUSE);
-        if ("CL-12".equals(code)) return res.contains(Residence.KIDS);
-        if ("CL-13".equals(code)) return userType == UserType.LIVING && res.contains(Residence.F4);
+        if ("CL-01".equals(code)) return Display.when(userType == UserType.NEW && !f4, null);
+        if ("CL-02".equals(code)) return Display.when(userType == UserType.NEW && f4, ChecklistDisplayReason.F4);
+        if ("CL-04".equals(code)) return Display.COMMON; // 항상
+        if ("CL-05".equals(code)) return Display.when(user.getStayExpiry() != null, ChecklistDisplayReason.STAY_EXPIRY);
+        if ("CL-06".equals(code)) return Display.when(purpose == Purpose.STUDY, ChecklistDisplayReason.PURPOSE_STUDY);
+        if ("CL-07".equals(code)) return Display.when(purpose == Purpose.WORK, ChecklistDisplayReason.PURPOSE_WORK);
+        if ("CL-08".equals(code)) return Display.when(purpose == Purpose.FAMILY, ChecklistDisplayReason.PURPOSE_FAMILY);
+        if ("CL-09".equals(code)) return Display.when(purpose == Purpose.OTHER, ChecklistDisplayReason.PURPOSE_OTHER);
+        if ("CL-10".equals(code)) return Display.when(res.contains(Residence.CAR), ChecklistDisplayReason.CAR);
+        if ("CL-11".equals(code)) return Display.when(res.contains(Residence.HOUSE), ChecklistDisplayReason.HOUSE);
+        if ("CL-12".equals(code)) return Display.when(res.contains(Residence.KIDS), ChecklistDisplayReason.KIDS);
+        if ("CL-13".equals(code)) return Display.when(userType == UserType.LIVING && f4, ChecklistDisplayReason.F4);
         if ("CL-20".equals(code) || "CL-21".equals(code) || "CL-22".equals(code)) {
-            return userType == UserType.NEW;
+            return Display.when(userType == UserType.NEW, null);
         }
 
         // 2. 생활 변화 할 일 (LC-xx-n)
         String lcCode = guide.getLifeChangeCode();
         if (lcCode == null || !lifeChanges.containsKey(lcCode)) {
-            return false; // 등록되지 않은 생활 변화는 표시 안 함
+            return Display.HIDDEN; // 등록되지 않은 생활 변화는 표시 안 함
         }
 
         if (ResidenceChangeReport.isReportCode(code)) {
-            return code.equals(ResidenceChangeReport.reportCodeFor(res.contains(Residence.F4)));
+            // F-4 거소신고자는 거소 이전 신고(이유 F4), 그 외는 체류지 변경 신고(공통)
+            return Display.when(code.equals(ResidenceChangeReport.reportCodeFor(f4)), f4 ? ChecklistDisplayReason.F4 : null);
         }
-        if ("LC-01-3".equals(code)) return res.contains(Residence.CAR);
-        if ("LC-01-4".equals(code)) return res.contains(Residence.KIDS);
-        if ("LC-01-5".equals(code)) return true;
+        if ("LC-01-3".equals(code)) return Display.when(res.contains(Residence.CAR), ChecklistDisplayReason.CAR);
+        if ("LC-01-4".equals(code)) return Display.when(res.contains(Residence.KIDS), ChecklistDisplayReason.KIDS);
+        if ("LC-01-5".equals(code)) return Display.COMMON;
 
-        if ("LC-02-1".equals(code)) return purpose == Purpose.WORK;
-        if ("LC-02-2".equals(code)) return purpose == Purpose.WORK;
-        if ("LC-02-3".equals(code)) return purpose == Purpose.STUDY;
-        if ("LC-02-4".equals(code)) return true;
+        if ("LC-02-1".equals(code)) return Display.when(purpose == Purpose.WORK, ChecklistDisplayReason.PURPOSE_WORK);
+        if ("LC-02-2".equals(code)) return Display.when(purpose == Purpose.WORK, ChecklistDisplayReason.PURPOSE_WORK);
+        if ("LC-02-3".equals(code)) return Display.when(purpose == Purpose.STUDY, ChecklistDisplayReason.PURPOSE_STUDY);
+        if ("LC-02-4".equals(code)) return Display.COMMON;
 
-        return true; // 그 외 LC 할 일은 해당 변화 등록 시 기본 표시
+        return Display.COMMON; // 그 외 LC 할 일은 해당 변화 등록 시 기본 표시
     }
 
     // --- 기한 및 회차 키 계산 (docs/erd.md 반영) ---
