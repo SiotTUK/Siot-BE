@@ -269,6 +269,122 @@ class RuleIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content(json));
     }
 
+    /** ADM-06 수정 폼을 채울 원문 전체. 삭제한 항목도 읽는다 */
+    @Test
+    void adminReadsRuleDetailIncludingDeleted() throws Exception {
+        mockMvc.perform(post("/api/admin/rules").cookie(admin).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"%s","category":"%s","sortOrder":7,"faq":false,"title":"제목",
+                                 "points":["첫 문장","둘째 문장"],"when":"매주 화요일",
+                                 "sources":[{"name":"시흥시","url":"https://www.siheung.go.kr"}],
+                                 "checkedOn":"2026-11-25"}
+                                """.formatted(code, category)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/admin/rules/{code}", code).cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.code").value(code))
+                .andExpect(jsonPath("$.data.sortOrder").value(7))
+                .andExpect(jsonPath("$.data.points[1]").value("둘째 문장"))
+                .andExpect(jsonPath("$.data.when").value("매주 화요일"))
+                .andExpect(jsonPath("$.data.sources[0].url").value("https://www.siheung.go.kr"))
+                .andExpect(jsonPath("$.data.checkedOn").value("2026-11-25"));
+
+        mockMvc.perform(delete("/api/admin/rules/{code}", code).cookie(admin).with(csrf()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/admin/rules/{code}", code).cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value("제목"));
+
+        // 생활수칙이 아닌 항목·없는 코드, 일반 회원
+        mockMvc.perform(get("/api/admin/rules/{code}", "CL-01").cookie(admin))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("GUIDE_NOT_FOUND"));
+        mockMvc.perform(get("/api/admin/rules/{code}", "NO-SUCH").cookie(admin)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/admin/rules/{code}", code).cookie(user)).andExpect(status().isForbidden());
+    }
+
+    /** RUL-04·ADM-06 관리자 FAQ: 등록·목록·수정(언어 통째로 바꿈)·삭제, 회원 화면 반영 */
+    @Test
+    void adminManagesFaqs() throws Exception {
+        create(code, category, "분리배출 방법", "본문", false).andExpect(status().isCreated());
+
+        String created = faq(post("/api/admin/rule-faqs"), """
+                {"sortOrder":-100,"ruleCode":"%s","translations":{
+                  "ko":{"question":" 분리배출은 언제 해요? ","answer":"매주 화요일"},
+                  "en":{"question":"When?","answer":"Tuesdays"}}}
+                """.formatted(code))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.ruleCode").value(code))
+                .andExpect(jsonPath("$.data.ruleTitle").value("분리배출 방법"))
+                .andExpect(jsonPath("$.data.ruleDeleted").value(false))
+                .andExpect(jsonPath("$.data.translations.ko.question").value("분리배출은 언제 해요?"))
+                .andReturn().getResponse().getContentAsString();
+        long faqId = Long.parseLong(created.replaceAll("(?s).*\"faqId\":(\\d+).*", "$1"));
+
+        // 목록 맨 앞, 회원 화면에도 순서대로 (없는 언어는 한국어로)
+        mockMvc.perform(get("/api/admin/rule-faqs").cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].faqId").value(faqId))
+                .andExpect(jsonPath("$.data[0].translations.en.answer").value("Tuesdays"));
+        mockMvc.perform(get("/api/rules/faq").param("language", "vi").cookie(user))
+                .andExpect(jsonPath("$.data[0].question").value("분리배출은 언제 해요?"))
+                .andExpect(jsonPath("$.data[0].ruleCode").value(code));
+
+        // 수정: 보내지 않은 언어(en)는 지우고, 연결을 끊는다
+        faq(put("/api/admin/rule-faqs/{faqId}", faqId), """
+                {"sortOrder":-100,"ruleCode":"","translations":{
+                  "ko":{"question":"바뀐 질문","answer":"바뀐 답"},
+                  "zh":{"question":"问题","answer":"回答"}}}
+                """)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.ruleCode").doesNotExist())
+                .andExpect(jsonPath("$.data.translations.en").doesNotExist())
+                .andExpect(jsonPath("$.data.translations.zh.question").value("问题"));
+        assertThat(jdbcTemplate.queryForList("SELECT language FROM rule_faq_translation WHERE faq_id = ? ORDER BY language",
+                String.class, faqId)).containsExactly("ko", "zh");
+
+        // 연결한 생활수칙을 지우면 관리자 목록에 표시된다
+        faq(put("/api/admin/rule-faqs/{faqId}", faqId), """
+                {"sortOrder":-100,"ruleCode":"%s","translations":{"ko":{"question":"질문","answer":"답"}}}
+                """.formatted(code)).andExpect(status().isOk());
+        mockMvc.perform(delete("/api/admin/rules/{code}", code).cookie(admin).with(csrf()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/admin/rule-faqs").cookie(admin))
+                .andExpect(jsonPath("$.data[0].ruleDeleted").value(true));
+
+        // 입력 검사: ko 없음·모르는 언어·지운 생활수칙 연결·빈 질문
+        faq(post("/api/admin/rule-faqs"), "{\"sortOrder\":1,\"translations\":{\"en\":{\"question\":\"Q\",\"answer\":\"A\"}}}")
+                .andExpect(status().isBadRequest());
+        faq(post("/api/admin/rule-faqs"), "{\"sortOrder\":1,\"translations\":{\"ko\":{\"question\":\"Q\",\"answer\":\"A\"},"
+                + "\"ja\":{\"question\":\"Q\",\"answer\":\"A\"}}}")
+                .andExpect(status().isBadRequest());
+        faq(post("/api/admin/rule-faqs"), "{\"sortOrder\":1,\"ruleCode\":\"" + code
+                + "\",\"translations\":{\"ko\":{\"question\":\"Q\",\"answer\":\"A\"}}}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("GUIDE_NOT_FOUND"));
+        faq(post("/api/admin/rule-faqs"), "{\"sortOrder\":1,\"translations\":{\"ko\":{\"question\":\" \",\"answer\":\"A\"}}}")
+                .andExpect(status().isBadRequest());
+
+        // 삭제: 질문·답변도 지운다
+        mockMvc.perform(delete("/api/admin/rule-faqs/{faqId}", faqId).cookie(admin).with(csrf()))
+                .andExpect(status().isNoContent());
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM rule_faq_translation WHERE faq_id = ?",
+                Integer.class, faqId)).isZero();
+        mockMvc.perform(delete("/api/admin/rule-faqs/{faqId}", faqId).cookie(admin).with(csrf()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RULE_FAQ_NOT_FOUND"));
+
+        // 일반 회원
+        mockMvc.perform(get("/api/admin/rule-faqs").cookie(user)).andExpect(status().isForbidden());
+    }
+
+    private ResultActions faq(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
+                              String json) throws Exception {
+        return mockMvc.perform(request.cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
     @Test
     void rulesAdminApisAreForAdminsOnly() throws Exception {
         mockMvc.perform(get("/api/admin/rules").cookie(user)).andExpect(status().isForbidden());

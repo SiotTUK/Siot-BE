@@ -27,4 +27,18 @@ public class RuleFaq {
 
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
+
+    /** 관리자 FAQ 등록 (RUL-04, ADM-06) */
+    public static RuleFaq create(Long guideId, int sortOrder) {
+        RuleFaq faq = new RuleFaq();
+        faq.guideId = guideId;
+        faq.sortOrder = sortOrder;
+        return faq;
+    }
+
+    /** 관리자 FAQ 수정: 연결 항목(null = 연결 없음)과 순서 */
+    public void update(Long guideId, int sortOrder) {
+        this.guideId = guideId;
+        this.sortOrder = sortOrder;
+    }
 }

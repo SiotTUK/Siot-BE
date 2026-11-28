@@ -41,6 +41,16 @@ public class AdminRuleController {
         return ResponseEntity.ok(ApiResponse.of(adminRuleService.getRules(category, keyword, includeDeleted)));
     }
 
+    @Operation(summary = "ADM-06 생활수칙 상세 (관리자)",
+            description = "수정 폼을 채울 한국어 원문 전체(문장 목록·출처 목록·확인일·정렬 순서 등)를 준다. "
+                    + "삭제한 생활수칙도 읽을 수 있다 (수정·삭제는 안 된다).")
+    @ApiErrorCodes(ErrorCode.GUIDE_NOT_FOUND)
+    @GetMapping("/{code}")
+    public ResponseEntity<ApiResponse<RuleResponse>> getRule(
+            @Parameter(description = "항목 코드 (RUL-01 등)") @PathVariable String code) {
+        return ResponseEntity.ok(ApiResponse.of(adminRuleService.getRule(code)));
+    }
+
     @Operation(summary = "RUL-09·ADM-06 생활수칙 등록",
             description = "새로운 생활수칙을 등록합니다. 카테고리·제목·본문은 필수입니다. 등록 시 다국어(영어, 중국어, 베트남어) "
                     + "번역본이 자동 생성됩니다 (RUL-13). 이미 쓰고 있거나 삭제한 생활수칙이 쓰던 코드면 409 DUPLICATE_GUIDE_CODE.")
